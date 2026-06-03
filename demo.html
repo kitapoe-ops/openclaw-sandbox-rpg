@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OpenClaw Sandbox RPG — Demo UI</title>
+
+  <!-- CDN: Vue 3 + Tailwind (no build step) -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    :root {
+      --color-bg: #0f0f0f;
+      --color-card: #1a1a1a;
+      --color-border: #2a2a2a;
+      --color-accent: #b78d4a;
+      --color-text: #e0e0e0;
+      --color-dim: #888;
+    }
+    body {
+      background: var(--color-bg);
+      color: var(--color-text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft JhengHei", "PingFang TC", sans-serif;
+    }
+    .vignette-card {
+      background: var(--color-card);
+      border: 1px solid var(--color-border);
+      transition: all 0.2s;
+      cursor: pointer;
+    }
+    .vignette-card:hover {
+      border-color: var(--color-accent);
+      transform: translateY(-2px);
+    }
+    .vignette-card.selected {
+      border-color: var(--color-accent);
+      background: rgba(183, 141, 74, 0.1);
+    }
+    .dimension-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+    .dim-character_growth { color: #d4a574; background: rgba(212, 165, 116, 0.15); }
+    .dim-world_exploration { color: #7ba3d4; background: rgba(123, 163, 212, 0.15); }
+    .dim-relationship { color: #c47bd4; background: rgba(196, 123, 212, 0.15); }
+    .dim-mystery_revelation { color: #d4c47b; background: rgba(212, 196, 123, 0.15); }
+
+    .connection-pill {
+      padding: 4px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .conn-online { background: rgba(100, 200, 100, 0.15); color: #64c864; }
+    .conn-offline { background: rgba(255, 100, 100, 0.15); color: #ff6464; }
+
+    .stat-tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: rgba(183, 141, 74, 0.15);
+      color: var(--color-accent);
+      font-size: 12px;
+      margin: 2px;
+    }
+
+    .att-chip {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--color-border);
+      font-size: 11px;
+      cursor: pointer;
+      margin: 2px;
+    }
+    .att-chip:hover { border-color: var(--color-accent); }
+    .att-chip.active {
+      background: var(--color-accent);
+      color: white;
+      border-color: var(--color-accent);
+    }
+
+    pre.code {
+      background: #000;
+      border: 1px solid var(--color-border);
+      padding: 12px;
+      border-radius: 4px;
+      font-size: 11px;
+      overflow-x: auto;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- Top bar -->
+    <header class="border-b border-gray-800 px-6 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <h1 class="text-xl font-bold" style="color: var(--color-accent)">OpenClaw Sandbox RPG</h1>
+        <span class="text-xs" style="color: var(--color-dim)">v0.4.0 · Demo Mode</span>
+      </div>
+      <div class="flex items-center gap-3">
+        <span :class="['connection-pill', backendOk ? 'conn-online' : 'conn-offline']">
+          {{ backendOk ? '● Backend OK' : '● Backend OFFLINE' }}
+        </span>
+        <span :class="['connection-pill', wsConnected ? 'conn-online' : 'conn-offline']">
+          {{ wsConnected ? '● WS Connected' : '● WS Disconnected' }}
+        </span>
+      </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <!-- Left: Scene + Choices -->
+      <section class="lg:col-span-2 space-y-4">
+        <!-- Scene narrative -->
+        <div class="rounded-lg p-6" style="background: var(--color-card); border: 1px solid var(--color-border)">
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="text-sm font-medium" style="color: var(--color-dim)">
+              場景: {{ scene?.scene_id || '載入中...' }}
+            </h2>
+            <span class="text-xs" style="color: var(--color-dim)">
+              第 {{ scene?.round || 1 }} 輪
+            </span>
+          </div>
+          <p v-if="scene" class="text-base leading-relaxed whitespace-pre-line">
+            {{ scene.narrative }}
+          </p>
+          <p v-else class="text-sm" style="color: var(--color-dim)">載入場景中...</p>
+        </div>
+
+        <!-- 4 Vignette Cards -->
+        <div v-if="scene?.choices">
+          <h3 class="text-sm font-medium mb-2" style="color: var(--color-accent)">
+            你的選擇 · {{ scene.choices.length }} 個故事方向
+          </h3>
+          <p class="text-xs mb-3 italic" style="color: var(--color-dim)">
+            每個 vignette 係一個獨立嘅故事起點，揀邊個由你決定。
+          </p>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div
+              v-for="choice in scene.choices"
+              :key="choice.id"
+              :class="['vignette-card', 'rounded-lg', 'p-4', selectedOption === choice.id ? 'selected' : '']"
+              @click="selectOption(choice.id)"
+            >
+              <!-- Dimension badge -->
+              <div class="flex items-center justify-between mb-3">
+                <span :class="['dimension-badge', 'dim-' + choice.intent_category]">
+                  {{ dimensionIcon(choice.intent_category) }}
+                  {{ dimensionLabel(choice.intent_category) }}
+                </span>
+                <code class="text-xs" style="color: var(--color-dim)">{{ choice.lore_source }}</code>
+              </div>
+
+              <!-- Vignette (30-50 chars) -->
+              <p class="text-sm leading-relaxed mb-3">{{ choice.vignette }}</p>
+
+              <!-- Direction hint -->
+              <p class="text-xs italic mb-3" style="color: var(--color-dim)">
+                💡 {{ choice.direction_hint }}
+              </p>
+
+              <!-- Attitude options (only show if this card is selected) -->
+              <div v-if="selectedOption === choice.id" @click.stop>
+                <p class="text-xs mb-2" style="color: var(--color-accent)">選擇態度 (1-2 個):</p>
+                <div class="flex flex-wrap gap-1">
+                  <span
+                    v-for="att in choice.attitude_options"
+                    :key="att.dimension + att.level"
+                    :class="['att-chip', isAttitudeSelected(choice.id, att.dimension, att.level) ? 'active' : '']"
+                    @click.stop="toggleAttitude(choice.id, att.dimension, att.level)"
+                  >
+                    <strong>{{ att.dimension }}:</strong> {{ att.level }}
+                    <span v-if="att.effect" class="ml-1 opacity-70">— {{ att.effect }}</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Confirm button -->
+          <div v-if="selectedOption && selectedAttitudes.length > 0" class="mt-4 text-center">
+            <button
+              @click="submitChoice"
+              :disabled="submitting"
+              class="px-6 py-3 rounded-lg font-medium"
+              style="background: var(--color-accent); color: white"
+            >
+              {{ submitting ? '提交中...' : '確認選擇' }}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right: Character + History + API response -->
+      <aside class="space-y-4">
+        <!-- Character status -->
+        <div v-if="character" class="rounded-lg p-4" style="background: var(--color-card); border: 1px solid var(--color-border)">
+          <h3 class="text-sm font-bold mb-3" style="color: var(--color-accent)">{{ character.name }}</h3>
+          <div class="space-y-2 text-xs">
+            <div class="flex justify-between">
+              <span style="color: var(--color-dim)">角色 ID</span>
+              <code>{{ character.character_id }}</code>
+            </div>
+            <div class="flex justify-between">
+              <span style="color: var(--color-dim)">種族</span>
+              <span>{{ character.physical?.stamina_level }} 等級</span>
+            </div>
+            <div class="flex justify-between">
+              <span style="color: var(--color-dim)">情緒</span>
+              <span>{{ character.mental?.morale_level }}</span>
+            </div>
+            <div class="flex justify-between">
+              <span style="color: var(--color-dim)">HP</span>
+              <span>{{ character.physical?.health_status }}</span>
+            </div>
+            <div class="flex justify-between">
+              <span style="color: var(--color-dim)">地點</span>
+              <code class="text-xs">{{ character.current_scene_id }}</code>
+            </div>
+            <div v-if="character.attitude" class="pt-2 border-t border-gray-700">
+              <p class="mb-1" style="color: var(--color-dim)">當前態度</p>
+              <div>
+                <span v-for="(level, dim) in character.attitude" :key="dim" class="stat-tag">
+                  {{ dim }}: {{ level }}
+                </span>
+              </div>
+            </div>
+            <div v-if="character.inventory?.items" class="pt-2 border-t border-gray-700">
+              <p class="mb-1" style="color: var(--color-dim)">背包</p>
+              <div>
+                <span v-for="item in character.inventory.items" :key="item.item_id" class="stat-tag">
+                  {{ item.item_id }} ×{{ item.quantity }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- History (recent actions) -->
+        <div v-if="history.length > 0" class="rounded-lg p-4" style="background: var(--color-card); border: 1px solid var(--color-border)">
+          <h3 class="text-sm font-bold mb-2" style="color: var(--color-accent)">歷史日誌</h3>
+          <div class="space-y-2 max-h-60 overflow-y-auto">
+            <div v-for="(h, idx) in history" :key="idx" class="text-xs p-2 rounded" style="background: rgba(0,0,0,0.3)">
+              <div style="color: var(--color-accent)">第 {{ h.round }} 輪 · {{ h.status }}</div>
+              <div style="color: var(--color-dim)">{{ h.timestamp }}</div>
+              <div>{{ h.message }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Raw API response (debug) -->
+        <div class="rounded-lg p-4" style="background: var(--color-card); border: 1px solid var(--color-border)">
+          <h3 class="text-sm font-bold mb-2" style="color: var(--color-dim)">API Response (Debug)</h3>
+          <pre class="code">{{ apiResponseText }}</pre>
+        </div>
+      </aside>
+    </main>
+
+    <footer class="text-center py-6 text-xs" style="color: var(--color-dim)">
+      Backend: {{ API_BASE }} · WebSocket: {{ WS_BASE }}
+    </footer>
+  </div>
+
+  <script>
+    const { createApp, ref, onMounted, computed, watch } = Vue;
+
+    const API_BASE = 'http://localhost:8000';
+    const WS_BASE = 'ws://localhost:8000';
+    const CHARACTER_ID = 'char demo_player';
+
+    const DIMENSION_LABELS = {
+      character_growth: '角色成長',
+      world_exploration: '世界探索',
+      relationship: '關係建立',
+      mystery_revelation: '謎團揭示',
+    };
+    const DIMENSION_ICONS = {
+      character_growth: '👤',
+      world_exploration: '🗺️',
+      relationship: '🤝',
+      mystery_revelation: '🔮',
+    };
+
+    createApp({
+      setup() {
+        const backendOk = ref(false);
+        const wsConnected = ref(false);
+        const scene = ref(null);
+        const character = ref(null);
+        const history = ref([]);
+        const selectedOption = ref(null);
+        const selectedAttitudes = ref([]);
+        const submitting = ref(false);
+        const apiResponseText = ref('(no response yet)');
+
+        let ws = null;
+
+        const dimensionLabel = (cat) => DIMENSION_LABELS[cat] || cat;
+        const dimensionIcon = (cat) => DIMENSION_ICONS[cat] || '📜';
+
+        function selectOption(optionId) {
+          selectedOption.value = optionId;
+          selectedAttitudes.value = [];
+        }
+
+        function isAttitudeSelected(optionId, dim, level) {
+          return selectedAttitudes.value.some(a => a.optionId === optionId && a.dim === dim && a.level === level);
+        }
+
+        function toggleAttitude(optionId, dim, level) {
+          const existing = selectedAttitudes.value.findIndex(
+            a => a.optionId === optionId && a.dim === dim && a.level === level
+          );
+          if (existing >= 0) {
+            selectedAttitudes.value.splice(existing, 1);
+          } else {
+            // Max 2 attitudes per choice
+            const sameOption = selectedAttitudes.value.filter(a => a.optionId === optionId);
+            if (sameOption.length >= 2) return;
+            // If selecting different level of same dim, replace
+            const sameDim = selectedAttitudes.value.findIndex(
+              a => a.optionId === optionId && a.dim === dim
+            );
+            if (sameDim >= 0) {
+              selectedAttitudes.value.splice(sameDim, 1);
+            }
+            selectedAttitudes.value.push({ optionId, dim, level });
+          }
+        }
+
+        async function loadCharacter() {
+          try {
+            const res = await fetch(`${API_BASE}/api/character/${encodeURIComponent(CHARACTER_ID)}`);
+            if (res.ok) {
+              const data = await res.json();
+              character.value = data;
+              backendOk.value = true;
+              apiResponseText.value = JSON.stringify(data, null, 2);
+            } else {
+              apiResponseText.value = `Error: ${res.status} ${res.statusText}`;
+            }
+          } catch (e) {
+            apiResponseText.value = `Network error: ${e.message}`;
+          }
+        }
+
+        async function loadScene() {
+          try {
+            const res = await fetch(`${API_BASE}/api/scene/${encodeURIComponent(CHARACTER_ID)}`);
+            if (res.ok) {
+              const data = await res.json();
+              scene.value = data;
+              apiResponseText.value = JSON.stringify(data, null, 2);
+            }
+          } catch (e) {
+            apiResponseText.value = `Network error: ${e.message}`;
+          }
+        }
+
+        function connectWS() {
+          if (ws) ws.close();
+          ws = new WebSocket(`${WS_BASE}/ws/game/${encodeURIComponent(CHARACTER_ID)}`);
+          ws.onopen = () => {
+            wsConnected.value = true;
+            history.value.unshift({
+              round: 0,
+              status: 'WS_OPEN',
+              timestamp: new Date().toLocaleTimeString(),
+              message: 'WebSocket connected',
+            });
+          };
+          ws.onclose = () => {
+            wsConnected.value = false;
+            setTimeout(connectWS, 3000);
+          };
+          ws.onmessage = (e) => {
+            const msg = JSON.parse(e.data);
+            history.value.unshift({
+              round: scene.value?.round || 0,
+              status: msg.type,
+              timestamp: new Date().toLocaleTimeString(),
+              message: JSON.stringify(msg).slice(0, 200),
+            });
+            // Keep only last 10 history entries
+            if (history.value.length > 10) history.value = history.value.slice(0, 10);
+
+            if (msg.type === 'scene_update') {
+              // Reload scene
+              loadScene();
+            }
+          };
+        }
+
+        function submitChoice() {
+          if (!selectedOption.value || selectedAttitudes.value.length === 0) return;
+          submitting.value = true;
+
+          const choice = scene.value.choices.find(c => c.id === selectedOption.value);
+          const payload = {
+            type: 'action_submit',
+            round: scene.value.round || 1,
+            character_id: CHARACTER_ID,
+            choice: {
+              option_id: selectedOption.value,
+              attitude_selections: selectedAttitudes.value.map(a => ({
+                dimension: a.dim,
+                level: a.level,
+              })),
+            },
+          };
+
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(payload));
+            history.value.unshift({
+              round: payload.round,
+              status: 'SUBMITTED',
+              timestamp: new Date().toLocaleTimeString(),
+              message: `選了 ${choice?.intent_category}: ${payload.choice.option_id} + ${selectedAttitudes.value.length} attitude(s)`,
+            });
+            setTimeout(() => {
+              submitting.value = false;
+              selectedOption.value = null;
+              selectedAttitudes.value = [];
+            }, 1000);
+          } else {
+            alert('WebSocket not connected!');
+            submitting.value = false;
+          }
+        }
+
+        onMounted(() => {
+          loadCharacter();
+          loadScene();
+          connectWS();
+        });
+
+        return {
+          backendOk, wsConnected,
+          scene, character, history,
+          selectedOption, selectedAttitudes, submitting,
+          apiResponseText,
+          API_BASE, WS_BASE,
+          dimensionLabel, dimensionIcon,
+          selectOption, isAttitudeSelected, toggleAttitude,
+          submitChoice,
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>
