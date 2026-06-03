@@ -1,35 +1,28 @@
 """
-WebSocket package.
+WebSocket package (v3.0 -- simplified).
 
 Modules:
 - game_socket: FastAPI WebSocket endpoint
-- connection_manager: Registry of active connections
-- action_queue: In-memory queue for player actions
-- llm_worker: Background task that calls LLM
+- connection_manager: Active connection tracking
+- scene_locks: Per-scene async lock for LLM call serialization
 
-Architecture:
-  Client (WS) → game_socket → ActionQueue → LLMWorker (background)
-                                                    ↓
-                                              PostgreSQL
-                                                    ↓
-                                              Broadcaster (via registry)
-                                                    ↓
-                                              Client (WS)
+Architecture (1-4 player single-host):
+  Client (WS) -> game_socket -> asyncio.create_task -> scene_lock -> LLM -> DB -> broadcast
 
-Key invariant: WS Handler NEVER awaits LLM directly.
+Key simplifications from v2.0:
+- No separate ActionQueue class (use asyncio.create_task)
+- No separate LLMWorker (BackgroundTasks inline)
+- No in-memory pending updates (DB-driven recovery)
+- Per-scene lock instead of per-character (allows parallel scenes)
 """
-from .connection_manager import registry as connection_registry, ConnectionRegistry
-from .action_queue import action_queue as queue_instance, ActionQueue
-from .llm_worker import llm_worker as worker_instance, LLMWorker, init_worker
+from .connection_manager import registry, ConnectionRegistry
+from .scene_locks import scene_lock_manager, SceneLockManager
 from .game_socket import websocket_endpoint
 
 __all__ = [
-    "connection_registry",
+    "registry",
     "ConnectionRegistry",
-    "action_queue",
-    "ActionQueue",
-    "llm_worker",
-    "LLMWorker",
-    "init_worker",
+    "scene_lock_manager",
+    "SceneLockManager",
     "websocket_endpoint",
 ]

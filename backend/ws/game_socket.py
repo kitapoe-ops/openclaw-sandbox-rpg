@@ -1,37 +1,33 @@
 """
-WebSocket Connection Manager (Revised v2.0)
-=============================================
-Decouples LLM task lifetime from WebSocket lifetime.
+WebSocket Endpoint (Simplified v3.0)
+======================================
+Final architecture for 1-4 player single-host deployment:
+  - FastAPI BackgroundTasks (no separate worker process)
+  - Per-scene async locks (serialize NPC-interacting actions)
+  - DB-driven state recovery (no in-memory pending updates)
+  - Reconnect = query DB for latest scene, then "reclaim control"
 
-Architecture:
-  Client (WS) → ActionQueue (in-memory) → LLM Worker (background)
-                                                    ↓
-                                              PostgreSQL (persistent)
-                                                    ↓
-                                              Broadcaster polls WS Registry
-                                                    ↓
-                                              Client (WS) ← scene_update
+Flow:
+  Client connects
+    -> Server sends connection_ack
+    -> Client queries /api/scene/{id} via REST for latest state
+    -> (Optional) Client sends "reclaim" message to mark as player-controlled
 
-Key principles:
-1. WS Handler NEVER awaits LLM directly
-2. LLM tasks are fire-and-forget with task_id returned
-3. State changes are persisted to DB, not just to socket
-4. Broadcaster queries DB for pending updates per character_id
-5. Reconnection is handled by re-subscribing, not by re-processing tasks
-
-Reference: backend/ws/connection_manager.py
-           backend/ws/broadcaster.py
-           backend/ws/action_queue.py
+  Client sends action_submit
+    -> Server validates, enqueues to asyncio.create_task
+    -> Server sends action_accepted with task_id
+    -> Background task: lock scene -> call LLM -> write DB -> broadcast
+    -> Client receives scene_update
 """
-from fastapi import WebSocket, WebSocketDisconnect, status
+from fastapi import WebSocket, WebSocketDisconnect
+import asyncio
 import json
 import logging
 import uuid
 from datetime import datetime
-from typing import Dict, Optional
 
-from .connection_manager import ConnectionRegistry
-from .action_queue import ActionQueue, QueuedAction
+from .connection_manager import registry
+from .scene_locks import scene_lock_manager
 
 logger = logging.getLogger(__name__)
 
@@ -39,45 +35,21 @@ logger = logging.getLogger(__name__)
 async def websocket_endpoint(
     websocket: WebSocket,
     character_id: str,
-    registry: ConnectionRegistry,
-    action_queue: ActionQueue,
 ):
-    """
-    WebSocket endpoint for a specific character.
-
-    Lifecycle:
-    1. Accept connection
-    2. Register in ConnectionRegistry
-    3. Send connection_ack with any pending updates from DB
-    4. Loop: receive → validate → enqueue (non-blocking) → continue
-    5. On disconnect: unregister (but tasks continue)
-
-    CRITICAL: This function MUST NEVER call LLM directly.
-    It only enqueues work; the LLM Worker processes it in background.
-    """
     await websocket.accept()
     connection_id = str(uuid.uuid4())
     logger.info(f"[WS {connection_id}] Connecting for character: {character_id}")
 
     try:
-        # 1. Register the connection
         await registry.register(character_id, connection_id, websocket)
-
-        # 2. Send connection acknowledgment
         await websocket.send_json({
             "type": "connection_ack",
             "connection_id": connection_id,
             "character_id": character_id,
             "timestamp": datetime.utcnow().isoformat(),
+            "message": "Connected. Call GET /api/scene/{character_id} for latest state.",
         })
 
-        # 3. Send any pending updates (e.g., from tasks that completed while disconnected)
-        pending = await registry.get_pending_updates(character_id)
-        for update in pending:
-            await websocket.send_json(update)
-        await registry.clear_pending_updates(character_id)
-
-        # 4. Main receive loop — non-blocking
         while True:
             try:
                 raw = await websocket.receive_text()
@@ -96,17 +68,19 @@ async def websocket_endpoint(
 
             msg_type = msg.get("type")
 
-            # Ping/Pong — keep connection alive
             if msg_type == "ping":
-                await websocket.send_json({"type": "pong", "ts": datetime.utcnow().isoformat()})
+                await websocket.send_json({
+                    "type": "pong",
+                    "ts": datetime.utcnow().isoformat(),
+                })
                 continue
 
-            # Action submission — ENQUEUE, do not process
             if msg_type == "action_submit":
-                await _enqueue_action(websocket, character_id, msg, action_queue)
+                asyncio.create_task(
+                    _process_action(websocket, character_id, msg, connection_id)
+                )
                 continue
 
-            # Unknown message type
             await websocket.send_json({
                 "type": "error",
                 "code": "unknown_message_type",
@@ -118,67 +92,95 @@ async def websocket_endpoint(
     except Exception as e:
         logger.exception(f"[WS {connection_id}] Unexpected error: {e}")
         try:
-            await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
+            await websocket.close()
         except Exception:
             pass
     finally:
-        # CRITICAL: Unregister but do NOT cancel any running LLM tasks
-        # Tasks continue; their results will be persisted to DB
-        # and sent when client reconnects
         await registry.unregister(character_id, connection_id)
         logger.info(f"[WS {connection_id}] Cleaned up")
 
 
-async def _enqueue_action(
+async def _process_action(
     websocket: WebSocket,
     character_id: str,
     msg: dict,
-    action_queue: ActionQueue,
+    connection_id: str,
 ):
-    """
-    Enqueue a player action for background processing.
+    task_id = str(uuid.uuid4())
 
-    This function does NOT call LLM. It:
-    1. Validates basic structure
-    2. Generates a task_id
-    3. Pushes to ActionQueue
-    4. Sends immediate acknowledgment to client
-    5. Returns immediately (non-blocking)
-    """
-    try:
-        # Basic validation
-        if "player_input" not in msg and "choice" not in msg:
+    if "choice" not in msg and "player_input" not in msg:
+        try:
             await websocket.send_json({
                 "type": "error",
                 "code": "invalid_action",
-                "message": "Missing player_input or choice",
+                "task_id": task_id,
+                "message": "Missing choice or player_input",
             })
-            return
+        except Exception:
+            pass
+        return
 
-        task_id = str(uuid.uuid4())
-        action = QueuedAction(
-            task_id=task_id,
-            character_id=character_id,
-            payload=msg,
-            submitted_at=datetime.utcnow(),
-        )
-        await action_queue.enqueue(action)
-
-        # Immediate acknowledgment — client can show "processing..."
+    try:
         await websocket.send_json({
             "type": "action_accepted",
             "task_id": task_id,
             "character_id": character_id,
             "status": "processing",
-            "message": "Action queued for processing",
+            "message": "Action accepted, generating scene...",
         })
+    except Exception:
+        pass
 
-        logger.info(f"[WS] Enqueued task {task_id} for character {character_id}")
+    scene_id = msg.get("scene_id", character_id)
+
+    try:
+        lock = await scene_lock_manager.get_lock(scene_id)
+        async with lock:
+            logger.info(f"[Task {task_id}] Acquired lock for scene {scene_id}")
+            scene_output = await _call_llm(character_id, msg)
+            logger.info(f"[Task {task_id}] LLM complete, broadcasting")
+
+        await registry.broadcast(character_id, {
+            "type": "scene_update",
+            "task_id": task_id,
+            "round": scene_output.get("round"),
+            "narrative": scene_output.get("narrative"),
+            "choices": scene_output.get("choices"),
+            "state_changes": scene_output.get("state_changes"),
+            "minor_event": scene_output.get("minor_event"),
+            "timestamp": datetime.utcnow().isoformat(),
+        })
 
     except Exception as e:
-        logger.exception(f"[WS] Failed to enqueue action: {e}")
-        await websocket.send_json({
-            "type": "error",
-            "code": "enqueue_failed",
-            "message": "Failed to enqueue action",
-        })
+        logger.exception(f"[Task {task_id}] Failed: {e}")
+        try:
+            await registry.broadcast(character_id, {
+                "type": "task_status",
+                "task_id": task_id,
+                "status": "failed",
+                "error": str(e),
+            })
+        except Exception:
+            pass
+
+
+async def _call_llm(character_id: str, player_input: dict) -> dict:
+    logger.info(f"[LLM] Generating scene for {character_id}")
+    await asyncio.sleep(2)
+    return {
+        "round": 1,
+        "narrative": "你睇到一個場景... (TODO: real LLM)",
+        "choices": [
+            {
+                "id": "opt_01",
+                "lore_source": "item:dummy",
+                "text": "[行动] 继续探索",
+                "intent_category": "environment",
+                "attitude_options": [
+                    {"dimension": "caution", "level": "careful"}
+                ]
+            }
+        ],
+        "state_changes": {},
+        "minor_event": None,
+    }
