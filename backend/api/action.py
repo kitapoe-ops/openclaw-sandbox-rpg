@@ -1,46 +1,32 @@
 """
-Action API endpoints - submit player choices.
+Action API Endpoints (v3.6)
 """
 from fastapi import APIRouter, HTTPException
 from typing import Dict, Any
 
-from ..choice_validator import ChoiceValidator
+from ..ws import registry
 
 router = APIRouter()
-choice_validator = ChoiceValidator()
 
 
 @router.post("/submit")
 async def submit_action(player_input: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Submit a player's action for a round.
-
-    Flow:
-    1. Validate player input
-    2. Apply physics lock
-    3. Call Scene Agent for narrative + new 4 choices
-    4. Call Sub Agent for state calculations
-    5. Update character state
-    6. Return scene_output to frontend
-
-    TODO: Implement full flow.
+    Submit a player's action (HTTP fallback for non-WebSocket clients).
+    In production, prefer WebSocket; this is for debugging.
     """
-    # Placeholder
+    # Just echo back — actual processing happens via WS
     return {
-        "message": "TODO: Implement action submission flow",
+        "message": "Use WebSocket /ws/game/{character_id} for real-time action submission",
         "received": player_input,
+        "registry_stats": registry.stats(),
     }
 
 
 @router.post("/auto")
 async def auto_action(character_id: str) -> Dict[str, Any]:
-    """
-    Auto-action when player doesn't submit within 15 minutes.
-    Character enters NPC auto-behavior mode.
-
-    TODO: Implement NPC auto-behavior generation.
-    """
+    """Trigger NPC auto-behavior when player doesn't submit in 15 min."""
     return {
         "character_id": character_id,
-        "message": "TODO: Implement NPC auto-behavior",
+        "message": "TODO: Implement NPC auto-behavior (Sub Agent generates default action)",
     }

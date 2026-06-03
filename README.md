@@ -7,7 +7,7 @@
 
 ## 項目簡介
 
-一個**完全放棄數字、純語意狀態**嘅異步多人沙盒 RPG。LLM 係上帝 + 沙盒，後端係物理引擎 + 邏輯鎖，玩家透過「事件選擇 + 態度組合 + 裝備 + 道具」推動世界。
+一個**完全放棄數字、純語意狀態**嘅異步多人沙盒 RPG。LLM 係上帝 + 沙盒，後端係物理引擎 + 邏輯鎖，玩家透過「事件選擇 + 態度組合 + 裝備配置」推動世界。
 
 ### 核心特色
 
@@ -16,68 +16,152 @@
 - ⚡ **15 分鐘異步回合** — 玩家每 15 分鐘揀 1 個選擇
 - 🤖 **三層 Agent 矩陣** — 上帝 Agent（每日 ETL）+ 場景 Agent（即時）+ 副 Agent（細微）
 - 🧠 **LLM 係上帝 + 沙盒** — 推動劇情 + 守世界規則
-- 🔒 **物理邏輯鎖 v2.0** — 後端強制物理一致性，LLM 自由演繹殘疾文學
+- 🔒 **物理邏輯鎖 v2.0** — 保留玩家意圖，演繹「想做但做唔到」
 - 📚 **50 萬 token 世界觀** — 預載，永不改變嘅永恆層 + 動態調整嘅世界參數
 
 ## 技術棧
 
 | 層 | 技術 |
 |----|------|
-| 後端 | Python 3.11+ / FastAPI |
-| 前端 | Vue 3 + Vite + TypeScript |
+| 後端 | Python 3.11+ / FastAPI / SQLAlchemy 2.0 async |
+| 前端 | Vue 3 + Vite + TypeScript + Pinia |
 | 資料庫 | PostgreSQL 15 + LanceDB |
 | LLM 雲端 | MiniMax M3 (1M context) |
-| LLM 本地 | Qwen2.5-14B-Instruct (LM Studio :1234) |
-| 部署 | Docker Compose |
+| 部署 | Vercel (前端) + 本地 Docker (後端) + Cloudflare Tunnels |
 
-## 快速開始
+## 🚀 快速開始 (5 分鐘 Demo)
+
+### 1. Clone + 設定
 
 ```bash
-# 1. Clone
 git clone https://github.com/kitapoe-ops/openclaw-sandbox-rpg.git
 cd openclaw-sandbox-rpg
-
-# 2. 複製環境變數範本
 cp .env.example .env
-
-# 3. 啟動 Docker
-docker-compose up -d
-
-# 4. 訪問
-# Frontend: http://localhost:5173
-# Backend API: http://localhost:8000
-# API Docs: http://localhost:8000/docs
+# 編輯 .env，至少填寫 MINIMAX_API_KEY
 ```
 
-## 文檔
+### 2. 啟動後端
 
-- 📐 [架構文檔](docs/ARCHITECTURE.md)
-- 📋 [API 規格](docs/API.md)
-- 🛠️ [開發指南](docs/DEVELOPMENT.md)
+```bash
+cd backend
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+
+# 啟動 PostgreSQL（Docker 方式）
+docker run -d --name postgres-sandbox \
+  -e POSTGRES_DB=sandbox_rpg \
+  -e POSTGRES_USER=rpg_user \
+  -e POSTGRES_PASSWORD=dev_password \
+  -p 5432:5432 \
+  postgres:15-alpine
+
+# 啟動 FastAPI
+uvicorn backend.main:app --reload --port 8000
+```
+
+預期輸出：
+```
+[Startup] DB schema initialized
+[Startup] Demo data seeded
+[Startup] Ready
+INFO:     Uvicorn running on http://0.0.0.0:8000
+```
+
+### 3. 訪問 Demo API
+
+```bash
+# Health check
+curl http://localhost:8000/health
+
+# 取得 demo 角色
+curl http://localhost:8000/api/character/char_demo_player
+
+# 取得當前場景
+curl http://localhost:8000/api/scene/char_demo_player
+
+# 列出可用世界
+curl http://localhost:8000/api/world/
+```
+
+### 4. 啟動前端
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+開啟 `http://localhost:5173` 即可。
+
+### 5. 用 WebSocket 連線
+
+```javascript
+const ws = new WebSocket('ws://localhost:8000/ws/game/char_demo_player')
+ws.onopen = () => {
+  console.log('Connected')
+  ws.send(JSON.stringify({
+    type: 'action_submit',
+    round: 1,
+    character_id: 'char_demo_player',
+    choice: {
+      option_id: 'choice_1',
+      attitude_selections: [
+        { dimension: 'caution', level: 'careful' }
+      ]
+    }
+  }))
+}
+ws.onmessage = (e) => console.log('Scene update:', JSON.parse(e.data))
+```
+
+## 📚 文檔
+
+- 📐 [架構文檔](docs/ARCHITECTURE.md) — 完整架構 + 設計決策
+- 📋 [API 規格](docs/API.md) — REST + WebSocket
+- 🛠️ [開發指南](docs/DEVELOPMENT.md) — 開發工作流
 - 📜 [變更日誌](docs/CHANGELOG.md)
 - 📑 [Schema 套件](docs/SCHEMAS/)
 - 🤖 [Prompt 模板](docs/PROMPTS/)
+- 🌍 [50 萬 Token World 填充指南](docs/WORLD_FILLING_GUIDE.md)
+- 🔍 [RAG Chunking Strategy](docs/RAG_CHUNKING_STRATEGY.md)
+- ☁️ [Cloudflare 部署指南](deploy/cloudflare/DEPLOY.md)
 
-## 開發進度
+## 🎮 Demo 玩法
 
-🚧 **Wave 1: 核心引擎**（3 個月計劃）
+1. **開瀏覽器**：`http://localhost:5173`
+2. **創建角色**：選擇「Rockseeker 家族嘅探子」（預設）
+3. **閱讀場景**：凡達林鎮嘅描述 + 4 個 vignette
+4. **揀選項**：每個 vignette 對應唔同故事方向
+5. **選態度**：每個 vignette 內 1-2 個 attitude
+6. **確認**：提交後 5-15 秒收到新場景（LLM 生成）or 立即（demo fallback）
+
+## 🏗️ 開發進度
+
+🚧 **Wave 1: 核心引擎** (Month 1-3 計劃)
 
 - [x] 項目初始化
-- [ ] Schema 套件（8 份）
-- [ ] LLM Prompt 模板（3 份 + few-shots）
-- [ ] 後端核心模組
-- [ ] D&D 5e 預設世界包
-- [ ] API 端點
-- [ ] Vue 3 前端
-- [ ] Docker 部署
-- [ ] MVP-B 驗收：單玩家 1 小時自由探索
+- [x] Schema 套件 (8 份)
+- [x] LLM Prompt 模板 (Scene Agent v2.0)
+- [x] Backend skeleton (FastAPI + WebSocket + DB)
+- [x] Frontend skeleton (Vue 3 + Pinia + WebSocket)
+- [x] 50 萬 Token World 範本 (25K 起步)
+- [x] Q6/Q7 hardened (三步 DB TX + in-memory inflight)
+- [x] Demo 數據 (Phandalin + Rockseeker starter)
+- [ ] 實作 LLM 整合（用 scenes_demo fallback）
+- [ ] 跑 RAG chunking + LanceDB index
+- [ ] 測試完整 1 小時自由探索 (MVP-B)
+- [ ] Vercel + Cloudflare 部署
+
+## 🎯 下一步
+
+1. **Clone 最新版**：`git pull`
+2. **填世界觀到 100K token**（用 `docs/WORLD_FILLING_GUIDE.md` 標準）
+3. **實作 RAG chunker**（按 `docs/RAG_CHUNKING_STRATEGY.md`）
+4. **測試 Scene Agent pipeline**（完整 1 輪）
+5. **Vercel + Cloudflare 部署**（按 `deploy/cloudflare/DEPLOY.md`）
 
 ## 授權
 
 MIT License — 詳見 [LICENSE](LICENSE)
-
-## 致謝
-
-- 預設世界觀基於 [D&D 5e SRD](https://dnd.wizards.com/resources/systems-reference-document)（OGL / CC）
-- 靈感來自 MUD / 文字冒險遊戲 / 劇本殺
-- 由 OpenClaw + MiniMax M3 + Qwen 2.5 共同驅動
+D&D 5e SRD 內容採用 OGL / CC 授權。
