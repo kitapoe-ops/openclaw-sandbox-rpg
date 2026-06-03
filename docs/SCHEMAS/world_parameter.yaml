@@ -1,0 +1,211 @@
+# ============================================
+# World Parameter Format v1.0
+# ============================================
+# Usage: Copy this file, rename to world_<your_world>.yaml
+#        Fill in all fields marked as [REQUIRED]
+# ============================================
+
+world_meta:
+  name: "[REQUIRED] World name"            # e.g., Forgotten Realms
+  version: "[REQUIRED] Version string"     # e.g., D&D_5e_v1.0
+  description: "[REQUIRED] One-line description"
+  author: "[REQUIRED] Author name"
+  created_at: "[REQUIRED] YYYY-MM-DD"
+  total_tokens_estimate: 0                  # [AUTO] Calculated by system
+
+# ============================================
+# 1. Eternal Layer (Immutable)
+# ============================================
+eternal:
+  physical_rules:
+    - "[REQUIRED] Rule 1: Magic requires MP expenditure"
+    - "[REQUIRED] Rule 2: Death is permanent (permadeath + soul transfer)"
+    - "[REQUIRED] Rule 3: Time flows 1:1 with real time"
+    # Add at least 3 rules
+
+  races:
+    - name: "[REQUIRED] Race name"
+      description: "[REQUIRED] Race description"
+      traits: ["[REQUIRED] Trait 1", "Trait 2"]
+    # Add at least 3 races
+
+  cultures:
+    - name: "[REQUIRED] Culture name"
+      values: ["[REQUIRED] Value 1", "Value 2"]
+    # Add at least 2 cultures
+
+# ============================================
+# 2. World Parameters (Dynamic Adjustment)
+# ============================================
+world_parameters:
+  - id: "[REQUIRED] Unique ID"              # e.g., hero_power
+    name: "[REQUIRED] Display name"         # e.g., Hero's Power
+    category: "[REQUIRED] Category"          # e.g., power / threat / economy
+    description: "[REQUIRED] Description"    # What this parameter measures
+    semantic_gradient:
+      - level: 0
+        label: "[REQUIRED] dormant"
+        description: "[REQUIRED] Dormant state"
+        prompt_for_llm: "[REQUIRED] Character feels no special power"
+      - level: 1
+        label: "[REQUIRED] awakening"
+        description: "[REQUIRED] Awakening state"
+        prompt_for_llm: "[REQUIRED] Character senses something stirring"
+      - level: 2
+        label: "[REQUIRED] present"
+        description: "[REQUIRED] Active state"
+        prompt_for_llm: "[REQUIRED] Character can use the power"
+      - level: 3
+        label: "[REQUIRED] overflowing"
+        description: "[REQUIRED] Overwhelming state"
+        prompt_for_llm: "[REQUIRED] Power is difficult to control"
+      - level: 4
+        label: "[REQUIRED] legendary"
+        description: "[REQUIRED] Legendary state"
+        prompt_for_llm: "[REQUIRED] Power rivals the gods"
+    initial_level: 0                         # [REQUIRED] Starting level
+    fluctuation_allowed: 0.15                # ±15%
+
+  # Add at least 3 world parameters
+
+# ============================================
+# 3. Attitude Dimensions
+# ============================================
+attitude_dimensions:
+  - id: "[REQUIRED] Dimension ID"            # e.g., caution
+    name: "[REQUIRED] Display name"          # e.g., Caution
+    description: "[REQUIRED] Description"    # What this dimension measures
+    levels:
+      - level: 0
+        label: "[REQUIRED] reckless"
+        prompt_for_llm: "[REQUIRED] Character acts recklessly"
+      - level: 1
+        label: "[REQUIRED] bold"
+        prompt_for_llm: "[REQUIRED] Character is bold but calculating"
+      - level: 2
+        label: "[REQUIRED] careful"
+        prompt_for_llm: "[REQUIRED] Character is cautious"
+      - level: 3
+        label: "[REQUIRED] timid"
+        prompt_for_llm: "[REQUIRED] Character is overly cautious"
+    # Add at least 4 levels
+
+  # Add at least 4 attitude dimensions
+
+# ============================================
+# 4. NPC Library
+# ============================================
+npcs:
+  - id: "[REQUIRED] Unique ID"               # e.g., npc_blacksmith_01
+    name: "[REQUIRED] Display name"           # e.g., Old Blacksmith
+    type: "[REQUIRED] narrative|functional"   # Narrative or Functional NPC
+    description: "[REQUIRED] Appearance + personality"
+    background: "[REQUIRED] Background story"
+    location: "[REQUIRED] Initial location ID"
+    stats:
+      stamina_level: "fresh"
+      health_level: "healthy"
+      morale_level: "neutral"
+    dialogue_hooks:
+      - "[REQUIRED] Topic 1"
+      - "Topic 2"
+
+  # Add at least 10 NPCs (5 narrative + 5 functional)
+
+# ============================================
+# 5. Item Library
+# ============================================
+items:
+  - id: "[REQUIRED] Unique ID"               # e.g., item_iron_dagger
+    name: "[REQUIRED] Display name"           # e.g., Iron Dagger
+    type: "[REQUIRED] weapon|armor|consumable|quest"
+    description: "[REQUIRED] Visual description"
+    interaction_patterns:
+      - "[REQUIRED] Interaction 1"            # e.g., melee attack
+      - "Interaction 2"                       # e.g., thrown
+    rarity: "[REQUIRED] common|uncommon|rare|legendary"
+
+  # Add at least 20 items
+
+# ============================================
+# 6. Location Library
+# ============================================
+locations:
+  - id: "[REQUIRED] Unique ID"               # e.g., loc_old_tavern
+    name: "[REQUIRED] Display name"           # e.g., Old Tavern
+    description: "[REQUIRED] Environment description"
+    connected_to:
+      - "[REQUIRED] loc_town_square"          # Connected locations
+    npcs_present: ["[REQUIRED] npc_id_1"]
+    items_present: ["[REQUIRED] item_id_1"]
+    atmosphere: "[REQUIRED] peaceful|tense|ominous|chaotic"
+
+  # Add at least 5 locations
+
+# ============================================
+# 7. Quest Templates
+# ============================================
+quests:
+  - id: "[REQUIRED] Unique ID"               # e.g., quest_find_sword
+    name: "[REQUIRED] Display name"           # e.g., Find the Lost Sword
+    type: "[REQUIRED] main|side"
+    description: "[REQUIRED] Background"
+    trigger_condition: "[REQUIRED] Trigger condition"
+    branching_points:
+      - branch_id: "[REQUIRED] act2_branch_A"
+        description: "[REQUIRED] Branching point description"
+        possible_outcomes:
+          - id: "A1"
+            description: "[REQUIRED] Outcome 1"
+            weight: 40
+            lead_to: "[REQUIRED] quest_next_phase"
+    # Add at least 2 branching points
+    endings:
+      - id: "[REQUIRED] ending_good"
+        condition: "[REQUIRED] Achievement condition"
+        description: "[REQUIRED] Ending description"
+
+# ============================================
+# 8. Semantic State Definitions
+# ============================================
+semantic_states:
+  stamina:
+    levels:
+      - {level: 0, label: "fresh", prompt: "[REQUIRED] Full of energy"}
+      - {level: 1, label: "slight_breath", prompt: "[REQUIRED] Slightly winded"}
+      - {level: 2, label: "muscle_ache", prompt: "[REQUIRED] Muscles aching"}
+      - {level: 3, label: "exhausted", prompt: "[REQUIRED] Completely drained"}
+      - {level: 4, label: "collapse", prompt: "[REQUIRED] Near collapse"}
+    transition_rules:
+      max_shift_per_round: 1                  # No skipping levels
+      safe_environment_bonus: 1               # Safe env allows -2
+
+  health:
+    levels: [...]                             # Same structure
+
+  morale:
+    levels: [...]                             # Same structure
+
+# ============================================
+# 9. Physics Lock Rules
+# ============================================
+physics_lock_rules:
+  forbidden_actions:
+    - state: "[REQUIRED] Broken legs"
+      forbidden: ["[REQUIRED] sprint", "jump", "climb"]
+    - state: "[REQUIRED] Broken arm"
+      forbidden: ["[REQUIRED] two-handed grip", "throw", "block"]
+    # Add at least 5 rules
+
+# ============================================
+# 10. Starter Characters
+# ============================================
+starter_characters:
+  - id: "char_starter_01"
+    name: "[REQUIRED] Character name"
+    description: "[REQUIRED] Background"
+    initial_location: "[REQUIRED] loc_id"
+    initial_inventory: ["[REQUIRED] item_id_1"]
+    starting_world_parameters:
+      hero_power: 0                           # dormant
+    # Add at least 3 starters

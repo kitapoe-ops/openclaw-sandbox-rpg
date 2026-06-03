@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  backend-test:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: sandbox_rpg_test
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test_user"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+
+      - name: Run tests
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_DB: sandbox_rpg_test
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+        run: |
+          cd backend
+          pytest tests/ -v --cov=. --cov-report=xml
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          file: backend/coverage.xml
+
+  frontend-build:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Type check
+        working-directory: frontend
+        run: npm run type-check
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
+  schema-validation:
+    name: Schema Validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install jsonschema
+        run: pip install jsonschema pyyaml
+
+      - name: Validate all schemas
+        run: |
+          python -c "
+          import json
+          import yaml
+          from jsonschema import validate
+          from pathlib import Path
+
+          schema_dir = Path('docs/SCHEMAS')
+          for schema_file in schema_dir.glob('*.json'):
+              print(f'Validating {schema_file.name}...')
+              with open(schema_file) as f:
+                  schema = json.load(f)
+              # Schema is valid if it can be loaded
+              print(f'  ✓ {schema_file.name} OK')
+          "

@@ -1,0 +1,173 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw-sandbox-rpg.dev/schemas/world_update.json",
+  "title": "World Update",
+  "description": "God Agent daily ETL world update output",
+  "type": "object",
+  "properties": {
+    "date": {
+      "type": "string",
+      "format": "date",
+      "description": "Date of this ETL run (in-game date)"
+    },
+    "world_id": {
+      "type": "string"
+    },
+    "etl_run_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "world_updates": {
+      "type": "object",
+      "description": "Updates to world parameters",
+      "properties": {
+        "parameter_changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {"type": "string"},
+              "old_level": {"type": "integer", "minimum": 0, "maximum": 4},
+              "new_level": {"type": "integer", "minimum": 0, "maximum": 4},
+              "reason": {"type": "string"}
+            },
+            "required": ["id", "old_level", "new_level", "reason"]
+          }
+        },
+        "new_events": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {"type": "string"},
+              "type": {
+                "type": "string",
+                "enum": ["npc_action", "world_event", "quest_trigger", "balancing", "seasonal"]
+              },
+              "description": {"type": "string"},
+              "affected_locations": {
+                "type": "array",
+                "items": {"type": "string"}
+              },
+              "affected_npcs": {
+                "type": "array",
+                "items": {"type": "string"}
+              }
+            },
+            "required": ["id", "type", "description"]
+          }
+        },
+        "balancing_actions": {
+          "type": "array",
+          "description": "Auto-balance actions when fluctuation > 15%",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {"type": "string"},
+              "affected_parameter": {"type": "string"},
+              "adjustment": {"type": "string"},
+              "reason": {"type": "string"}
+            },
+            "required": ["id", "affected_parameter", "adjustment", "reason"]
+          }
+        }
+      }
+    },
+    "lore_db_updates": {
+      "type": "object",
+      "description": "Updates to World Lore DB (newly discovered/created entities)",
+      "properties": {
+        "new_npcs": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/npc"}
+        },
+        "new_items": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/item"}
+        },
+        "new_locations": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/location"}
+        },
+        "new_quests": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/quest"}
+        }
+      }
+    },
+    "narrative_corrections": {
+      "type": "array",
+      "description": "Resolutions to player narrative conflicts",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "conflict_id": {"type": "string"},
+          "resolution": {"type": "string"},
+          "explanation": {"type": "string"},
+          "affected_characters": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        },
+        "required": ["id", "conflict_id", "resolution"]
+      }
+    },
+    "abandoned_quests": {
+      "type": "array",
+      "description": "Quests marked as abandoned (no progress for 14+ days)",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "days_inactive": {"type": "integer"},
+          "final_status": {"type": "string"},
+          "historical_record": {"type": "string"}
+        }
+      }
+    },
+    "summary": {
+      "type": "string",
+      "maxLength": 1000,
+      "description": "Daily world digest (≤1000 tokens)"
+    }
+  },
+  "required": ["date", "world_id", "etl_run_id"],
+  "definitions": {
+    "npc": {
+      "type": "object",
+      "properties": {
+        "id": {"type": "string"},
+        "name": {"type": "string"},
+        "type": {"type": "string"},
+        "description": {"type": "string"}
+      }
+    },
+    "item": {
+      "type": "object",
+      "properties": {
+        "id": {"type": "string"},
+        "name": {"type": "string"},
+        "type": {"type": "string"},
+        "description": {"type": "string"}
+      }
+    },
+    "location": {
+      "type": "object",
+      "properties": {
+        "id": {"type": "string"},
+        "name": {"type": "string"},
+        "description": {"type": "string"}
+      }
+    },
+    "quest": {
+      "type": "object",
+      "properties": {
+        "id": {"type": "string"},
+        "name": {"type": "string"},
+        "type": {"type": "string"},
+        "description": {"type": "string"}
+      }
+    }
+  }
+}

@@ -1,0 +1,90 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw-sandbox-rpg.dev/schemas/npc.json",
+  "title": "NPC",
+  "description": "NPC entity schema (narrative or functional)",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^npc_[a-z0-9_]+$",
+      "description": "Unique NPC ID"
+    },
+    "name": {
+      "type": "string",
+      "description": "Display name"
+    },
+    "type": {
+      "type": "string",
+      "enum": ["narrative", "functional"],
+      "description": "Narrative NPCs can be soul-transferred to; functional NPCs are system-controlled"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 50,
+      "maxLength": 2000,
+      "description": "Appearance, personality, mannerisms"
+    },
+    "background": {
+      "type": "string",
+      "minLength": 100,
+      "maxLength": 5000,
+      "description": "Full background story"
+    },
+    "location": {
+      "type": "string",
+      "description": "Current location ID"
+    },
+    "stats": {
+      "type": "object",
+      "description": "Initial semantic state",
+      "properties": {
+        "stamina_level": {
+          "type": "string",
+          "enum": ["fresh", "slight_breath", "muscle_ache", "exhausted", "collapse"]
+        },
+        "health_level": {"type": "string"},
+        "morale_level": {
+          "type": "string",
+          "enum": ["elated", "calm", "neutral", "anxious", "despair"]
+        }
+      }
+    },
+    "dialogue_hooks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string"},
+      "description": "Conversation topics this NPC can engage with"
+    },
+    "attitude_baseline": {
+      "type": "object",
+      "description": "Default attitude toward strangers",
+      "properties": {
+        "trust": {
+          "type": "string",
+          "enum": ["hostile", "wary", "neutral", "friendly", "trusting"]
+        },
+        "talkativeness": {
+          "type": "string",
+          "enum": ["silent", "reserved", "normal", "talkative", "verbose"]
+        }
+      }
+    },
+    "quests_offered": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Quest IDs this NPC can offer"
+    },
+    "tags": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Narrative tags (e.g., 'mysterious', 'corrupt', 'noble')"
+    },
+    "can_be_soul_transferred": {
+      "type": "boolean",
+      "default": true,
+      "description": "For narrative NPCs: can players take over this body?"
+    }
+  },
+  "required": ["id", "name", "type", "description", "background"]
+}

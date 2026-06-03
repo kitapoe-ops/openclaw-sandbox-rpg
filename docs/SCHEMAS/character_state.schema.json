@@ -1,0 +1,148 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw-sandbox-rpg.dev/schemas/character_state.json",
+  "title": "Character State",
+  "description": "Character real-time state (semantic labels, no numbers)",
+  "type": "object",
+  "properties": {
+    "character_id": {
+      "type": "string",
+      "description": "Unique character ID"
+    },
+    "name": {
+      "type": "string",
+      "description": "Character display name"
+    },
+    "world_id": {
+      "type": "string",
+      "description": "World this character belongs to"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "physical": {
+      "type": "object",
+      "description": "Physical state",
+      "properties": {
+        "stamina_level": {
+          "type": "string",
+          "enum": ["fresh", "slight_breath", "muscle_ache", "exhausted", "collapse"],
+          "description": "Current stamina semantic level"
+        },
+        "stamina_context": {
+          "type": "string",
+          "description": "Context for current stamina (e.g., long_march, post_combat)"
+        },
+        "stamina_duration": {
+          "type": "string",
+          "description": "How long the character has been in this state"
+        },
+        "health_status": {
+          "type": "string",
+          "description": "Health status tags (can be compound)"
+        },
+        "active_effects": {
+          "type": "array",
+          "items": {"type": "string"},
+          "maxItems": 8,
+          "description": "Currently active status tags (max 8)"
+        }
+      },
+      "required": ["stamina_level", "health_status"]
+    },
+    "mental": {
+      "type": "object",
+      "description": "Mental state",
+      "properties": {
+        "morale_level": {
+          "type": "string",
+          "enum": ["elated", "calm", "neutral", "anxious", "despair"]
+        },
+        "alertness_level": {
+          "type": "string",
+          "enum": ["sharp", "focused", "neutral", "distracted", "dazed"]
+        },
+        "emotional_state": {
+          "type": "string",
+          "description": "Free-form emotional descriptor"
+        }
+      }
+    },
+    "attitude": {
+      "type": "object",
+      "description": "Current attitude dimension combination (dimension -> level)",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "inventory": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "item_id": {"type": "string"},
+              "quantity": {"type": "integer", "minimum": 1}
+            },
+            "required": ["item_id", "quantity"]
+          }
+        },
+        "equipment": {
+          "type": "object",
+          "properties": {
+            "weapon": {"type": "string"},
+            "armor": {"type": "string"},
+            "accessory_1": {"type": "string"},
+            "accessory_2": {"type": "string"}
+          }
+        },
+        "carrying_weight": {
+          "type": "string",
+          "enum": ["light", "medium", "heavy", "overloaded"]
+        }
+      }
+    },
+    "memories": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Memory entries the character has unlocked"
+    },
+    "relationships": {
+      "type": "object",
+      "description": "NPC relationship map (npc_id -> relationship_level)",
+      "additionalProperties": {
+        "type": "string",
+        "enum": ["hostile", "wary", "neutral", "friendly", "trusted", "devoted"]
+      }
+    },
+    "current_location": {
+      "type": "string",
+      "description": "Current location ID"
+    },
+    "anomaly_snapshot": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Anomaly tags from soul transfer (if any)"
+    },
+    "soul_transfer_history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "from_character_id": {"type": "string"},
+          "to_character_id": {"type": "string"},
+          "transferred_at": {"type": "string", "format": "date-time"},
+          "memory_preservation_rate": {"type": "number", "minimum": 0, "maximum": 1}
+        }
+      }
+    }
+  },
+  "required": ["character_id", "name", "world_id", "physical", "mental"]
+}

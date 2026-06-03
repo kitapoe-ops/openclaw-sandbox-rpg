@@ -1,0 +1,107 @@
+version: '3.9'
+
+# ============================================
+# OpenClaw Sandbox RPG - Docker Compose
+# ============================================
+# Usage:
+#   docker-compose up -d          # Start all services
+#   docker-compose down           # Stop all services
+#   docker-compose logs -f backend  # View backend logs
+#   docker-compose ps             # Check service status
+# ============================================
+
+services:
+  # ==========================================
+  # PostgreSQL Database
+  # ==========================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: sandbox-rpg-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sandbox_rpg}
+      POSTGRES_USER: ${POSTGRES_USER:-rpg_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./deploy/scripts/init_db.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rpg_user} -d ${POSTGRES_DB:-sandbox_rpg}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sandbox-rpg-net
+
+  # ==========================================
+  # Backend API (FastAPI)
+  # ==========================================
+  backend:
+    build:
+      context: .
+      dockerfile: deploy/docker/backend.Dockerfile
+    container_name: sandbox-rpg-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-sandbox_rpg}
+      POSTGRES_USER: ${POSTGRES_USER:-rpg_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_password}
+      BACKEND_HOST: 0.0.0.0
+      BACKEND_PORT: 8000
+      LLM_CLOUD_API_KEY: ${LLM_CLOUD_API_KEY}
+      LLM_LOCAL_BASE_URL: ${LLM_LOCAL_BASE_URL}
+      LANCEDB_URI: /app/lancedb_data
+    volumes:
+      - lancedb_data:/app/lancedb_data
+      - ./logs:/app/logs
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - sandbox-rpg-net
+
+  # ==========================================
+  # Frontend (Vue 3 + Vite)
+  # ==========================================
+  frontend:
+    build:
+      context: .
+      dockerfile: deploy/docker/frontend.Dockerfile
+    container_name: sandbox-rpg-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      VITE_API_BASE_URL: http://localhost:${BACKEND_PORT:-8000}
+      VITE_WS_BASE_URL: ws://localhost:${BACKEND_PORT:-8000}
+    ports:
+      - "5173:5173"
+    networks:
+      - sandbox-rpg-net
+
+# ==========================================
+# Volumes
+# ==========================================
+volumes:
+  postgres_data:
+    driver: local
+  lancedb_data:
+    driver: local
+
+# ==========================================
+# Networks
+# ==========================================
+networks:
+  sandbox-rpg-net:
+    driver: bridge

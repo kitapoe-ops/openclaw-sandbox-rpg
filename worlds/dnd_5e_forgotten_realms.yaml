@@ -1,0 +1,29 @@
+# ============================================
+# D&D 5e Forgotten Realms - Default World
+# ============================================
+# TODO: Fill in this file following docs/SCHEMAS/world_parameter.yaml
+#
+# This is the starter world for OpenClaw Sandbox RPG.
+# Uses D&D 5e SRD content (OGL/CC licensed).
+#
+# Recommended fields to start with:
+# 1. world_meta (name, version, description)
+# 2. eternal.physical_rules (3-5 rules)
+# 3. world_parameters (3-5 parameters, 5 levels each)
+# 4. attitude_dimensions (4-5 dimensions)
+# 5. npcs (5 narrative + 5 functional = 10 minimum)
+# 6. items (20+ items)
+# 7. locations (5+ locations)
+# 8. quests (1 main + 2 side)
+# 9. starter_characters (3 characters)
+# ============================================
+
+world_meta:
+  name: "[TODO] Forgotten Realms"
+  version: "[TODO] D&D_5e_v1.0"
+  description: "[TODO] The Forgotten Realms - sword and sorcery"
+  author: "[TODO] Your name"
+  created_at: "[TODO] 2026-06-03"
+  total_tokens_estimate: 0
+
+# Add your world content here...

@@ -1,0 +1,32 @@
+{
+  "name": "openclaw-sandbox-rpg-frontend",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Frontend for OpenClaw Sandbox RPG",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc && vite build",
+    "preview": "vite preview",
+    "lint": "eslint . --ext .vue,.ts,.tsx --fix",
+    "test": "vitest",
+    "type-check": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "vue": "^3.4.21",
+    "vue-router": "^4.3.0",
+    "pinia": "^2.1.7",
+    "axios": "^1.6.8",
+    "@vueuse/core": "^10.9.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.4",
+    "typescript": "^5.4.2",
+    "vite": "^5.2.0",
+    "vue-tsc": "^2.0.6",
+    "@types/node": "^20.11.30",
+    "eslint": "^8.57.0",
+    "@vue/eslint-config-typescript": "^13.0.0",
+    "vitest": "^1.4.0",
+    "@vue/test-utils": "^2.4.5"
+  }
+}

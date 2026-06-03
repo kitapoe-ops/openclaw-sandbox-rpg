@@ -1,0 +1,146 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw-sandbox-rpg.dev/schemas/scene_output.json",
+  "title": "Scene Agent Output",
+  "description": "Output from Scene Agent for each round",
+  "type": "object",
+  "properties": {
+    "round": {
+      "type": "integer",
+      "description": "Round number this output corresponds to"
+    },
+    "character_id": {
+      "type": "string"
+    },
+    "narrative": {
+      "type": "string",
+      "minLength": 200,
+      "maxLength": 2000,
+      "description": "Scene narrative (200-2000 characters)"
+    },
+    "state_changes": {
+      "type": "object",
+      "description": "Character state changes from this round",
+      "properties": {
+        "stamina": {
+          "type": "object",
+          "properties": {
+            "old": {"type": "string"},
+            "new": {"type": "string"},
+            "reason": {"type": "string"}
+          }
+        },
+        "health": {
+          "type": "object",
+          "properties": {
+            "old": {"type": "string"},
+            "new": {"type": "string"},
+            "reason": {"type": "string"}
+          }
+        },
+        "morale": {
+          "type": "object",
+          "properties": {
+            "old": {"type": "string"},
+            "new": {"type": "string"},
+            "reason": {"type": "string"}
+          }
+        },
+        "items_consumed": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "item_id": {"type": "string"},
+              "quantity": {"type": "integer"}
+            }
+          }
+        },
+        "new_memories": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "relationship_changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "npc_id": {"type": "string"},
+              "old": {"type": "string"},
+              "new": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    "choices": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "description": "Exactly 4 neutral choices for next round",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "lore_source": {
+            "type": "string",
+            "description": "Source from World Lore DB (item:npc_id, location:id, etc.)"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 60,
+            "description": "Choice text (10-60 characters, no obvious risk/reward terms)"
+          },
+          "intent_category": {
+            "type": "string",
+            "enum": ["item_interaction", "npc_interaction", "environment", "delay"]
+          },
+          "attitude_options": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 4,
+            "items": {
+              "type": "object",
+              "properties": {
+                "dimension": {"type": "string"},
+                "level": {"type": "string"},
+                "effect": {
+                  "type": "string",
+                  "description": "Brief effect description"
+                }
+              },
+              "required": ["dimension", "level"]
+            }
+          }
+        },
+        "required": ["id", "text", "intent_category", "attitude_options"]
+      }
+    },
+    "minor_event": {
+      "type": "object",
+      "description": "Sub-agent triggered minor event",
+      "properties": {
+        "id": {"type": "string"},
+        "description": {"type": "string"},
+        "narrative_impact": {
+          "type": "string",
+          "enum": ["none", "subtle"]
+        }
+      }
+    },
+    "physics_lock_violations": {
+      "type": "array",
+      "description": "Choices rejected by physics lock (should be empty in healthy system)",
+      "items": {
+        "type": "object",
+        "properties": {
+          "original_text": {"type": "string"},
+          "rewritten_text": {"type": "string"},
+          "reason": {"type": "string"}
+        }
+      }
+    }
+  },
+  "required": ["round", "character_id", "narrative", "choices"]
+}

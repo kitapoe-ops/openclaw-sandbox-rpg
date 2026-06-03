@@ -1,0 +1,111 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw-sandbox-rpg.dev/schemas/quest.json",
+  "title": "Quest",
+  "description": "Quest template with branching points",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^quest_[a-z0-9_]+$",
+      "description": "Unique quest ID"
+    },
+    "name": {
+      "type": "string",
+      "description": "Display name"
+    },
+    "type": {
+      "type": "string",
+      "enum": ["main", "side", "dynamic", "event"]
+    },
+    "description": {
+      "type": "string",
+      "minLength": 100,
+      "maxLength": 3000,
+      "description": "Background and premise"
+    },
+    "trigger_condition": {
+      "type": "string",
+      "description": "Conditions for quest to become available"
+    },
+    "npcs_involved": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "NPC IDs central to this quest"
+    },
+    "locations_involved": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "branching_points": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "branch_id": {"type": "string"},
+          "act": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "description": {"type": "string"},
+          "trigger": {
+            "type": "string",
+            "description": "When does this branch activate?"
+          },
+          "possible_outcomes": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {"type": "string"},
+                "description": {"type": "string"},
+                "weight": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "lead_to": {
+                  "type": "string",
+                  "description": "Next branch_id or 'ending'"
+                },
+                "world_state_changes": {
+                  "type": "array",
+                  "items": {"type": "string"}
+                }
+              },
+              "required": ["id", "description", "weight", "lead_to"]
+            }
+          }
+        },
+        "required": ["branch_id", "description", "possible_outcomes"]
+      }
+    },
+    "endings": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "name": {"type": "string"},
+          "condition": {"type": "string"},
+          "description": {"type": "string"},
+          "epilogue": {"type": "string"}
+        },
+        "required": ["id", "name", "description"]
+      }
+    },
+    "estimated_rounds": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Estimated rounds to complete"
+    },
+    "tags": {
+      "type": "array",
+      "items": {"type": "string"}
+    }
+  },
+  "required": ["id", "name", "type", "description", "branching_points", "endings"]
+}

@@ -1,0 +1,59 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://openclaw-sandbox-rpg.dev/schemas/location.json",
+  "title": "Location",
+  "description": "Location / scene schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^loc_[a-z0-9_]+$",
+      "description": "Unique location ID"
+    },
+    "name": {
+      "type": "string",
+      "description": "Display name"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 50,
+      "maxLength": 2000,
+      "description": "Environment description"
+    },
+    "connected_to": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Adjacent location IDs"
+    },
+    "npcs_present": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Default NPC IDs at this location"
+    },
+    "items_present": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Default item IDs at this location"
+    },
+    "atmosphere": {
+      "type": "string",
+      "enum": ["peaceful", "tense", "ominous", "chaotic", "mysterious", "sacred"]
+    },
+    "tags": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "e.g., 'indoor', 'outdoor', 'safe_zone', 'danger_zone'"
+    },
+    "ambient_sounds": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Sub-agent minor event seeds (e.g., 'wind howling', 'crowd chatter')"
+    },
+    "first_visit_narrative": {
+      "type": "string",
+      "maxLength": 1500,
+      "description": "Special narrative for first visit"
+    }
+  },
+  "required": ["id", "name", "description", "atmosphere"]
+}
