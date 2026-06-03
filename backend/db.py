@@ -1,135 +1,140 @@
 """
-Database Session Layer (Stub v3.2)
-====================================
+Database Session Layer (v3.5 — real SQLAlchemy 2.0 async)
+==========================================================
 Implements the API contract for Q6 three-step decoupled transactions.
 
-Key design:
-- Each method opens its own short transaction
-- context manager: `async with db.transaction():` for atomic multi-table writes
-- Connection pool is NEVER held during LLM calls
-
-TODO: Implement with SQLAlchemy 2.0 async
+Uses SQLAlchemy 2.0 async + asyncpg.
+Connection string built from POSTGRES_* env vars (matches .env.example).
 """
-from typing import Optional, Dict, Any, List
-from datetime import datetime
+import os
 import logging
+from contextlib import asynccontextmanager
+from typing import Optional, Dict, Any, AsyncIterator
+from datetime import datetime
+
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.orm import declarative_base
+from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 
 
-class DatabaseSession:
-    """Async database session wrapper."""
-
-    def __init__(self):
-        self._session = None
-
-    # ============================================
-    # Reads (short transactions)
-    # ============================================
-
-    async def get_character_state(self, character_id: str) -> Optional[Dict[str, Any]]:
-        """Fetch character state. Short transaction, returns immediately."""
-        # TODO: Implement
-        # SELECT * FROM character_states WHERE character_id = ?
-        raise NotImplementedError("TODO: Implement")
-
-    async def get_action_status(self, action_id: str) -> Optional[str]:
-        """Get just the execution_status of an action (lightweight check)."""
-        # TODO: Implement
-        # SELECT execution_status FROM action_history WHERE id = ?
-        raise NotImplementedError("TODO: Implement")
-
-    # ============================================
-    # Writes — each is its own short transaction
-    # ============================================
-
-    async def create_action_history(
-        self,
-        character_id: str,
-        scene_id: str,
-        round_number: int,
-        player_choice: dict,
-        execution_status: str = "PENDING",
-    ) -> str:
-        """Insert PENDING action. Short transaction, auto-commit, return action_id."""
-        # TODO: Implement
-        # INSERT INTO action_history (...) VALUES (...); COMMIT
-        raise NotImplementedError("TODO: Implement")
-
-    async def update_action_history(
-        self,
-        action_id: str,
-        execution_status: Optional[str] = None,
-        started_at: Optional[datetime] = None,
-        completed_at: Optional[datetime] = None,
-        llm_narrative_output: Optional[str] = None,
-        llm_choices_output: Optional[dict] = None,
-        llm_state_changes: Optional[dict] = None,
-        error_message: Optional[str] = None,
-    ) -> None:
-        """Update action_history. Short transaction, auto-commit."""
-        # TODO: Implement dynamic UPDATE
-        raise NotImplementedError("TODO: Implement")
-
-    # ============================================
-    # Atomic multi-table writes (long transactions)
-    # ============================================
-
-    async def transaction(self):
-        """
-        Context manager for atomic multi-table writes.
-        Use for Q6 STEP 3 (write LLM result).
-
-        Usage:
-            async with db.transaction():
-                await db.update_action_history(...)
-                await db.apply_state_changes(...)
-                # If any raises, all roll back
-        """
-        # TODO: Implement context manager
-        raise NotImplementedError("TODO: Implement")
-
-    async def apply_state_changes(
-        self,
-        character_id: str,
-        state_changes: dict,
-    ) -> None:
-        """Apply state_changes to character_states.semantic_profile."""
-        # TODO: Implement (uses SemanticGradient rules)
-        raise NotImplementedError("TODO: Implement")
-
-    async def update_character_scene(
-        self,
-        character_id: str,
-        new_scene_id: str,
-    ) -> None:
-        """Update current_scene_id."""
-        # TODO: Implement
-        raise NotImplementedError("TODO: Implement")
-
-    async def apply_world_parameter_changes(
-        self,
-        changes: dict,
-    ) -> None:
-        """Apply world parameter level changes (subject to ±15% monitoring)."""
-        # TODO: Implement
-        raise NotImplementedError("TODO: Implement")
-
-    # ============================================
-    # Startup recovery
-    # ============================================
-
-    async def recover_interrupted_actions(self) -> int:
-        """Called on FastAPI startup. Mark zombie PENDING/PROCESSING as INTERRUPTED."""
-        # TODO: Implement via SQL function
-        raise NotImplementedError("TODO: Implement")
-
-    async def close(self):
-        """Close the session and release the DB connection back to the pool."""
-        # TODO: Implement
-        pass
+# ============================================
+# Build connection URL from POSTGRES_* env vars
+# ============================================
+def _build_database_url() -> str:
+    host = os.getenv("POSTGRES_HOST", "localhost")
+    port = os.getenv("POSTGRES_PORT", "5432")
+    db = os.getenv("POSTGRES_DB", "sandbox_rpg")
+    user = os.getenv("POSTGRES_USER", "rpg_user")
+    password = os.getenv("POSTGRES_PASSWORD", "dev_password")
+    return f"postgresql+asyncpg://{user}:{password}@{host}:{port}/{db}"
 
 
-def get_db_session() -> DatabaseSession:
-    """Factory function for database sessions."""
-    return DatabaseSession()
+DATABASE_URL = _build_database_url()
+
+# ============================================
+# Engine + Session factory
+# ============================================
+engine = create_async_engine(
+    DATABASE_URL,
+    echo=False,
+    pool_size=10,
+    max_overflow=20,
+    pool_pre_ping=True,  # Avoid zombie connections
+    pool_recycle=300,    # Recycle connections every 5 min
+)
+
+AsyncSessionLocal = async_sessionmaker(
+    bind=engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
+
+Base = declarative_base()
+
+
+# ============================================
+# Context managers for Q6 transaction control
+# ============================================
+@asynccontextmanager
+async def get_db_session() -> AsyncIterator[AsyncSession]:
+    """
+    Short transaction context manager.
+    Use for SINGLE-TABLE writes (Q6 Step 1: write PENDING, Q6 Step 4: status updates).
+
+    Auto-commits on success, auto-rollbacks on exception.
+    """
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
+
+
+@asynccontextmanager
+async def transaction() -> AsyncIterator[AsyncSession]:
+    """
+    Long transaction context manager.
+    Use for MULTI-TABLE atomic writes (Q6 Step 3: write LLM result).
+
+    Caller must commit explicitly OR let exception trigger rollback.
+    All writes within the block are atomic.
+    """
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+            # Caller decides when to commit
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
+
+
+# ============================================
+# Schema (placeholder — load from schema.sql on startup)
+# ============================================
+async def init_db():
+    """
+    Create all tables on startup.
+    In production, use Alembic migrations instead.
+    """
+    # Import models to register them with Base
+    from . import models  # noqa: F401
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    logger.info("Database tables created (or already exist)")
+
+
+# ============================================
+# Convenience functions (used by game_socket.py)
+# ============================================
+async def execute_query(query: str, params: dict = None) -> list:
+    """Execute a raw SQL query and return results as list of dicts."""
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(text(query), params or {})
+        return [dict(row._mapping) for row in result]
+
+
+async def execute_scalar(query: str, params: dict = None) -> Any:
+    """Execute a query and return the first scalar value."""
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(text(query), params or {})
+        return result.scalar()
+
+
+# TODO: Implement high-level methods that game_socket.py expects:
+# - get_character_state(character_id)
+# - get_action_status(action_id)
+# - create_action_history(...)
+# - update_action_history(...)
+# - apply_state_changes(character_id, state_changes)
+# - update_character_scene(character_id, new_scene_id)
+# - apply_world_parameter_changes(changes)
+# - get_latest_action(character_id)
+# - recover_interrupted_actions()

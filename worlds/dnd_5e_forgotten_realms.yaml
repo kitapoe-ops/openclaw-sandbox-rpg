@@ -1,29 +1,852 @@
 # ============================================
-# D&D 5e Forgotten Realms - Default World
+# D&D 5e Forgotten Realms — Phandalin Region
+# 50 萬 Token 高密度世界觀填充範本
 # ============================================
-# TODO: Fill in this file following docs/SCHEMAS/world_parameter.yaml
-#
-# This is the starter world for OpenClaw Sandbox RPG.
-# Uses D&D 5e SRD content (OGL/CC licensed).
-#
-# Recommended fields to start with:
-# 1. world_meta (name, version, description)
-# 2. eternal.physical_rules (3-5 rules)
-# 3. world_parameters (3-5 parameters, 5 levels each)
-# 4. attitude_dimensions (4-5 dimensions)
-# 5. npcs (5 narrative + 5 functional = 10 minimum)
-# 6. items (20+ items)
-# 7. locations (5+ locations)
-# 8. quests (1 main + 2 side)
-# 9. starter_characters (3 characters)
+# 這個 YAML 展示點樣填到深 — 每個 section 都
+# 預咗 1000-10000 token 嘅內容。
+# 全部 YAML 加埋應該接近 50 萬 token。
+# 然後被 LanceDB chunk 化做 RAG。
 # ============================================
 
 world_meta:
-  name: "[TODO] Forgotten Realms"
-  version: "[TODO] D&D_5e_v1.0"
-  description: "[TODO] The Forgotten Realms - sword and sorcery"
-  author: "[TODO] Your name"
-  created_at: "[TODO] 2026-06-03"
-  total_tokens_estimate: 0
+  id: "dnd_5e_forgotten_realms_phandalin"
+  name: "被遺忘嘅國度 — 凡達林地區 (Forgotten Realms — Phandalin)"
+  version: "D&D_5e_SRD_v5.1.0"
+  description: |
+    費倫大陸 (Faerun) 嘅劍灣 (Sword Coast) 邊緣，一個咩都冇嘅偏遠
+    開拓小鎮，30 年前嘅戰爭仲未完全恢復。最近受到紅印幫 (Redbrands)
+    嘅匪徒活動威脅，附近有地精、巨魔同神秘嘅「失落礦坑」連住
+    更深嘅謎團。呢度係 D&D 5e 經典模組「凡達林礦坑 (Phandelver
+    and Below)」嘅設定起點，適合 4-6 個 level 1 冒險者開始佢哋嘅旅程。
+  author: "OpenClaw Project"
+  created_at: "2026-06-03"
+  total_tokens_estimate: 500000   # 目標
 
-# Add your world content here...
+# ============================================
+# 永恆層 (Eternal) — 5 萬 token
+# 物理 / 魔法 / 社會規則，永不改變
+# ============================================
+eternal:
+  physical_rules:
+    - "魔法需要消耗施法者嘅精神力（用 [精神力耗竭] semantic state 追蹤）"
+    - "死亡係永久嘅（觸發靈魂轉移至預載 NPC，70% 記憶保留）"
+    - "時間流逝 1:1 對應現實時間（無加速 / 暫停）"
+    - "物理定律遵循物質世界常理（重力、摩擦、能量守恆）"
+    - "鋒利嘅武器可以斬血肉，鈍器可以敲骨頭，毒素可以慢慢殺人"
+    - "飢餓、脫水、疲勞都會用 semantic state 反映，唔用數字"
+    - "金屬會生鏽、布料會撕裂、食物會腐壞 — 時間對物質有影響"
+
+  magic_rules:
+    - "魔法係一種可以被學習、控制嘅力量，但有代價"
+    - "高階魔法需要對應嘅 semantic state（如 [法力充沛]）"
+    - "Wild Magic Surge：在具有 [高魔力殘留] 嘅區域施法，會觸發不可控嘅環境變異"
+    - "魔法物品需要 [attunement] 標籤，每件物品需要特定嘅使用者背景"
+    - "神術需要神祇信仰，無信仰嘅人施神術會觸發 [神術反噬] 標籤"
+    - "死靈法術喺大多數地區係禁忌，會導致 [社會排斥] 同 NPC 敵意"
+
+  social_rules:
+    - "種族之間有歷史恩怨（矮人 vs 哥布林、精靈 vs 獸人）"
+    - "法律由當地領主執行，正義未必得到伸張"
+    - "金幣係通用貨幣，但偏遠地區以物易物常見"
+    - "聲望係累積嘅，要靠任務、戰鬥、社交建立"
+    - "謊言同欺騙需要 [欺瞞] 標籤支持，唔同 NPC 嘅洞察力有高有低"
+    - "盟友關係有程度：陌生 → 認識 → 友善 → 信任 → 至交"
+    - "敵對關係有程度：陌生 → 警覺 → 敵意 → 仇恨 → 死仇"
+
+# ============================================
+# 世界參數 (World Parameters) — 5 萬 token
+# 每個 5 級 semantic gradient + 觸發條件
+# ============================================
+world_parameters:
+  # 1. 紅印幫威脅
+  - id: "redbrand_threat"
+    name: "紅印幫威脅"
+    category: "threat"
+    description: "凡達林鎮上紅印幫匪徒嘅活動程度"
+    semantic_gradient:
+      - level: 0
+        label: "absent"
+        description: "完全冇紅印幫活動痕跡"
+        prompt_for_llm: "凡達林係一個和平嘅開拓小鎮，街上偶爾有旅客經過。"
+      - level: 1
+        label: "rumors"
+        description: "有零星傳聞話有紅印幫成員喺附近出沒"
+        prompt_for_llm: "鎮上偶爾有人低聲討論紅印幫嘅事，鎮長似乎想隱瞞。"
+      - level: 2
+        label: "presence"
+        description: "紅印幫公開喺鎮上巡邏"
+        prompt_for_llm: "街上可以見到戴紅色頭巾嘅武裝人員，居民都噤聲迴避。"
+      - level: 3
+        label: "control"
+        description: "紅印幫實質控制凡達林"
+        prompt_for_llm: "鎮長辦公室被紅印幫佔領，居民要偷偷摸摸先敢反抗。"
+      - level: 4
+        label: "occupation"
+        description: "凡達林完全淪陷，紅印幫係事實上嘅統治者"
+        prompt_for_llm: "凡達林已經變成匪徒嘅堡壘，正義完全消失。"
+    initial_level: 2
+    fluctuation_allowed: 0.15
+    trigger_events:
+      level_0_to_1: "玩家開始主線任務（救出 Gundren）"
+      level_2_to_1: "玩家成功擊退 Tresendar Manor 嘅紅印幫領袖"
+      level_1_to_0: "玩家清除所有紅印幫成員"
+
+  # 2. 失落礦坑發現程度
+  - id: "lost_mines_progress"
+    name: "失落礦坑發現程度"
+    category: "discovery"
+    description: "玩家對失落礦坑嘅探索進度"
+    semantic_gradient:
+      - level: 0
+        label: "unknown"
+        description: "冇人知道失落礦坑嘅存在"
+        prompt_for_llm: "呢度只有普通嘅小鎮生活。"
+      - level: 1
+        label: "hinted"
+        description: "有人知道礦坑嘅存在但未探索"
+        prompt_for_llm: "矮人 Gundren 嘅地圖引起咗冒險者嘅興趣。"
+      - level: 2
+        label: "located"
+        description: "已經搵到礦坑入口"
+        prompt_for_llm: "失落礦坑嘅入口被發現，裡面似乎有古老嘅痕跡。"
+      - level: 3
+        label: "explored"
+        description: "已經探索礦坑嘅淺層"
+        prompt_for_llm: "礦坑嘅上層已被探索，發現咗蛛絲馬跡嘅更深處。"
+      - level: 4
+        label: "conquered"
+        description: "失落礦坑已被完全探索，黑暗被驅散"
+        prompt_for_llm: "失落礦坑嘅秘密被揭曉，光明重新照耀凡達林。"
+    initial_level: 0
+    fluctuation_allowed: 0.15
+
+  # 3. 魔法殘留程度
+  - id: "arcane_disturbance"
+    name: "魔法殘留程度"
+    category: "magic"
+    description: "環境中嘅魔法異常程度"
+    semantic_gradient:
+      - level: 0
+        label: "calm"
+        description: "魔法完全穩定"
+        prompt_for_llm: "魔法係一種稀有而珍貴嘅力量，需要大師級施法者先用到。"
+      - level: 1
+        label: "ripples"
+        description: "有微弱嘅魔法波動"
+        prompt_for_llm: "偶爾有人聲稱見到魔法物品發光，但難以證實。"
+      - level: 2
+        label: "surge"
+        description: "魔法開始唔穩定"
+        prompt_for_llm: "施法者發現佢哋嘅法術偶爾會失控，造成不可預期嘅效果。"
+      - level: 3
+        label: "wild"
+        description: "Wild Magic Surge 變得常見"
+        prompt_for_llm: "任何法術都可能引發戲劇性嘅環境變異。"
+      - level: 4
+        label: "apocalyptic"
+        description: "魔法失控威脅世界"
+        prompt_for_llm: "天空被魔法能量撕裂，現實嘅法則開始崩潰。"
+    initial_level: 1
+    fluctuation_allowed: 0.15
+
+  # ... (再加 7 個 world_parameters，總共 10-15 個)
+
+# ============================================
+# 態度維度 (Attitude Dimensions) — 2 萬 token
+# 5 個維度，每個 4-5 級
+# ============================================
+attitude_dimensions:
+  - id: "caution"
+    name: "謹慎度"
+    description: "玩家面對風險嘅態度"
+    levels:
+      - level: 0
+        label: "reckless"
+        prompt_for_llm: "角色行為魯莽，唔理後果，會直接衝入未知。"
+      - level: 1
+        label: "bold"
+        prompt_for_llm: "角色行為大膽但有計算，會承擔可控嘅風險。"
+      - level: 2
+        label: "careful"
+        prompt_for_llm: "角色謹慎，會先評估再行動。"
+      - level: 3
+        label: "timid"
+        prompt_for_llm: "角色過度謹慎，可能錯過重要線索。"
+
+  - id: "empathy"
+    name: "同理心"
+    description: "玩家對他人嘅關懷程度"
+    levels:
+      - level: 0
+        label: "ruthless"
+        prompt_for_llm: "角色對他人嘅痛苦冷漠，會犧牲弱者換取目標。"
+      - level: 1
+        label: "pragmatic"
+        prompt_for_llm: "角色以目標優先，但唔會無必要咁殘忍。"
+      - level: 2
+        label: "compassionate"
+        prompt_for_llm: "角色會主動關懷弱者，願意承擔風險幫人。"
+      - level: 3
+        label: "selfless"
+        prompt_for_llm: "角色將他人福祉置於自己之上，會自我犧牲。"
+
+  - id: "honor"
+    name: "榮譽感"
+    description: "玩家對承諾、誠實嘅重視"
+    levels:
+      - level: 0
+        label: "deceitful"
+        prompt_for_llm: "角色慣於撒謊，會利用他人信任。"
+      - level: 1
+        label: "flexible"
+        prompt_for_llm: "角色會視乎情況決定是否誠實。"
+      - level: 2
+        label: "honest"
+        prompt_for_llm: "角色堅持誠實，但唔會無必要揭露所有事。"
+      - level: 3
+        label: "righteous"
+        prompt_for_llm: "角色將榮譽置於生命之上。"
+
+  - id: "curiosity"
+    name: "好奇心"
+    description: "玩家對未知嘅追求程度"
+    levels:
+      - level: 0
+        label: "indifferent"
+        prompt_for_llm: "角色對未知冇興趣，只專注當下。"
+      - level: 1
+        label: "practical"
+        prompt_for_llm: "角色只喺有用嘅時候先探索未知。"
+      - level: 2
+        label: "curious"
+        prompt_for_llm: "角色熱衷於發現新事物，願意冒險探索。"
+      - level: 3
+        label: "obsessed"
+        prompt_for_llm: "角色為咗知識不惜一切，可能忽略自身安全。"
+
+  - id: "violence"
+    name: "暴力傾向"
+    description: "玩家用暴力解決問題嘅傾向"
+    levels:
+      - level: 0
+        label: "pacifist"
+        prompt_for_llm: "角色拒絕使用暴力，會嘗試所有非暴力方法。"
+      - level: 1
+        label: "defensive"
+        prompt_for_llm: "角色只喺被攻擊或自衛時使用暴力。"
+      - level: 2
+        label: "balanced"
+        prompt_for_llm: "角色視乎情況決定是否使用暴力。"
+      - level: 3
+        label: "aggressive"
+        prompt_for_llm: "角色傾向用暴力解決衝突，會主動挑戰敵人。"
+
+# ============================================
+# 種族 × 文化 (Races × Cultures) — 8 萬 token
+# 每個 2000-5000 token
+# ============================================
+races:
+  - name: "Human 人類"
+    description: |
+      費倫大陸最多元嘅種族，適應力強，壽命短但繁殖快。
+      唔同地區嘅人類有唔同嘅文化、信仰、政治體系。
+      劍灣嘅人類主要係開拓者、商人、漁民、盜賊。
+    traits:
+      - "適應力強：可適應任何環境、氣候、文化"
+      - "野心勃勃：渴望權力、財富、知識"
+      - "短命但豐富：~80 年壽命，會更積極追求目標"
+      - "多元文化：可屬於任何宗教、職業、政治陣營"
+    subcultures:
+      - name: "劍灣開拓者"
+        description: "從大城市來到偏遠地區建立新家園嘅人類"
+        values: ["獨立", "勤勞", "實用主義"]
+      - name: "水都貴族"
+        description: "深水城 (Waterdeep) 等大城市嘅上流社會"
+        values: ["權力", "面子", "家族榮譽"]
+      - name: "遊牧民族"
+        description: "喺草原、沙漠遊牧嘅部落"
+        values: ["自由", "家族", "口述傳統"]
+    languages: ["通用語 (Common)", "各地方言"]
+    religions: ["任何 — 人類信任何神"]
+
+  - name: "Dwarf 矮人"
+    description: |
+      矮壯頑強嘅山地種族，壽命 ~350 年。
+      天生礦工、工匠、戰士。重榮譽、重家族、重傳統。
+      劍灣嘅矮人多數係 Rockseeker 家族嘅礦工後代。
+    traits:
+      - "頑強：對毒素、疾病免疫，HP 較高"
+      - "夜視：可喺黑暗中視物"
+      - "工藝大師：擅長金屬、石材加工"
+      - "固執：對承諾、傳統有強烈執著"
+    subcultures:
+      - name: "盾矮人 (Shield Dwarves)"
+        description: "最常見嘅矮人，忠於氏族同國王"
+        values: ["榮譽", "家族", "傳統", "工藝"]
+      - name: "金矮人 (Gold Dwarves)"
+        description: "南方嘅矮人，較重視財富同政治"
+        values: ["財富", "政治影響", "家族"]
+      - name: "灰矮人 (Duergar)"
+        description: "被邪神奴役嘅矮人，邪惡但有自己嘅道德"
+        values: ["奴役", "黑暗", "復仇"]
+    languages: ["矮人語 (Dwarvish)"]
+    religions: ["Moradin (創造之神)", "Clangeddin (戰爭之神)"]
+
+  - name: "Elf 精靈"
+    description: |
+      優雅長壽嘅森林種族，壽命 ~750 年。
+      天生魔法師、弓箭手、藝術家。重自然、重美、重知識。
+      劍灣嘅精靈多數係 Moon elf 或 Sun elf 嘅後裔。
+    traits:
+      - "長壽：~750 年，會耐心等待事情發展"
+      - "銳敏感官：黑暗視覺、敏銳聽覺"
+      - "魔法親和：施法時有優勢"
+      - "優雅：重視美同藝術"
+    subcultures:
+      - name: "月精靈 (Moon Elves / Tel'Quessir)"
+        description: "最常見嘅精靈，重知識同美"
+        values: ["知識", "美", "自然平衡"]
+      - name: "日精靈 (Sun Elves / Tel'Quessir)"
+        description: "貴族精靈，重榮譽同統治"
+        values: ["榮譽", "統治", "文化傳承"]
+      - name: "海精靈 (Sea Elves / Tel'Quessir)"
+        description: "海底精靈，適應水中生活"
+        values: ["海洋", "流動", "變化"]
+      - name: "野精靈 (Wild Elves / Tel'Quessir)"
+        description: "原始森林精靈，較少接觸文明"
+        values: ["自然", "自由", "野性"]
+    languages: ["精靈語 (Elvish)", "通用語"]
+    religions: ["Corellon Larethian (魔法之神)"]
+
+  # ... (再加 5+ 個種族：Halfling, Gnome, Half-Elf, Half-Orc, Tiefling, Dragonborn)
+
+# ============================================
+# NPC 庫 (NPCs) — 15 萬 token
+# 100-200 個 NPC，每個 800-2000 token
+# ============================================
+npcs:
+  # === 凡達林鎮核心 NPC ===
+
+  - id: "npc_gundren"
+    name: "Gundren Rockseeker"
+    race: "Dwarf (Shield)"
+    role: "Quest Giver / Missing Person"
+    location: "loc_coneyberry_start"
+    appearance: |
+      強壯嘅盾矮人，留住紅銅色嘅辮子，穿住探險服裝，
+      腰間有個防水皮袋裝住重要文件。
+    personality: ["固執", "粗獷", "藏有秘密地圖", "對朋友極度忠誠"]
+    background: |
+      Gundren 係 Rockseeker 三兄弟嘅老二。
+      佢同大哥 Tharden、弟弟 Nundro 一齊發現咗「失落礦坑」嘅位置。
+      三兄弟喺凡達林（Phandalin）建立咗一個委託代理行，
+      聘請冒險者保護運送去最後嘅礦坑入口。
+      Gundren 識破咗 Halia Thornton（礦工交易所主管）暗中嘅
+      散塔林會（Zhentarim）身份，佢決定親自押送地圖去
+      最後礦坑，唔再信佢。
+
+      Gundren 最後一次被見到係被紅印幫嘅 Goblin 爪牙綁架，
+      押送去 Tresendar Manor 嘅地牢。
+      佢而家被囚禁，仲未知地圖喺佢身上。
+    hidden_lore: "佢身上嘅地圖標示失落礦坑嘅最後入口，呢張地圖值 500 金幣。"
+    relationships:
+      npc_halia: "wary"
+      npc_sister_garaele: "friendly"
+      npc_brother_tharden: "family"
+      npc_brother_nundro: "family"
+    dialogue_hooks:
+      - "失落礦坑嘅入口喺邊？"
+      - "Rockseeker 家族嘅歷史？"
+      - "Halia Thornton 嘅真正身份？"
+      - "點解你唔自己帶地圖去？"
+    narrative_tags: ["quest_giver", "imprisoned", "secret_knowledge"]
+
+  - id: "npc_halia"
+    name: "Halia Thornton"
+    race: "Human"
+    role: "Town Administrator / Zhentarim Agent"
+    location: "loc_miners_exchange"
+    appearance: |
+      中年女性，留住深色嘅短髮，著住乾淨嘅行政服裝。
+      表情永遠係計算中嘅微笑。
+    personality: ["精明", "冷酷", "善於操控", "表面友善"]
+    background: |
+      Halia 自稱係礦工交易所嘅主管，表面負責管理凡達林嘅礦業事務。
+      但佢實際係散塔林會（Zhentarim）嘅暗樁，
+      佢嘅真正目標係利用冒險者嘅力量消滅紅印幫，
+      然後自己控制凡達林嘅地下勢力，獨佔礦業利潤。
+
+      佢識破 Gundren 嘅意圖後，安排紅印幫綁架 Gundren，
+      然後佢聘請冒險者去「調查紅印幫」—— 希望冒險者幫佢
+      解決呢個障礙，但佢從未打算分享礦坑嘅寶藏。
+    hidden_lore: "佢手上有一份副本嘅地圖，但唔完整，缺少最後礦坑嘅位置。"
+    relationships:
+      npc_gundren: "hostile"
+      npc_redbrand_leader: "rival"
+      npc_townmaster_harabon: "manipulated"
+    dialogue_hooks:
+      - "紅印幫嘅問題點解決？"
+      - "Gundren 失蹤嘅事？"
+      - "礦工交易所嘅運作？"
+    narrative_tags: ["manipulator", "secret_agent", "antagonist"]
+
+  - id: "npc_sister_garaele"
+    name: "Sister Garaele"
+    race: "Human"
+    role: "Priestess of Tymora / Quest Giver"
+    location: "loc_town_square_shrine"
+    appearance: |
+      30 多歲嘅女士，著住 Tymora 教會嘅銀色長袍，
+      經常微笑，但眼神有時流露悲傷。
+    personality: ["樂觀", "善良", "輕度迷信", "對命運有興趣"]
+    background: |
+      Garaele 係 Tymora（幸運女神）嘅女祭司，喺凡達林嘅小神龕服務。
+      雖然 Tymora 嘅主要神殿喺大城市，但 Garaele 自願嚟到偏遠地區，
+      希望為當地人帶來希望同好運。
+
+      佢唔知道 Halia 嘅真正身份，但佢隱約感覺到鎮長 Harabon
+      唔係表面上咁簡單。佢暗中協助 Gundren（雖然佢唔知道 Gundren 失蹤）。
+
+      佢會提供「流言石 (Cleansing Stone)」任務：
+      玩家需要去 Glasstaff 嘅塔 (Tower of Iarno) 清除負能量。
+      呢個任務會揭示紅印幫同 Iarno Glasstaff 嘅連繫。
+    hidden_lore: "佢曾經見過一次命運之神 Tymora 嘅異象，但從未對人講。"
+    relationships:
+      npc_gundren: "friendly"
+      npc_townmaster_harabon: "neutral"
+    dialogue_hooks:
+      - "Tymora 嘅教義？"
+      - "鎮上嘅命運？"
+      - "任何流言或者麻煩？"
+    narrative_tags: ["quest_giver", "kindly", "sees_auras"]
+
+  # === 紅印幫核心 NPC ===
+
+  - id: "npc_redbrand_leader"
+    name: "Iarno Glasstaff"
+    race: "Human (Evoker)"
+    role: "Redbrand Leader / Secret Wizard"
+    location: "loc_tresendar_manor"
+    appearance: |
+      削瘦嘅中年男人，戴住細框眼鏡，著住樸素嘅紅色長袍。
+      雙手經常微微發光（魔法殘留）。
+    personality: ["狡猾", "怯懦", "自負", "對魔法執著"]
+    background: |
+      Iarno 原本係 Neverwinter 嘅法師學徒，學藝不精但野心大。
+      佢發現紅印幫呢個小匪幫後，用低階魔法 + 詭計成為咗領袖。
+      佢用傳送門 (Teleportation Circle) 喺 Tresendar Manor 嘅地牢
+      偷偷連接到 Castle Cragmaw 嘅地精巢穴，作為秘密退路。
+
+      佢控制紅印幫嘅真正目的係攞到失落礦坑嘅財富，
+      用呢啲錢去大城市 Neverwinter 重新建立自己嘅法師事業。
+      佢從 Halia 嗰度知道 Gundren 有地圖，所以綁架 Gundren 嚟威脅。
+    hidden_lore: "佢嘅眼鏡其實係魔法物品 (Spectacles of Glasstaff)，可以施低階法術。"
+    relationships:
+      npc_halia: "rival"
+      npc_gundren: "hostile"
+      npc_goblin_king: "alliance"
+    dialogue_hooks:
+      - "紅印幫嘅目標？"
+      - "Gundren 喺邊？"
+      - "你嘅魔法從何學來？"
+    narrative_tags: ["antagonist", "magic_user", "cowardly"]
+
+  - id: "npc_redbrand_ringleader"
+    name: "Christoff"
+    race: "Human"
+    role: "Redbrand Strongman"
+    location: "loc_sleeping_giant_taphouse"
+    appearance: |
+      膀大腰圓嘅暴徒，剃咗光頭，頸上有紅印幫嘅烙印。
+    personality: ["粗暴", "愚蠢", "服從權威", "嗜酒"]
+    background: |
+      Christoff 係紅印幫嘅打手頭目，負責「Sleeping Giant Taphouse」
+      嘅日常勒索同鎮壓。佢唔知道 Iarno 嘅真正計劃，
+      佢只係個打工嘅。
+    relationships:
+      npc_redbrand_leader: "subordinate"
+    narrative_tags: ["henchman", "dumb_but_strong"]
+
+  # === 失落礦坑 NPC ===
+
+  - id: "npc_goblin_king"
+    name: "King Grol (Cragmaw Goblin King)"
+    race: "Goblin (Cragmaw Tribe)"
+    role: "Cragmaw Goblin King"
+    location: "loc_cragmaw_castle"
+    appearance: |
+      比一般哥布林高大，穿住破爛嘅「王袍」，
+      戴住用骨頭做嘅粗糙王冠。
+    personality: ["狡猾", "貪婪", "殘忍", "容易受辱"]
+    background: |
+      Grol 係 Cragmaw 哥布林部落嘅國王。紅印幫原本係佢嘅分支，
+      用嚟喺凡達林收集食物同財物嘅。但 Iarno 後來反叛咗，
+      帶住紅印幫投靠咗 Halia（散塔林會）。
+      Gundren 就係被 Cragmaw 嘅哥布林綁架，押送到 Castle Cragmaw。
+    hidden_lore: "Castle Cragmaw 嘅深處有條裂縫通往「地下世界 (Underdark)」，呢個係 D&D 5e 嘅關鍵設定。"
+    narrative_tags: ["antagonist", "monster_king"]
+
+  # ... (再加 90+ 個 NPC，總共 100+)
+
+# ============================================
+# 場景庫 (Locations) — 10 萬 token
+# 50-80 個場景，每個 1000-3000 token
+# ============================================
+locations:
+  - id: "loc_phandalin_town"
+    name: "凡達林鎮 (Phandalin)"
+    type: "settlement"
+    region: "Sword Coast"
+    population: ~400
+    description: |
+      凡達林係劍灣南端嘅一個偏遠開拓小鎮，喺 30 年前嘅戰爭中被
+      嚴重破壞，仲未完全恢復。鎮上有一個簡陋嘅市集、幾間旅店、
+      一間鐵匠鋪、一個礦工交易所，仲有一個 Tymora 嘅小神龕。
+
+      小鎮被翠綠嘅草原同矮山環繞，東面係 Old Coast Road，
+      連接大城市 Neverwinter 同 Baldur's Gate。
+
+      鎮上嘅氣氛：表面平靜，但居民都噤聲迴避，街上偶爾見到
+      戴紅色頭巾嘅武裝人員巡邏。
+
+      凡達林嘅主要地標：
+      - loc_stonehill_inn (石丘旅店) — 友善嘅住宿點
+      - loc_sleeping_giant_taphouse (沉睡巨人酒館) — 紅印幫地盤
+      - loc_miners_exchange (礦工交易所) — Halia 嘅辦公室
+      - loc_town_square_shrine (市集神龕) — Sister Garaele 嘅地方
+      - loc_blacksmith (鐵匠鋪) — 矮人 Tharden Rockseeker 經營
+    atmosphere: "tense"
+    environment_tags: ["outdoor", "settlement", "town", "frontier"]
+    npcs_present: ["npc_halia", "npc_sister_garaele", "npc_redbrand_ringleader", "npc_townmaster_harabon"]
+    ambient_sounds: ["風聲", "遠處羊叫", "偶爾馬蹄聲"]
+    first_visit_narrative: |
+      你從 Old Coast Road 嘅塵土中行入凡達林。
+
+      鎮上嘅建築大多數係木造，經過 30 年風雨有啲破爛但仲算堅固。
+      街上嘅居民行路時低著頭，唔敢正視彼此。
+      遠處有幾個戴紅色頭巾嘅武裝人員巡邏，佢哋嘅視線喺你身上停留咗一秒。
+
+      鎮中央有個細小嘅市集，攤販低聲叫賣，聲音入面有一種難以形容嘅
+      恐懼。空氣中混住烤麵包嘅香味同金屬嘅鏽味。
+
+      一塊斑駁嘅告示牌寫住：「凡達林 — 歡迎旅人 — 法律與秩序」。
+      但告示牌被人用刀刻上咗一行字：「Iarno 統治呢度」。
+
+  - id: "loc_stonehill_inn"
+    name: "石丘旅店 (Stonehill Inn)"
+    type: "building"
+    parent_location: "loc_phandalin_town"
+    description: |
+      石丘旅店係凡達林最友善嘅住宿點，由 Toblen Stonehill 經營。
+      兩層木屋，地下有大廳同吧台，二樓有 6 間客房。
+      牆上掛住狩獵獎品同舊地圖，壁爐幾乎 24 小時燃燒。
+
+      旅店嘅氣氛溫暖嘈雜，旅客、商人、當地農民都會喺度傾偈。
+      呢度係凡達林少有嘅「安全」地方 — 紅印幫唔會直接喺度搞事。
+    safe_zone: true
+    environment_tags: ["indoor", "tavern", "safe_zone", "social_hub"]
+    interactables:
+      - "吧台：Toblen 提供住宿、食物、飲品、情報"
+      - "壁爐：暖身、休息、可以聽到旅客嘅對話"
+      - "佈告欄：張貼住各種委託、失蹤報告、流言"
+      - "客房（樓上）：可短休或長休"
+    npcs_present: ["npc_toblen_stonehill"]
+    atmosphere: "peaceful"
+    ambient_sounds: ["壁爐噼啪聲", "低語聲", "杯碗碰撞聲"]
+
+  - id: "loc_sleeping_giant_taphouse"
+    name: "沉睡巨人酒館 (Sleeping Giant Taphouse)"
+    type: "building"
+    parent_location: "loc_phandalin_town"
+    description: |
+      曾經係凡達林最熱鬧嘅酒館，但 5 年前被紅印幫接管之後，
+      變成匪徒嘅地盤同勒索中心。
+
+      酒館嘅裝修破爛，地板有嘔吐物同血跡，牆上嘅壁畫被人用刀劃花。
+      空氣中瀰漫住煙草、啤酒、汗臭嘅味道。
+
+      角落有幾個紅印幫成員賭博、飲酒。吧台後面嘅酒保
+      （本來嘅老闆）只敢默默倒酒，唔敢出聲。
+
+      呢度係「紅印幫勒索」嘅中心：佢哋會向每位進入嘅人收取「保護費」，
+      唔交嘅會被毆打甚至失蹤。
+    safe_zone: false
+    environment_tags: ["indoor", "tavern", "danger_zone", "enemy_territory"]
+    interactables:
+      - "滿地碎玻璃：可潛行通過或故意踩碎引發警報"
+      - "後巷嘅暗門：通往紅印幫嘅秘密通道"
+      - "吧台：可買酒（但要付保護費）"
+      - "賭桌：可賭博（但紅印幫會作弊）"
+    npcs_present: ["npc_redbrand_ringleader", "npc_redbrand_grunt_x5"]
+    atmosphere: "ominous"
+
+  - id: "loc_tresendar_manor"
+    name: "Tresendar Manor (紅印幫總部)"
+    type: "building"
+    parent_location: "loc_phandalin_town_outskirts"
+    description: |
+      荒廢嘅兩層石屋，喺凡達林郊外嘅一座小丘上。
+      曾經係當地望族 Tresendar 家族嘅宅邸，但主人失蹤後被紅印幫佔領。
+
+      一樓：曾經係大廳，傢俬爛晒，牆上掛住紅印幫嘅旗幟同獵物標本。
+      二樓：Iarno Glasstaff 嘅私人房間，裡面有低階法術嘅器具。
+      地牢：Gundren 被囚禁嘅地方，有一個傳送門連接到 Castle Cragmaw。
+    safe_zone: false
+    environment_tags: ["indoor", "enemy_base", "dungeon", "multi_level"]
+    interactables:
+      - "一樓大廳：紅印幫成員聚集，進入即戰鬥"
+      - "樓梯上二樓：可能遇到額外守衛"
+      - "二樓 Iarno 房間：魔法物品、法術書、Iarno 嘅眼鏡"
+      - "地牢入口：樓下嘅隱藏門，需要搜索或撬鎖"
+      - "Gundren 嘅囚室：可以救出 Gundren"
+      - "傳送門：可以通往 Castle Cragmaw（陷阱）"
+    npcs_present: ["npc_redbrand_leader", "npc_redbrand_grunt_x3", "npc_gundren_prisoner"]
+    atmosphere: "chaotic"
+
+  - id: "loc_cragmaw_castle"
+    name: "Castle Cragmaw (哥布林巢穴)"
+    type: "dungeon"
+    region: "Cragmaw Caves"
+    description: |
+      一座位於森林深處嘅廢棄城堡，被 Cragmaw 哥布林部落佔領。
+      城堡嘅入口隱藏喺一個隱蔽嘅山谷，由幾隻哥布林守衛。
+
+      城堡內部昏暗潮濕，住住幾百隻哥布林同佢哋嘅國王 Grol。
+      Gundren 被囚禁喺城堡深處嘅一個地牢。
+
+      Castle Cragmaw 同時係通往「地下世界 (Underdark)」嘅入口 —
+      一個巨大嘅地下網絡，住住各種怪物同黑暗精靈。
+    safe_zone: false
+    environment_tags: ["outdoor", "dungeon", "monster_lair", "goblin_territory"]
+    interactables:
+      - "入口守衛：2-3 隻哥布林，可以潛行通過"
+      - "大廳：哥布林營火，正在吃晚宴，可以偷襲或繞過"
+      - "牢房：囚禁 Gundren 同其他俘虜"
+      - "Grol 嘅王座：哥布林國王，佢身邊有狼騎兵 (Worg Riders)"
+      - "通往 Underdark 嘅裂縫：可以選擇探索或離開"
+    npcs_present: ["npc_goblin_king", "npc_goblin_grunt_x20", "npc_worg_rider_x3", "npc_gundren_prisoner"]
+    atmosphere: "chaotic"
+    narrative_tags: ["dungeon", "monster_lair", "dnd_module_classic"]
+
+  - id: "loc_lost_mines_phandelver"
+    name: "失落礦坑 (Lost Mine of Phandelver)"
+    type: "dungeon"
+    description: |
+      幾百年前被遺棄嘅矮人礦坑，原本蘊藏住豐富嘅秘銀 (Mithral) 同魔法寶石。
+      礦坑嘅入口喺森林深處，現已荒廢。
+
+      礦坑內部分成幾層：
+      - 入口區：荒廢嘅矮人營地，已被地精佔領
+      - 第一層：古老嘅礦工宿舍同倉庫
+      - 第二層：開採區，有陷阱同守護者
+      - 第三層：礦坑主人嘅房間 — 發現傳說中嘅「Forge of Spells」
+    safe_zone: false
+    environment_tags: ["dungeon", "abandoned", "multi_level", "treasure"]
+    interactables:
+      - "Forge of Spells：可以製造魔法物品嘅古老爐子"
+      - "矮人嘅遺物：揭示 Rockseeker 家族嘅歷史"
+      - "陷阱：古老的矮人陷阱守護寶藏"
+      - "守護者：Constructs (構裝體) 守護最深處"
+    atmosphere: "mysterious"
+    narrative_tags: ["endgame_dungeon", "treasure", "dnd_module_final"]
+
+  # ... (再加 44 個場景：Tresendar Manor 其他房間、Cragmaw 其他區域、礦坑各層等)
+
+# ============================================
+# 物品庫 (Items) — 8 萬 token
+# 200-300 件物品，每個 200-500 token
+# ============================================
+items:
+  # === 武器 ===
+  - id: "item_gundren_locket"
+    name: "Gundren 嘅金項鍊"
+    type: "quest"
+    description: |
+      矮人 Gundren Rockseeker 一直戴住嘅金項鍊。
+      上面刻住 Rockseeker 家族嘅徽章（一個向下嘅鐵鎚）。
+      項鍊嘅背面有一行矮人符文，意思係「永遠向著大地」。
+      項鍊係 Gundren 父母留畀佢嘅遺物，佢從不除下。
+    interaction_patterns:
+      - "可以畀 Gundren 嘅兄弟睇，會觸發情感反應"
+      - "可以喢掉換取金幣（~50gp），但會失去信任"
+      - "可以保留作證據，證明 Gundren 嘅命運"
+    rarity: "uncommon"
+    narrative_tags: ["family_heirloom", "dwarven_craftsmanship", "quest_item"]
+
+  - id: "item_glasstaff_spectacles"
+    name: "Glasstaff 嘅魔法眼鏡"
+    type: "magic"
+    description: |
+      一副細框金屬眼鏡，原本係 Neverwinter 嘅法師學徒 Iarno 嘅物品。
+      戴住後可以施放低階法術（魔法飛彈 Magic Missile、火花術 Fire Bolt），
+      每日各有 3 次。
+      眼鏡有微小嘅裂痕（Iarno 嘅弱點）。
+    interaction_patterns:
+      - "戴上後可以施法"
+      - "可以給法師角色使用，會有 [魔法裝備] 標籤"
+      - "裂痕可以作為弱點攻擊"
+    rarity: "rare"
+    narrative_tags: ["magic_item", "attunement_required", "wizard_legacy"]
+
+  - id: "item_redbrand_mask"
+    name: "紅印幫頭巾"
+    type: "tool"
+    description: |
+      紅色嘅布頭巾，綁住一邊嘅金屬扣。
+      紅印幫成員嘅標誌。
+    interaction_patterns:
+      - "可以偽裝成紅印幫成員潛入"
+      - "可以喺 Tresendar Manor 識別敵人"
+    rarity: "common"
+    narrative_tags: ["disguise", "faction_marker"]
+
+  - id: "item_cleansing_stone"
+    name: "淨化石 (Cleansing Stone)"
+    type: "quest"
+    description: |
+      Sister Garaele 嘅聖物，一塊刻有 Tymora 符文嘅白石。
+      可以用嚟淨化負能量區域（Iarno 嘅塔）。
+    interaction_patterns:
+      - "用喺 Tower of Iarno 嘅傳送門，可中斷傳送"
+      - "可保留作證物"
+    rarity: "uncommon"
+    narrative_tags: ["holy_relic", "quest_item"]
+
+  # === 防具 / 一般物品 ===
+  - id: "item_leather_armor"
+    name: "皮革護甲"
+    type: "armor"
+    description: |
+      標準嘅皮革護甲，啡色，適合冒險者初期使用。
+    interaction_patterns:
+      - "穿上後獲得 [輕度保護] 標籤"
+    rarity: "common"
+
+  - id: "item_iron_dagger"
+    name: "鐵匕首"
+    type: "weapon"
+    description: |
+      標準嘅鐵匕首，~30cm 長。
+    interaction_patterns:
+      - "近戰攻擊"
+      - "投擲"
+    rarity: "common"
+
+  # ... (再加 290+ 件物品)
+
+# ============================================
+# 永恆規則 + 語意狀態定義
+# ============================================
+semantic_states:
+  stamina:
+    levels:
+      - {level: 0, label: "fresh", prompt: "[角色] 精神飽滿，動作敏捷，感官敏銳，呼吸平穩。"}
+      - {level: 1, label: "slight_breath", prompt: "[角色] 輕微喘息，額頭滲出汗水，步伐略微沉重，但反應依然迅速。"}
+      - {level: 2, label: "muscle_ache", prompt: "[角色] 每次揮動武器都感到吃力，視線偶爾無法集中，需要扶牆借力。"}
+      - {level: 3, label: "exhausted", prompt: "[角色] 視線模糊，腳步蹣跚，肺部如火燒般刺痛，隨時可能倒下。"}
+      - {level: 4, label: "collapse", prompt: "[角色] 完全失去意識，瀕臨死亡邊緣。觸發靈魂轉移或死亡結局。"}
+    transition_rules:
+      max_shift_per_round: 1
+      safe_environment_bonus: 1
+
+  health:
+    levels:
+      - {level: 0, label: "healthy", prompt: "[角色] 身體健康，無明顯傷勢。"}
+      - {level: 1, label: "wounded", prompt: "[角色] 受到輕傷，有擦傷或瘀青，但不影響行動。"}
+      - {level: 2, label: "severely_wounded", prompt: "[角色] 受到嚴重傷害，有明顯流血或骨折，行動受限。"}
+      - {level: 3, label: "dying", prompt: "[角色] 瀕臨死亡，需要立即治療。"}
+      - {level: 4, label: "dead", prompt: "[角色] 死亡。觸發靈魂轉移。"}
+    transition_rules:
+      max_shift_per_round: 1
+      safe_environment_bonus: 1
+
+  morale:
+    levels:
+      - {level: 0, label: "elated", prompt: "[角色] 士氣高昂，對未來充滿希望。"}
+      - {level: 1, label: "calm", prompt: "[角色] 情緒平靜，能夠理性判斷。"}
+      - {level: 2, label: "neutral", prompt: "[角色] 情緒平穩，冇特別波動。"}
+      - {level: 3, label: "anxious", prompt: "[角色] 感到焦慮，會猶豫、懷疑自己嘅決定。"}
+      - {level: 4, label: "despair", prompt: "[角色] 完全絕望，可能做出不理性嘅行為。"}
+    transition_rules:
+      max_shift_per_round: 1
+      safe_environment_bonus: 1
+
+  # ... (可加更多維度：alertness, social, hunger, thirst, fatigue)
+
+# ============================================
+# 物理邏輯鎖規則
+# ============================================
+physics_lock_rules:
+  forbidden_actions:
+    - state: "雙腿嚴重骨折"
+      forbidden: ["狂奔", "跳躍", "攀爬", "衝刺", "疾跑"]
+    - state: "左臂骨折"
+      forbidden: ["雙手握劍", "投擲武器", "格擋"]
+    - state: "右臂骨折"
+      forbidden: ["雙手握劍", "寫字", "投擲武器"]
+    - state: "雙臂骨折"
+      forbidden: ["擁抱", "格擋", "投擲", "握手"]
+    - state: "失明"
+      forbidden: ["觀察", "瞄準", "閱讀", "搜索"]
+    - state: "聾啞"
+      forbidden: ["聆聽", "呼叫", "對話"]
+    - state: "中毒"
+      forbidden: ["劇烈運動", "戰鬥"]
+    - state: "暈眩"
+      forbidden: ["瞄準", "精細操作"]
+    - state: "溺水"
+      forbidden: ["說話", "施法"]
+    - state: "燃燒中"
+      forbidden: ["近戰", "精細操作"]
+
+# ============================================
+# 永恆 NPC 池 (Soul Transfer 候選)
+# 100+ 個 narrative-type NPC，可被玩家奪舍
+# ============================================
+narrative_npc_pool:
+  - "npc_gundren"
+  - "npc_sister_garaele"
+  - "npc_redbrand_leader"  # Iarno
+  - "npc_goblin_king"
+  - "npc_halia"
+  - "npc_redbrand_ringleader"
+  - "npc_tharden_rockseeker"
+  - "npc_nundro_rockseeker"
+  - "npc_elaras_mirror_self"
+  - "npc_old_miner_inn"
+  # ... (總共 100+ 個)
+
+# ============================================
+# 預設角色 (Starter Characters)
+# 5-10 個 narrative starter，每個都有完整背景
+# ============================================
+starter_characters:
+  - id: "char_starter_rockseeker_scout"
+    name: "Rockseeker 家族嘅探子"
+    race: "Dwarf (Shield)"
+    background: |
+      你係 Rockseeker 家族嘅遠房親戚，被 Gundren 聘請去
+      凡達林（Phandalin）協助佢嘅計劃。你性格沉默但觀察力強，
+      你嘅任務係保護運送去失落礦坑嘅補給。
+    initial_location: "loc_phandalin_town"
+    initial_inventory:
+      - "item_leather_armor"
+      - "item_iron_dagger"
+      - "item_dry_rations x3"
+    starting_world_parameters:
+      redbrand_threat: 2
+      lost_mines_progress: 0
+      arcane_disturbance: 1
+    starting_stamina: "fresh"
+    starting_health: "healthy"
+    starting_morale: "calm"
+    starting_memories:
+      - "你同 Gundren Rockseeker 有血緣關係"
+      - "你曾經喺矮人礦坑工作"
+      - "你收到 Gundren 嘅秘密訊息，話有紅印幫嘅威脅"
+    starting_attitude:
+      caution: "bold"
+      empathy: "compassionate"
+      honor: "honest"
+      curiosity: "curious"
+      violence: "defensive"
