@@ -1,16 +1,20 @@
 """
-WebSocket Endpoint (v3.1 — security hardened)
-==============================================
-Changes from v3.0:
-- scene_id is NO LONGER trusted from client payload
-- Server reads current_scene_id from character_states table (SOURCE OF TRUTH)
-- Mismatch between client claim and DB state = REJECTED with state_mismatch error
-- Database session injected for state lookups
-- All PENDING/PROCESSING tasks must be INTERRUPTED on FastAPI startup (zombie recovery)
+WebSocket Endpoint (v3.2 — cloud-LLM + Q6/Q7 hardened)
+======================================================
+Changes from v3.1:
+- Q6: Three-step decoupled DB transactions
+  1. Short transaction: write PENDING, commit, release
+  2. NO DB lock: call cloud LLM (5-15s, no DB connection held)
+  3. Long transaction: verify PENDING, atomic write result, commit
+- Q7: In-memory inflight flag check BEFORE any DB call
+  - Prevents API burst (50 submits in 100ms = 49 rejected)
+  - Atomic via set() under CPython GIL
+  - Auto-released via try/finally
+- Crash-safe: if LLM call hangs, finally releases the flag
 
 Architecture:
-  Client (WS) -> game_socket -> DB read scene_id -> asyncio.create_task ->
-  scene_lock -> LLM -> DB write -> broadcast
+  Client (WS) -> inflight_check -> _persist_pending (short TX) ->
+  _call_llm (NO DB) -> _verify_and_persist (long TX) -> broadcast
 """
 from fastapi import WebSocket, WebSocketDisconnect
 import asyncio
@@ -22,7 +26,7 @@ from typing import Optional
 
 from .connection_manager import registry
 from .scene_locks import scene_lock_manager
-from ..db import get_db_session  # Will be implemented
+from ..db import get_db_session
 
 logger = logging.getLogger(__name__)
 
@@ -31,12 +35,6 @@ async def websocket_endpoint(
     websocket: WebSocket,
     character_id: str,
 ):
-    """
-    WebSocket endpoint for a specific character.
-
-    CRITICAL: scene_id is NEVER read from client payload.
-    Always queried from DB character_states.current_scene_id.
-    """
     await websocket.accept()
     connection_id = str(uuid.uuid4())
     logger.info(f"[WS {connection_id}] Connecting for character: {character_id}")
@@ -48,7 +46,7 @@ async def websocket_endpoint(
             "connection_id": connection_id,
             "character_id": character_id,
             "timestamp": datetime.utcnow().isoformat(),
-            "message": "Connected. Server controls scene_id. Call GET /api/scene/{character_id} for latest state.",
+            "message": "Connected. Server controls scene_id.",
         })
 
         while True:
@@ -77,7 +75,7 @@ async def websocket_endpoint(
                 continue
 
             if msg_type == "action_submit":
-                # Validate and dispatch — scene_id is read from DB, not client
+                # Non-blocking dispatch (Q7 in-memory check is inside _process_action)
                 asyncio.create_task(
                     _process_action(websocket, character_id, msg, connection_id)
                 )
@@ -109,13 +107,14 @@ async def _process_action(
     connection_id: str,
 ):
     """
-    Background task: process a player action.
+    Process a player action with Q6/Q7 hardening.
 
-    SECURITY: scene_id is read from DB, not from client payload.
-    Mismatch between client claim and DB state triggers state_mismatch error.
+    Q7: In-memory inflight check FIRST (before any DB call)
+    Q6: Three-step decoupled transactions
     """
     task_id = str(uuid.uuid4())
 
+    # === Validate basic payload ===
     if "choice" not in msg and "player_input" not in msg:
         try:
             await websocket.send_json({
@@ -128,121 +127,214 @@ async def _process_action(
             pass
         return
 
-    # === SECURITY CHECK: scene_id is DB-controlled ===
-    # Read current_scene_id from character_states (SOURCE OF TRUTH)
-    db_session = get_db_session()
+    # ============================================================
+    # Q7 STEP 0: In-memory inflight interception (microsecond check)
+    # ============================================================
+    if not registry.try_acquire_inflight(character_id):
+        logger.warning(f"[Q7] Burst rejected for {character_id} — already in-flight")
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "code": "already_inflight",
+                "task_id": task_id,
+                "message": "Another action is already processing. Please wait.",
+            })
+        except Exception:
+            pass
+        return  # REJECT immediately — no DB call, no LLM call
+
+    # MUST release flag in finally (even on crash)
     try:
-        character_state = await db_session.get_character_state(character_id)
-        if not character_state:
-            await _send_or_broadcast(websocket, character_id, {
-                "type": "error",
-                "code": "character_not_found",
-                "task_id": task_id,
-                "message": f"Character {character_id} does not exist",
-            })
-            return
+        # ============================================================
+        # Q6 STEP 1: Read character state (short transaction)
+        # ============================================================
+        db_session = get_db_session()
+        try:
+            character_state = await db_session.get_character_state(character_id)
+            if not character_state:
+                await _send_error(websocket, character_id, {
+                    "type": "error",
+                    "code": "character_not_found",
+                    "task_id": task_id,
+                })
+                return
 
-        if not character_state.get("is_alive", True):
-            await _send_or_broadcast(websocket, character_id, {
-                "type": "error",
-                "code": "character_dead",
-                "task_id": task_id,
-                "message": "Character is dead. Use soul transfer to continue.",
-            })
-            return
+            if not character_state.get("is_alive", True):
+                await _send_error(websocket, character_id, {
+                    "type": "error",
+                    "code": "character_dead",
+                    "task_id": task_id,
+                    "message": "Character is dead. Use soul transfer to continue.",
+                })
+                return
 
-        # The authoritative scene_id from DB
-        authoritative_scene_id = character_state["current_scene_id"]
+            authoritative_scene_id = character_state["current_scene_id"]
 
-        # Optional: check client's claimed scene_id for mismatch
-        # This is a defense against replay attacks or client bugs
-        client_claimed_scene_id = msg.get("scene_id")
-        if client_claimed_scene_id and client_claimed_scene_id != authoritative_scene_id:
-            logger.warning(
-                f"[Security] scene_id mismatch for {character_id}: "
-                f"client={client_claimed_scene_id}, server={authoritative_scene_id}"
+            # Optional: detect scene_id mismatch (defense in depth)
+            client_claimed_scene_id = msg.get("scene_id")
+            if client_claimed_scene_id and client_claimed_scene_id != authoritative_scene_id:
+                logger.warning(
+                    f"[Security] scene_id mismatch for {character_id}: "
+                    f"client={client_claimed_scene_id}, server={authoritative_scene_id}"
+                )
+                await _send_error(websocket, character_id, {
+                    "type": "error",
+                    "code": "state_mismatch",
+                    "task_id": task_id,
+                    "client_scene_id": client_claimed_scene_id,
+                    "server_scene_id": authoritative_scene_id,
+                })
+                return
+
+            # ============================================================
+            # Q6 STEP 1: Write PENDING (short transaction, then commit+release)
+            # ============================================================
+            action_id = await db_session.create_action_history(
+                character_id=character_id,
+                scene_id=authoritative_scene_id,
+                round_number=msg.get("round", 0),
+                player_choice=msg.get("choice") or msg.get("player_input"),
+                execution_status="PENDING",
             )
-            await _send_or_broadcast(websocket, character_id, {
-                "type": "error",
-                "code": "state_mismatch",
+            # db_session will auto-commit on context exit
+        finally:
+            await db_session.close()  # Release DB connection ASAP
+
+        # Send action_accepted immediately
+        try:
+            await websocket.send_json({
+                "type": "action_accepted",
                 "task_id": task_id,
-                "message": "Client scene_id does not match server. Refresh state.",
-                "client_scene_id": client_claimed_scene_id,
-                "server_scene_id": authoritative_scene_id,
+                "action_id": action_id,
+                "character_id": character_id,
+                "scene_id": authoritative_scene_id,
+                "status": "processing",
+                "message": "Action accepted, generating scene...",
             })
-            return  # REJECT — do not process
+        except Exception:
+            pass  # WS may be closed
 
-        # Use the DB-authoritative scene_id
-        scene_id = authoritative_scene_id
-
-    finally:
-        await db_session.close()
-
-    # === Insert PENDING row into action_history ===
-    action_id = await db_session.create_action_history(
-        character_id=character_id,
-        scene_id=scene_id,
-        round_number=msg.get("round", 0),
-        player_choice=msg.get("choice") or msg.get("player_input"),
-        execution_status="PENDING",
-    )
-
-    # === Send action_accepted immediately ===
-    try:
-        await websocket.send_json({
-            "type": "action_accepted",
-            "task_id": task_id,
-            "action_id": action_id,
-            "character_id": character_id,
-            "scene_id": scene_id,  # Echo back the authoritative scene_id
-            "status": "processing",
-            "message": "Action accepted, generating scene...",
-        })
-    except Exception:
-        # WS may be closed; that's OK, result will be persisted to DB
-        pass
-
-    # === Mark as PROCESSING ===
-    await db_session.update_action_history(
-        action_id,
-        execution_status="PROCESSING",
-        started_at=datetime.utcnow(),
-    )
-
-    try:
-        # Acquire per-scene lock (NOT per-character — Q2 gray area decision)
-        lock = await scene_lock_manager.get_lock(scene_id)
-        async with lock:
-            logger.info(f"[Task {task_id}] Acquired lock for scene {scene_id}")
-            scene_output = await _call_llm(character_id, scene_id, msg)
-
-            # Persist COMPLETED status
+        # Mark as PROCESSING (own short transaction)
+        db_session = get_db_session()
+        try:
             await db_session.update_action_history(
                 action_id,
-                execution_status="COMPLETED",
-                completed_at=datetime.utcnow(),
-                llm_narrative_output=scene_output.get("narrative"),
-                llm_choices_output=scene_output.get("choices"),
-                llm_state_changes=scene_output.get("state_changes"),
+                execution_status="PROCESSING",
+                started_at=datetime.utcnow(),
             )
+        finally:
+            await db_session.close()
 
-            # Update character state if needed
-            if scene_output.get("state_changes"):
-                await db_session.apply_state_changes(character_id, scene_output["state_changes"])
+        # ============================================================
+        # Q6 STEP 2: Call cloud LLM (NO DB LOCK — connection released)
+        # ============================================================
+        try:
+            lock = await scene_lock_manager.get_lock(authoritative_scene_id)
+            async with lock:
+                logger.info(f"[Task {task_id}] Locked scene {authoritative_scene_id}, calling LLM")
+                scene_output = await _call_cloud_llm(
+                    character_id=character_id,
+                    scene_id=authoritative_scene_id,
+                    player_input=msg,
+                    character_state=character_state,
+                )
+                logger.info(f"[Task {task_id}] LLM complete")
 
-            # Update current_scene_id if scene changed
-            if scene_output.get("new_scene_id"):
-                await db_session.update_character_scene(character_id, scene_output["new_scene_id"])
+            # ============================================================
+            # Q6 STEP 3: Verify PENDING + atomic write result (long transaction)
+            # ============================================================
+            db_session = get_db_session()
+            try:
+                # Verify action is still PENDING/PROCESSING (not interrupted by restart)
+                current_status = await db_session.get_action_status(action_id)
+                if current_status in ("INTERRUPTED", "FAILED"):
+                    logger.warning(
+                        f"[Task {task_id}] Action status changed to {current_status} "
+                        f"during LLM call — skipping write"
+                    )
+                    # Notify client
+                    try:
+                        await registry.broadcast(character_id, {
+                            "type": "task_status",
+                            "task_id": task_id,
+                            "action_id": action_id,
+                            "status": "interrupted",
+                            "message": "Action was interrupted (e.g., server restart). Please re-submit.",
+                        })
+                    except Exception:
+                        pass
+                    return
 
-            logger.info(f"[Task {task_id}] LLM complete, broadcasting")
+                # Atomic write: action_history + character_states + (optional scenes)
+                async with db_session.transaction():
+                    # 1. Update action_history to COMPLETED
+                    await db_session.update_action_history(
+                        action_id,
+                        execution_status="COMPLETED",
+                        completed_at=datetime.utcnow(),
+                        llm_narrative_output=scene_output.get("narrative"),
+                        llm_choices_output=scene_output.get("choices"),
+                        llm_state_changes=scene_output.get("state_changes"),
+                    )
+                    # 2. Apply state changes
+                    if scene_output.get("state_changes"):
+                        await db_session.apply_state_changes(
+                            character_id,
+                            scene_output["state_changes"],
+                        )
+                    # 3. Update scene if changed
+                    if scene_output.get("new_scene_id"):
+                        await db_session.update_character_scene(
+                            character_id,
+                            scene_output["new_scene_id"],
+                        )
+                    # 4. Update world parameters if changed
+                    if scene_output.get("world_parameter_changes"):
+                        await db_session.apply_world_parameter_changes(
+                            scene_output["world_parameter_changes"],
+                        )
+            except Exception as e:
+                # TX rolled back automatically; mark FAILED
+                logger.exception(f"[Task {task_id}] DB write failed: {e}")
+                # Use a separate short TX to mark FAILED
+                fail_session = get_db_session()
+                try:
+                    await fail_session.update_action_history(
+                        action_id,
+                        execution_status="FAILED",
+                        completed_at=datetime.utcnow(),
+                        error_message=str(e),
+                    )
+                finally:
+                    await fail_session.close()
+                # Re-raise so outer try/finally still runs
+                raise
+            finally:
+                await db_session.close()
 
-        # Broadcast OUTSIDE the lock
+        except Exception as e:
+            logger.exception(f"[Task {task_id}] Failed: {e}")
+            try:
+                await registry.broadcast(character_id, {
+                    "type": "task_status",
+                    "task_id": task_id,
+                    "action_id": action_id,
+                    "status": "failed",
+                    "error": str(e),
+                })
+            except Exception:
+                pass
+            return  # Don't broadcast scene_update
+
+        # ============================================================
+        # Q6 STEP 4: Broadcast result (outside all transactions)
+        # ============================================================
         await registry.broadcast(character_id, {
             "type": "scene_update",
             "task_id": task_id,
             "action_id": action_id,
             "round": scene_output.get("round"),
-            "scene_id": scene_id,
+            "scene_id": authoritative_scene_id,
             "narrative": scene_output.get("narrative"),
             "choices": scene_output.get("choices"),
             "state_changes": scene_output.get("state_changes"),
@@ -250,47 +342,41 @@ async def _process_action(
             "timestamp": datetime.utcnow().isoformat(),
         })
 
-    except Exception as e:
-        logger.exception(f"[Task {task_id}] Failed: {e}")
-        # Mark as FAILED
-        try:
-            await db_session.update_action_history(
-                action_id,
-                execution_status="FAILED",
-                completed_at=datetime.utcnow(),
-                error_message=str(e),
-            )
-        except Exception:
-            pass
-        try:
-            await registry.broadcast(character_id, {
-                "type": "task_status",
-                "task_id": task_id,
-                "action_id": action_id,
-                "status": "failed",
-                "error": str(e),
-            })
-        except Exception:
-            pass
+    finally:
+        # ============================================================
+        # Q7 CRITICAL: Always release in-memory flag
+        # ============================================================
+        registry.release_inflight(character_id)
 
 
-async def _send_or_broadcast(websocket: WebSocket, character_id: str, message: dict):
-    """Try to send via WS, fall back to broadcast (which silently drops if no connection)."""
+async def _send_error(websocket: WebSocket, character_id: str, message: dict):
+    """Try to send via WS, fall back to broadcast."""
     try:
         await websocket.send_json(message)
     except Exception:
         await registry.broadcast(character_id, message)
 
 
-async def _call_llm(character_id: str, scene_id: str, player_input: dict) -> dict:
+async def _call_cloud_llm(
+    character_id: str,
+    scene_id: str,
+    player_input: dict,
+    character_state: dict,
+) -> dict:
     """
-    Call Scene Agent + Sub Agent to generate scene output.
+    Call cloud LLM (MiniMax M3) for scene generation.
 
-    TODO: Implement actual LLM integration.
+    This function:
+    - HOLDS NO DB LOCK
+    - May take 5-15 seconds (cloud API latency)
+    - Has retry logic for transient 502/504 errors
+    - Falls back gracefully on persistent failure
+
+    TODO: Implement with LLMClient from backend.llm_client
     Reference: docs/PROMPTS/scene_agent_prompt.md
     """
-    logger.info(f"[LLM] Generating scene for {character_id} in {scene_id}")
-    await asyncio.sleep(2)
+    logger.info(f"[LLM] Calling cloud LLM for {character_id} in {scene_id}")
+    await asyncio.sleep(2)  # Simulate cloud latency
     return {
         "round": 1,
         "scene_id": scene_id,

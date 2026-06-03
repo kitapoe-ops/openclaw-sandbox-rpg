@@ -1,30 +1,47 @@
 """
-Connection Registry (Simplified v3.0)
-======================================
-Tracks active WebSocket connections per character_id.
+Connection Registry (v3.2 — cloud-LLM hardened)
+=================================================
+Tracks active WebSocket connections + per-character in-memory inflight flags.
 
-Simplification rationale (Q3):
-  - Pending updates are NO LONGER stored in memory
-  - On reconnect, client queries DB for latest scene (via REST)
-  - Single source of truth = PostgreSQL
+NEW in v3.2 (Q7 hardening for full-cloud LLM):
+  - inflight_flags: set[str] of character_ids with active LLM task
+  - submit_action(): atomic in-memory check + flag acquire
+  - In-memory interception BEFORE DB write (microsecond-level anti-burst)
+  - Timeout safety: flag auto-released if task crashes (via finally)
+
+Design rationale:
+  - set() operations are atomic under CPython GIL
+  - No asyncio.Lock needed for the flag check itself
+  - Burst protection works even before DB is touched
+  - Crash-safe via try/finally
 """
-from typing import Dict, List
+from typing import Dict, List, Optional
 from fastapi import WebSocket
 import asyncio
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
 
 class ConnectionRegistry:
-    """Tracks active WebSocket connections per character_id."""
+    """Tracks active WebSocket connections + inflight action flags."""
 
-    def __init__(self):
+    def __init__(self, inflight_timeout_seconds: int = 60):
         # character_id -> dict of connection_id -> websocket
         self._connections: Dict[str, Dict[str, WebSocket]] = {}
         # character_id -> whether currently controlled by an active player
         self._player_controlled: Dict[str, bool] = {}
+        # Q7: In-memory anti-burst lock (set is atomic under GIL)
+        self._inflight_flags: set = set()
+        # Track when flag was acquired (for stale-flag detection)
+        self._inflight_since: Dict[str, float] = {}
+        self._inflight_timeout = inflight_timeout_seconds
         self._lock = asyncio.Lock()
+
+    # ============================================
+    # Connection management
+    # ============================================
 
     async def register(
         self,
@@ -32,7 +49,6 @@ class ConnectionRegistry:
         connection_id: str,
         websocket: WebSocket,
     ) -> None:
-        """Register a new connection. Marks character as player-controlled."""
         async with self._lock:
             if character_id not in self._connections:
                 self._connections[character_id] = {}
@@ -48,9 +64,6 @@ class ConnectionRegistry:
         character_id: str,
         connection_id: str,
     ) -> None:
-        """
-        Unregister a connection. Marks character as NPC-controlled if no more connections.
-        """
         async with self._lock:
             if character_id in self._connections:
                 self._connections[character_id].pop(connection_id, None)
@@ -66,18 +79,10 @@ class ConnectionRegistry:
             return self._player_controlled.get(character_id, False)
 
     async def broadcast(self, character_id: str, message: dict) -> int:
-        """
-        Send a message to all active connections for a character.
-        Returns number of connections message was sent to.
-        Note: If no active connection, message is DROPPED (caller should persist to DB).
-        """
         async with self._lock:
             connections = list(self._connections.get(character_id, {}).values())
-
         if not connections:
-            logger.debug(f"[Registry] No active connection for {character_id}, message dropped")
             return 0
-
         sent = 0
         for ws in connections:
             try:
@@ -85,18 +90,72 @@ class ConnectionRegistry:
                 sent += 1
             except Exception as e:
                 logger.warning(f"[Registry] Send to {character_id} failed: {e}")
-
         return sent
 
-    async def get_active_connections(self, character_id: str) -> List[WebSocket]:
-        async with self._lock:
-            return list(self._connections.get(character_id, {}).values())
+    # ============================================
+    # Q7: In-flight action interception
+    # ============================================
+
+    def try_acquire_inflight(self, character_id: str) -> bool:
+        """
+        Try to acquire the in-flight lock for this character.
+        Returns True if acquired, False if already in-flight.
+        ATOMIC: set.add() is thread-safe under CPython GIL.
+
+        Anti-burst rationale:
+          Hacker sends 50 action_submit in 100ms.
+          50 concurrent tasks call this method.
+          Exactly 1 succeeds, 49 are rejected immediately.
+          No DB call, no LLM call, no API quota burned.
+        """
+        # Stale flag cleanup (defensive — should never trigger due to finally)
+        now = time.time()
+        if character_id in self._inflight_since:
+            age = now - self._inflight_since[character_id]
+            if age > self._inflight_timeout:
+                logger.warning(
+                    f"[Registry] Stale inflight flag for {character_id} "
+                    f"({age:.1f}s old) — auto-releasing"
+                )
+                self._inflight_flags.discard(character_id)
+                self._inflight_since.pop(character_id, None)
+
+        # Atomic check-and-set
+        if character_id in self._inflight_flags:
+            return False
+        self._inflight_flags.add(character_id)
+        self._inflight_since[character_id] = now
+        return True
+
+    def release_inflight(self, character_id: str) -> None:
+        """Release the in-flight lock. MUST be called in finally block."""
+        self._inflight_flags.discard(character_id)
+        self._inflight_since.pop(character_id, None)
+
+    def is_inflight(self, character_id: str) -> bool:
+        return character_id in self._inflight_flags
+
+    def inflight_stats(self) -> dict:
+        return {
+            "total_inflight": len(self._inflight_flags),
+            "characters_inflight": list(self._inflight_flags),
+            "oldest_age_seconds": (
+                max(time.time() - t for t in self._inflight_since.values())
+                if self._inflight_since
+                else 0
+            ),
+        }
+
+    # ============================================
+    # Stats
+    # ============================================
 
     def stats(self) -> dict:
         return {
             "active_characters": len(self._connections),
             "total_connections": sum(len(c) for c in self._connections.values()),
             "player_controlled": sum(1 for v in self._player_controlled.values() if v),
+            **self.inflight_stats(),
         }
 
 
