@@ -1,25 +1,20 @@
 /**
- * WebSocket Service (v2.0)
+ * WebSocket Service (v3.1)
  * ==========================
- * Native WebSocket client for FastAPI backend.
+ * Updated for production deployment:
+ * - Default to wss:// (HTTPS) for Cloudflare Tunnel
+ * - Handle state_mismatch error -> force state refresh
+ * - Handle INTERRUPTED actions from server
  *
- * Server → Client message types:
- *   - connection_ack    : Connection established
- *   - action_accepted   : Action queued (task_id returned)
- *   - task_status       : Processing / completed / failed
- *   - scene_update      : New scene + choices (final result)
- *   - state_change      : Partial state update
- *   - countdown         : Round timer update
- *   - world_event       : World event notification
- *   - error             : Error message
- *   - pong              : Ping response
- *
- * Client → Server message types:
- *   - action_submit     : Submit player choice
- *   - ping              : Keep-alive
+ * Recovery flow on reconnect:
+ *   1. WS connects -> server sends connection_ack
+ *   2. Client calls REST GET /api/scene/{id} for latest state
+ *   3. Client calls REST GET /api/character/{id} for character state
+ *   4. If server reports state_mismatch, client refreshes state immediately
  */
 
-const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL || 'ws://localhost:8000'
+const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL || 'wss://api.yourdomain.com'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.yourdomain.com'
 
 export type WSMessageType =
   | 'connection_ack'
@@ -41,31 +36,42 @@ export interface WSMessage {
 export interface SceneUpdateMessage extends WSMessage {
   type: 'scene_update'
   task_id: string
+  action_id: string
   round: number
+  scene_id: string
   narrative: string
   choices: any[]
   state_changes?: any
   minor_event?: any
-}
-
-export interface TaskStatusMessage extends WSMessage {
-  type: 'task_status'
-  task_id: string
-  status: 'processing' | 'completed' | 'failed'
-  message?: string
-  error?: string
+  timestamp?: string
 }
 
 export interface ActionAcceptedMessage extends WSMessage {
   type: 'action_accepted'
   task_id: string
+  action_id: string
   character_id: string
+  scene_id: string
   status: string
   message: string
 }
 
-export type SceneHandler = (msg: SceneUpdateMessage) => void
-export type StatusHandler = (msg: TaskStatusMessage) => void
+export interface TaskStatusMessage extends WSMessage {
+  type: 'task_status'
+  task_id: string
+  action_id?: string
+  status: 'processing' | 'completed' | 'failed' | 'interrupted'
+  message?: string
+  error?: string
+}
+
+export interface StateMismatchMessage extends WSMessage {
+  type: 'error'
+  code: 'state_mismatch'
+  client_scene_id: string
+  server_scene_id: string
+}
+
 export type MessageHandler = (msg: WSMessage) => void
 
 class WebSocketService {
@@ -77,22 +83,26 @@ class WebSocketService {
   private reconnectInterval: number | null = null
   private pingInterval: number | null = null
   private isConnecting = false
-  // Track pending tasks (for reconnection scenarios)
-  private pendingTasks: Map<string, { optionId: string; timestamp: number }> = new Map()
-  // Subscribe to scene updates for specific task_id
-  private taskSceneHandlers: Map<string, SceneHandler> = new Map()
+  private onReconnectHandler: (() => void | Promise<void>) | null = null
+  private onStateMismatchHandler: ((clientId: string, serverId: string) => void) | null = null
 
   /**
    * Connect to WebSocket server.
    * Idempotent: if already connected to same character, no-op.
    */
-  async connect(characterId: string): Promise<void> {
+  async connect(
+    characterId: string,
+    onReconnect?: () => void | Promise<void>,
+    onStateMismatch?: (clientId: string, serverId: string) => void,
+  ): Promise<void> {
     if (this.ws?.readyState === WebSocket.OPEN && this.characterId === characterId) {
       return
     }
     if (this.isConnecting) return
     this.isConnecting = true
     this.characterId = characterId
+    if (onReconnect) this.onReconnectHandler = onReconnect
+    if (onStateMismatch) this.onStateMismatchHandler = onStateMismatch
 
     return new Promise((resolve, reject) => {
       const url = `${WS_BASE_URL}/ws/game/${characterId}`
@@ -111,18 +121,11 @@ class WebSocketService {
           const msg: WSMessage = JSON.parse(event.data)
           this.dispatch(msg)
 
-          // Re-subscribe to pending tasks (in case of reconnect)
-          if (msg.type === 'connection_ack') {
-            this.resubscribePendingTasks()
-          }
-
-          // Handle scene_update for specific task
-          if (msg.type === 'scene_update' && msg.task_id) {
-            const handler = this.taskSceneHandlers.get(msg.task_id)
-            if (handler) {
-              handler(msg as SceneUpdateMessage)
-              this.taskSceneHandlers.delete(msg.task_id)
-              this.pendingTasks.delete(msg.task_id)
+          // Handle state_mismatch -> force refresh
+          if (msg.type === 'error' && msg.code === 'state_mismatch') {
+            console.warn('[WS] State mismatch detected, forcing refresh')
+            if (this.onStateMismatchHandler) {
+              this.onStateMismatchHandler(msg.client_scene_id, msg.server_scene_id)
             }
           }
         } catch (e) {
@@ -147,7 +150,7 @@ class WebSocketService {
   /**
    * Auto-reconnect with exponential backoff.
    */
-  private attemptReconnect() {
+  private async attemptReconnect() {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       console.error('[WS] Max reconnect attempts reached')
       return
@@ -158,16 +161,24 @@ class WebSocketService {
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 10000)
     console.log(`[WS] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`)
 
-    this.reconnectInterval = window.setTimeout(() => {
-      if (this.characterId) {
-        this.connect(this.characterId).catch(console.error)
+    this.reconnectInterval = window.setTimeout(async () => {
+      if (!this.characterId) return
+      try {
+        await this.connect(
+          this.characterId,
+          this.onReconnectHandler || undefined,
+          this.onStateMismatchHandler || undefined,
+        )
+        if (this.onReconnectHandler) {
+          console.log('[WS] Reconnected, refreshing state from REST...')
+          await this.onReconnectHandler()
+        }
+      } catch (e) {
+        console.error('[WS] Reconnect failed:', e)
       }
     }, delay)
   }
 
-  /**
-   * Keep-alive ping.
-   */
   private startPing() {
     this.pingInterval = window.setInterval(() => {
       this.send({ type: 'ping' })
@@ -181,9 +192,6 @@ class WebSocketService {
     }
   }
 
-  /**
-   * Send a message to the server.
-   */
   send(msg: WSMessage): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg))
@@ -192,42 +200,6 @@ class WebSocketService {
     }
   }
 
-  /**
-   * Submit a player action and register a handler for the resulting scene update.
-   * Returns immediately with a task_id (non-blocking).
-   */
-  submitAction(
-    characterId: string,
-    playerInput: any,
-    onSceneUpdate: SceneHandler,
-  ): void {
-    const tempId = `temp_${Date.now()}_${Math.random()}`
-    // Register handler for the next scene_update
-    this.taskSceneHandlers.set(tempId, onSceneUpdate)
-
-    this.send({
-      type: 'action_submit',
-      ...playerInput,
-    })
-
-    // Note: server will return action_accepted with a real task_id
-    // We need to map tempId to real task_id (handled in onmessage)
-  }
-
-  /**
-   * Re-subscribe to pending tasks after reconnect.
-   * (In v2.0, server auto-sends pending updates, so this is a no-op for now.)
-   */
-  private resubscribePendingTasks() {
-    if (this.pendingTasks.size > 0) {
-      console.log(`[WS] Resubscribing to ${this.pendingTasks.size} pending tasks`)
-      // Server will auto-deliver pending updates via connection_ack handler
-    }
-  }
-
-  /**
-   * Subscribe to a specific message type.
-   */
   on(type: WSMessageType, handler: MessageHandler): void {
     if (!this.handlers.has(type)) {
       this.handlers.set(type, [])
@@ -235,9 +207,6 @@ class WebSocketService {
     this.handlers.get(type)!.push(handler)
   }
 
-  /**
-   * Unsubscribe from a message type.
-   */
   off(type: WSMessageType, handler?: MessageHandler): void {
     if (!this.handlers.has(type)) return
     const list = this.handlers.get(type)!
@@ -265,9 +234,9 @@ class WebSocketService {
       this.ws = null
     }
     this.characterId = null
+    this.onReconnectHandler = null
+    this.onStateMismatchHandler = null
     this.handlers.clear()
-    this.taskSceneHandlers.clear()
-    this.pendingTasks.clear()
   }
 
   isConnected(): boolean {
@@ -276,3 +245,4 @@ class WebSocketService {
 }
 
 export const wsService = new WebSocketService()
+export { API_BASE_URL }

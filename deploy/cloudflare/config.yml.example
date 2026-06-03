@@ -1,0 +1,43 @@
+# ============================================
+# Cloudflare Tunnel Configuration
+# ============================================
+# Hybrid Deployment:
+#   Frontend: Vercel (https://openclaw-rpg.vercel.app)
+#   Backend:  Local Docker (http://localhost:8000)
+#   Tunnel:   Cloudflare free tier (exposes backend to public)
+#
+# Setup steps:
+#   1. Create Cloudflare account (free): https://dash.cloudflare.com/sign-up
+#   2. Install cloudflared: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/
+#   3. Login: cloudflared tunnel login
+#   4. Create tunnel: cloudflared tunnel create openclaw-rpg
+#   5. Copy tunnel ID and credentials
+#   6. Fill in this config
+#   7. Add DNS: cloudflared tunnel route dns openclaw-rpg api.yourdomain.com
+#   8. Run: cloudflared tunnel run openclaw-rpg
+# ============================================
+
+tunnel: <TUNNEL_ID>                    # Get from `cloudflared tunnel list`
+credentials-file: /etc/cloudflared/<TUNNEL_ID>.json
+
+ingress:
+  # Backend API + WebSocket
+  - hostname: api.yourdomain.com
+    service: http://localhost:8000
+    originRequest:
+      noTLSVerify: false
+      connectTimeout: 10s
+      keepAliveConnections: 100       # Support 100+ concurrent WS
+      keepAliveTimeout: 90s
+
+  # Health check endpoint
+  - hostname: api.yourdomain.com
+    path: /health
+    service: http://localhost:8000
+
+  # Catch-all (required)
+  - service: http_status:404
+
+# Optional: warp-routing for split-tunnel
+# warp-routing:
+#   enabled: true
