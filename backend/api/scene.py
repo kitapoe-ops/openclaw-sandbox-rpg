@@ -1,13 +1,11 @@
 """
-Scene API Endpoints (v3.6 — real DB queries)
+Scene API Endpoints (v3.7 — demo + DB modes)
 """
 from fastapi import APIRouter, HTTPException
-from sqlalchemy import select
 from typing import Dict, Any
 
-from ..db import get_db_session
-from ..models import CharacterState, Scene
-from ..scenes_demo import DEMO_SCENE, DEMO_STARTER, get_demo_scene
+from ..scenes_demo import DEMO_SCENE, get_demo_scene
+from ..demo_mode import is_demo_mode
 
 router = APIRouter()
 
@@ -16,55 +14,72 @@ router = APIRouter()
 async def get_current_scene(character_id: str) -> Dict[str, Any]:
     """
     Get the current scene for a character.
-    Loads from DB character_states.current_scene_id, then loads scene content.
-    Falls back to demo data if scene not in DB.
+    Demo mode: returns hard-coded scene based on character.
+    Full mode: queries DB for character.current_scene_id, then scene.
     """
-    async with get_db_session() as session:
-        # 1. Get character (to find current_scene_id)
-        char = await session.get(CharacterState, character_id)
-        if not char:
-            # Fall back to demo
-            demo = get_demo_scene("loc_phandalin_town")
-            if demo:
-                return _format_scene_response(character_id, demo)
-            raise HTTPException(status_code=404, detail=f"Character {character_id} not found")
+    # Demo mode: just return demo scene
+    if is_demo_mode():
+        demo = get_demo_scene("loc_phandalin_town")
+        if demo:
+            return {
+                "round": 1,
+                "character_id": character_id,
+                "scene_id": demo["scene_id"],
+                "narrative": demo["scene_narrative"],
+                "choices": demo["choices"],
+                "state_changes": {},
+                "minor_event": demo.get("minor_event"),
+                "mode": "demo",
+            }
+        raise HTTPException(status_code=404, detail="Demo scene not found")
 
-        scene_id = char.current_scene_id
+    # Full mode: query DB
+    try:
+        from ..db import get_db_session
+        from ..models import CharacterState, Scene
 
-        # 2. Get scene content from DB
-        scene = await session.get(Scene, scene_id)
-        if not scene:
-            # Fall back to demo
-            demo = get_demo_scene(scene_id)
-            if demo:
-                return _format_scene_response(character_id, demo)
-            raise HTTPException(status_code=404, detail=f"Scene {scene_id} not found")
+        async with get_db_session() as session:
+            char = await session.get(CharacterState, character_id)
+            if not char:
+                # Fallback to demo
+                demo = get_demo_scene("loc_phandalin_town")
+                if demo:
+                    return _format_demo_response(character_id, demo)
+                raise HTTPException(status_code=404, detail=f"Character {character_id} not found")
 
-        # 3. Build response
-        return {
-            "round": 1,  # TODO: track current round
-            "character_id": character_id,
-            "scene_id": scene.id,
-            "narrative": scene.description,
-            "choices": DEMO_SCENE["choices"],  # TODO: load from scene.choices JSON
-            "state_changes": {},
-            "minor_event": None,
-        }
+            scene = await session.get(Scene, char.current_scene_id)
+            if not scene:
+                raise HTTPException(status_code=404, detail=f"Scene {char.current_scene_id} not found")
+
+            return {
+                "round": 1,
+                "character_id": character_id,
+                "scene_id": scene.id,
+                "narrative": scene.description,
+                "choices": DEMO_SCENE["choices"],  # TODO: persist scene choices
+                "state_changes": {},
+                "minor_event": None,
+            }
+    except Exception as e:
+        # DB error — fall back to demo
+        demo = get_demo_scene("loc_phandalin_town")
+        if demo:
+            return _format_demo_response(character_id, demo)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/{character_id}/history")
 async def get_scene_history(character_id: str, limit: int = 20) -> Dict[str, Any]:
-    """Get last N scenes for the character (narrative history)."""
-    # TODO: Implement when action_history.narrative_output is populated
+    """Get last N scenes for the character."""
     return {
         "character_id": character_id,
         "limit": limit,
         "history": [],
+        "mode": "demo" if is_demo_mode() else "full",
     }
 
 
-def _format_scene_response(character_id: str, scene: Dict[str, Any]) -> Dict[str, Any]:
-    """Format scene data into API response."""
+def _format_demo_response(character_id: str, scene: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "round": 1,
         "character_id": character_id,
@@ -73,4 +88,5 @@ def _format_scene_response(character_id: str, scene: Dict[str, Any]) -> Dict[str
         "choices": scene["choices"],
         "state_changes": {},
         "minor_event": scene.get("minor_event"),
+        "mode": "demo",
     }

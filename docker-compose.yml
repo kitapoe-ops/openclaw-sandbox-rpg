@@ -1,13 +1,12 @@
 version: '3.9'
 
 # ============================================
-# OpenClaw Sandbox RPG - Docker Compose
+# OpenClaw Sandbox RPG — One-Command Deploy
 # ============================================
 # Usage:
-#   docker-compose up -d          # Start all services
-#   docker-compose down           # Stop all services
-#   docker-compose logs -f backend  # View backend logs
-#   docker-compose ps             # Check service status
+#   docker-compose up -d           # Start all services
+#   docker-compose logs -f backend # View backend logs
+#   docker-compose down            # Stop all services
 # ============================================
 
 services:
@@ -21,10 +20,9 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-sandbox_rpg}
       POSTGRES_USER: ${POSTGRES_USER:-rpg_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-***password}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./deploy/scripts/init_db.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     healthcheck:
@@ -33,10 +31,10 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - sandbox-rpg-net
+      - sandbox-net
 
   # ==========================================
-  # Backend API (FastAPI)
+  # Backend (FastAPI)
   # ==========================================
   backend:
     build:
@@ -52,15 +50,11 @@ services:
       POSTGRES_PORT: 5432
       POSTGRES_DB: ${POSTGRES_DB:-sandbox_rpg}
       POSTGRES_USER: ${POSTGRES_USER:-rpg_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_password}
-      BACKEND_HOST: 0.0.0.0
-      BACKEND_PORT: 8000
-      LLM_CLOUD_API_KEY: ${LLM_CLOUD_API_KEY}
-      LLM_LOCAL_BASE_URL: ${LLM_LOCAL_BASE_URL}
-      LANCEDB_URI: /app/lancedb_data
-    volumes:
-      - lancedb_data:/app/lancedb_data
-      - ./logs:/app/logs
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-***password}
+      MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
+      MINIMAX_BASE_URL: ${MINIMAX_BASE_URL:-https://api.minimax.chat/v1}
+      MINIMAX_MODEL: ${MINIMAX_MODEL:-MiniMax-M3}
+      CORS_ORIGINS: "http://localhost:5173,http://localhost:3000,http://localhost:8000"
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     healthcheck:
@@ -69,26 +63,28 @@ services:
       timeout: 10s
       retries: 3
     networks:
-      - sandbox-rpg-net
+      - sandbox-net
 
   # ==========================================
-  # Frontend (Vue 3 + Vite)
+  # Frontend (Vue 3 + Vite) — Optional
   # ==========================================
   frontend:
-    build:
-      context: .
-      dockerfile: deploy/docker/frontend.Dockerfile
+    image: node:20-alpine
     container_name: sandbox-rpg-frontend
     restart: unless-stopped
-    depends_on:
-      - backend
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
     environment:
       VITE_API_BASE_URL: http://localhost:${BACKEND_PORT:-8000}
       VITE_WS_BASE_URL: ws://localhost:${BACKEND_PORT:-8000}
     ports:
-      - "5173:5173"
+      - "${FRONTEND_PORT:-5173}:5173"
+    depends_on:
+      - backend
     networks:
-      - sandbox-rpg-net
+      - sandbox-net
 
 # ==========================================
 # Volumes
@@ -96,12 +92,10 @@ services:
 volumes:
   postgres_data:
     driver: local
-  lancedb_data:
-    driver: local
 
 # ==========================================
 # Networks
 # ==========================================
 networks:
-  sandbox-rpg-net:
+  sandbox-net:
     driver: bridge
