@@ -592,10 +592,19 @@ class MemoryPalace:
         Apply time-based decay to all memories for a character.
         Returns the number of memories whose salience was modified.
 
-        decay formula: new_salience = max(0, salience - decay_rate * days_elapsed)
+        decay formula (per docs/WAVE2_MEMORY_PALACE.md):
+            new_salience = salience * exp(-decay_rate * days_elapsed)
+
+        Implementation (per R1-14B audit fix):
+        - Single connection, single transaction
+        - Compute new salience in memory (per-memory loop is unavoidable for exp())
+        - Single executemany UPDATE at the end
+        - Rollback on any error
         """
         if days_elapsed < 0:
             raise ValueError("days_elapsed must be >= 0")
+
+        import math
 
         conn = self._connect()
         try:
@@ -603,65 +612,115 @@ class MemoryPalace:
                 "SELECT id, salience, decay_rate FROM memory_entries WHERE character_id = ? AND archived = 0",
                 (character_id,),
             ).fetchall()
-            updated = 0
+            updates: List[tuple] = []
             for row in rows:
-                new_sal = max(0.0, row["salience"] - row["decay_rate"] * days_elapsed)
+                new_sal = row["salience"] * math.exp(
+                    -row["decay_rate"] * days_elapsed
+                )
+                # Clamp to [0, 1] (floating point tolerance)
+                new_sal = max(0.0, min(1.0, new_sal))
                 if new_sal != row["salience"]:
-                    conn.execute(
-                        "UPDATE memory_entries SET salience = ? WHERE id = ?",
-                        (new_sal, row["id"]),
-                    )
-                    updated += 1
-            conn.commit()
-            return updated
+                    updates.append((new_sal, row["id"]))
+            # Single batched UPDATE within the same transaction
+            if updates:
+                conn.executemany(
+                    "UPDATE memory_entries SET salience = ? WHERE id = ?",
+                    updates,
+                )
+                conn.commit()
+            return len(updates)
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             conn.close()
 
     async def consolidate_memories(
-        self, character_id: str, similarity_threshold: float = 0.92
+        self,
+        character_id: str,
+        similarity_threshold: float = 0.92,
+        page_size: int = 500,
     ) -> int:
         """
-        Merge near-duplicate memories. Phase A: simple keyword overlap.
+        Merge near-duplicate memories. Phase A: simple word-overlap.
         Phase B: will use embedding similarity.
+
+        Implementation (per R1-14B audit fix):
+        - Paginated reads (no hard limit=1000 truncation)
+        - Memory-side similarity computation (no N+1 DB connections)
+        - Single batched UPDATE at the end via executemany
+        - Single transaction wraps the entire operation
         """
         logger.warning(
             "consolidate_memories: Phase A uses simple overlap; "
             "Phase B will use vector similarity"
         )
-        memories = await self.get_memories(character_id, limit=1000)
-        if len(memories) < 2:
-            return 0
-        # Simple word-overlap similarity
-        def words(s: str) -> Set[str]:
-            return set(s.lower().split())
-        merged = 0
-        skip: Set[str] = set()
-        for i, m1 in enumerate(memories):
-            if m1.id in skip:
-                continue
-            w1 = words(m1.content)
-            for m2 in memories[i + 1 :]:
-                if m2.id in skip:
+        if page_size < 1:
+            raise ValueError("page_size must be >= 1")
+
+        # Step 1: Paginated read (memory-side cursor, no hard truncation)
+        all_memories: List[MemoryFragment] = []
+        offset = 0
+        conn = self._connect()
+        try:
+            while True:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM memory_entries
+                    WHERE character_id = ? AND archived = 0
+                    ORDER BY id LIMIT ? OFFSET ?
+                    """,
+                    (character_id, page_size, offset),
+                ).fetchall()
+                if not rows:
+                    break
+                all_memories.extend(_row_to_fragment(r) for r in rows)
+                if len(rows) < page_size:
+                    break  # last page
+                offset += page_size
+
+            if len(all_memories) < 2:
+                return 0
+
+            # Step 2: Memory-side similarity computation (zero DB I/O)
+            def words(s: str) -> Set[str]:
+                return set(s.lower().split())
+
+            to_archive: List[str] = []
+            skip: Set[str] = set()
+            for i, m1 in enumerate(all_memories):
+                if m1.id in skip:
                     continue
-                w2 = words(m2.content)
-                if not w1 or not w2:
+                w1 = words(m1.content)
+                if not w1:
                     continue
-                overlap = len(w1 & w2) / max(len(w1), len(w2))
-                if overlap >= similarity_threshold:
-                    # Archive the lower-salience one
-                    weaker = m1 if m1.salience < m2.salience else m2
-                    conn = self._connect()
-                    try:
-                        conn.execute(
-                            "UPDATE memory_entries SET archived = 1 WHERE id = ?",
-                            (weaker.id,),
-                        )
-                        conn.commit()
-                    finally:
-                        conn.close()
-                    skip.add(weaker.id)
-                    merged += 1
-        return merged
+                for m2 in all_memories[i + 1 :]:
+                    if m2.id in skip:
+                        continue
+                    w2 = words(m2.content)
+                    if not w2:
+                        continue
+                    overlap = len(w1 & w2) / max(len(w1), len(w2))
+                    if overlap >= similarity_threshold:
+                        # Archive the lower-salience one
+                        weaker = m1 if m1.salience < m2.salience else m2
+                        to_archive.append(weaker.id)
+                        skip.add(weaker.id)
+
+            # Step 3: Single batched UPDATE within the same transaction
+            if to_archive:
+                to_archive = list(set(to_archive))  # dedup
+                conn.executemany(
+                    "UPDATE memory_entries SET archived = 1 WHERE id = ?",
+                    [(mid,) for mid in to_archive],
+                )
+                conn.commit()
+            return len(to_archive)
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
     async def archive_cold_memories(
         self, character_id: str, salience_floor: float = 0.05
@@ -688,12 +747,19 @@ class MemoryPalace:
         Transfer memories from one character to another (Soul Transfer use case).
         Per design doc: episodic sampled, semantic+procedural always kept.
         Returns the number of memories transferred.
+
+        Implementation (per R1-14B audit fix):
+        - Single connection, single transaction
+        - All INSERTs batched via executemany
+        - If ANY insert fails, entire transfer rolls back (atomic)
+        - Zero partial-transfer risk
         """
         if not 0.0 <= preservation_rate <= 1.0:
             raise ValueError("preservation_rate must be in [0, 1]")
         if source_character_id == target_character_id:
             return 0
 
+        # Step 1: Read source memories (own transaction)
         conn = self._connect()
         try:
             rows = conn.execute(
@@ -703,53 +769,66 @@ class MemoryPalace:
         finally:
             conn.close()
 
-        transferred = 0
+        # Step 2: Decide which to transfer (in memory)
         import random
+        now = _now_iso()
+        inserts: List[tuple] = []
         for row in rows:
             mt = row["memory_type"]
-            # semantic + procedural always keep; episodic sampled
+            # semantic + procedural always keep; episodic/emotional sampled
             if mt in ("semantic", "procedural"):
                 keep = True
             else:  # episodic, emotional
                 keep = random.random() < preservation_rate
             if not keep:
                 continue
-
             new_id = str(uuid.uuid4())
-            now = _now_iso()
-            conn = self._connect()
-            try:
-                conn.execute(
-                    """
-                    INSERT INTO memory_entries
-                    (id, character_id, memory_type, content, source,
-                     salience, created_at, last_accessed_at, access_count,
-                     tags_json, linked_memories_json, decay_rate,
-                     metadata_json, archived)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        new_id,
-                        target_character_id,
-                        mt,
-                        row["content"],
-                        "world_event",  # mark as world event since transferred
-                        row["salience"] * 0.8,  # slight salience loss on transfer
-                        now,
-                        now,
-                        0,
-                        row["tags_json"],
-                        "[]",  # reset links (old IDs no longer valid)
-                        row["decay_rate"],
-                        json.dumps({**(json.loads(row["metadata_json"])), "transferred_from": source_character_id}),
-                        0,
-                    ),
-                )
-                conn.commit()
-                transferred += 1
-            finally:
-                conn.close()
-        return transferred
+            metadata_with_origin = {
+                **(json.loads(row["metadata_json"])),
+                "transferred_from": source_character_id,
+            }
+            inserts.append((
+                new_id,
+                target_character_id,
+                mt,
+                row["content"],
+                "world_event",  # mark as world event since transferred
+                row["salience"] * 0.8,  # slight salience loss on transfer
+                now,
+                now,
+                0,
+                row["tags_json"],
+                "[]",  # reset links (old IDs no longer valid)
+                row["decay_rate"],
+                json.dumps(metadata_with_origin),
+                0,
+            ))
+
+        if not inserts:
+            return 0
+
+        # Step 3: Atomic batched INSERT — all-or-nothing within single transaction
+        conn = self._connect()
+        try:
+            conn.executemany(
+                """
+                INSERT INTO memory_entries
+                (id, character_id, memory_type, content, source,
+                 salience, created_at, last_accessed_at, access_count,
+                 tags_json, linked_memories_json, decay_rate,
+                 metadata_json, archived)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                inserts,
+            )
+            conn.commit()
+            return len(inserts)
+        except Exception:
+            # Atomic rollback: if ANY insert failed, NONE of them are committed
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
     async def export_state(self, character_id: str) -> Dict[str, Any]:
         """Export all memories for a character as a JSON-serializable dict."""

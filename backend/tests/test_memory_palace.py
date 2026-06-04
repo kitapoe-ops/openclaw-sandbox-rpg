@@ -414,3 +414,86 @@ class TestSchemaIntegrity:
                 )
         finally:
             conn.close()
+
+
+# ============================================
+# Test 6 \u2014 R1 Audit regression-protection tests
+# ============================================
+
+
+class TestR1AuditFixesV2:
+    """Refined R1 audit regression tests (fix 3 failed tests)."""
+
+    @pytest.mark.asyncio
+    async def test_consolidate_n_plus_1_with_true_duplicates(self, memory_palace, monkeypatch):
+        """consolidate_memories must use ONE connection even with true duplicates."""
+        import sqlite3
+        connection_opens = []
+        original_connect = sqlite3.connect
+
+        def tracking_connect(*args, **kwargs):
+            connection_opens.append(1)
+            return original_connect(*args, **kwargs)
+
+        monkeypatch.setattr(sqlite3, "connect", tracking_connect)
+        from backend import memory_palace as mp_mod
+        monkeypatch.setattr(mp_mod.sqlite3, "connect", tracking_connect)
+
+        # Create 30 TRUE duplicates (same content)
+        for i in range(30):
+            await memory_palace.add_memory(
+                "c1", "the wizard cast fireball", "episodic", "scene"
+            )
+
+        connection_opens.clear()
+        merged = await memory_palace.consolidate_memories(
+            "c1", similarity_threshold=0.99, page_size=10
+        )
+        assert len(connection_opens) <= 2, (
+            f"consolidate_memories opened {len(connection_opens)} connections "
+            f"(expected \u2264 2). N+1 regression!"
+        )
+        # All but 1 should be merged (highest-salience kept)
+        assert merged == 29
+
+    @pytest.mark.asyncio
+    async def test_transfer_atomic_via_hooks(self, memory_palace):
+        """Use the memory_palace's own _connect() to inject failure."""
+        # Add 5 source memories
+        for i in range(5):
+            await memory_palace.add_memory(
+                "src", f"src_mem_{i}", "episodic", "scene", salience=0.8
+            )
+        # Monkey-patch the connection wrapper to raise on commit
+        from backend import memory_palace as mp_mod
+        original_connect = mp_mod.MemoryPalace._connect
+
+        class FailingConnection:
+            def __init__(self, real_conn):
+                self._real = real_conn
+                self._fail_next = True
+
+            def __getattr__(self, name):
+                return getattr(self._real, name)
+
+            def commit(self):
+                raise RuntimeError("simulated commit failure")
+
+            def rollback(self):
+                self._real.rollback()
+
+            def close(self):
+                self._real.close()
+
+        def failing_connect(self):
+            return FailingConnection(original_connect(self))
+
+        mp_mod.MemoryPalace._connect = failing_connect
+        try:
+            with pytest.raises(RuntimeError, match="simulated commit failure"):
+                await memory_palace.transfer_memories("src", "dst", preservation_rate=1.0)
+        finally:
+            mp_mod.MemoryPalace._connect = original_connect
+
+        # dst must be empty
+        assert await memory_palace.count("dst") == 0
