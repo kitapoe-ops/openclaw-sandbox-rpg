@@ -1,4 +1,4 @@
-"""
+﻿"""
 Character State Machine
 ========================
 Manages character state transitions and persistence.
@@ -12,7 +12,7 @@ priority is dropped when the active_effects list hits its cap).
 from __future__ import annotations
 
 from typing import Dict, Any, Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 
 from .semantic_gradient import (
@@ -22,9 +22,10 @@ from .semantic_gradient import (
     MoraleLevel,
 )
 from . import persistence
+UTC = timezone.utc
+
 
 logger = logging.getLogger(__name__)
-
 
 # ============================================
 # Constants
@@ -43,7 +44,6 @@ DEFAULT_TAG_PRIORITY = 5
 RELATIONSHIP_LEVELS = {
     "hostile", "wary", "neutral", "friendly", "trusted", "devoted",
 }
-
 
 # ============================================
 # State Machine
@@ -71,11 +71,11 @@ class CharacterStateMachine:
         # into JSON serialization or schema validation.
         self.tag_priorities: Dict[str, int] = {}
 
-        # Round counter — incremented on every successful apply_round.
+        # Round counter ??incremented on every successful apply_round.
         self.round: int = int(self.state.get("round", 0) or 0)
 
-        self.created_at = datetime.utcnow()
-        self.updated_at = datetime.utcnow()
+        self.created_at = datetime.now(UTC)
+        self.updated_at = datetime.now(UTC)
 
     # --------------------------------------------------------------------
     # Public helpers
@@ -94,7 +94,7 @@ class CharacterStateMachine:
             return MAX_TAGS_DEFAULT
 
     # --------------------------------------------------------------------
-    # apply_round — the main round transition
+    # apply_round ??the main round transition
     # --------------------------------------------------------------------
 
     def apply_round(
@@ -155,8 +155,8 @@ class CharacterStateMachine:
         # Bookkeeping
         self.round += 1
         self.state["round"] = self.round
-        self.state["updated_at"] = datetime.utcnow().isoformat() + "Z"
-        self.updated_at = datetime.utcnow()
+        self.state["updated_at"] = datetime.now(UTC).isoformat().replace('+00:00', 'Z')
+        self.updated_at = datetime.now(UTC)
 
         # === Step 8: persist (sync wrapper around async persistence) ===
         # The state machine is sync by design (it has no I/O of its own);
@@ -193,7 +193,7 @@ class CharacterStateMachine:
             # Sync path: run to completion in a fresh loop.
             asyncio.run(persistence.save_character(self.state))
         else:
-            # Already inside an async context — schedule a background task
+            # Already inside an async context ??schedule a background task
             # and let the loop drive it. The character_state has already been
             # mutated, so even if the persistence call is delayed briefly,
             # the in-memory state is correct.
@@ -245,7 +245,7 @@ class CharacterStateMachine:
         """
         Add new tags, remove specified tags, and enforce the max-tags cap via
         mutex eviction (drop the tag with the lowest priority, breaking ties
-        by insertion order — earlier tag loses).
+        by insertion order ??earlier tag loses).
 
         Tags also accept a `priority` map inline via:
             new_status_tags: [ {"name": "wounded", "priority": 8}, "poisoned" ]
@@ -279,7 +279,7 @@ class CharacterStateMachine:
         max_tags = self.get_max_tags()
         for name, priority in new_tags:
             if name in effects:
-                # Already present — update its priority in case it changed
+                # Already present ??update its priority in case it changed
                 self.tag_priorities[name] = priority
                 continue
 
@@ -409,7 +409,7 @@ class CharacterStateMachine:
     def add_status_tag(self, tag: str, priority: int = DEFAULT_TAG_PRIORITY, ttl: Optional[int] = None) -> bool:
         """
         Add a status tag to the character.
-        Max 8 tags. Mutex overwrite (higher priority wins; ties → newest wins).
+        Max 8 tags. Mutex overwrite (higher priority wins; ties ??newest wins).
         """
         physical = self.state.setdefault("physical", {})
         effects: List[str] = list(physical.get("active_effects", []) or [])
@@ -417,7 +417,7 @@ class CharacterStateMachine:
         if tag in effects:
             # Update priority
             self.tag_priorities[tag] = max(priority, self.tag_priorities.get(tag, 0))
-            self.updated_at = datetime.utcnow()
+            self.updated_at = datetime.now(UTC)
             return True
 
         if len(effects) >= self.get_max_tags():
@@ -436,7 +436,7 @@ class CharacterStateMachine:
         effects.append(tag)
         self.tag_priorities[tag] = priority
         physical["active_effects"] = effects
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(UTC)
         return True
 
     def remove_status_tag(self, tag: str) -> bool:
@@ -447,10 +447,9 @@ class CharacterStateMachine:
             effects.remove(tag)
             physical["active_effects"] = effects
             self.tag_priorities.pop(tag, None)
-            self.updated_at = datetime.utcnow()
+            self.updated_at = datetime.now(UTC)
             return True
         return False
-
 
 __all__ = [
     "CharacterStateMachine",

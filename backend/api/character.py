@@ -1,4 +1,4 @@
-"""
+﻿"""
 Character API endpoints.
 
 All endpoints go through the ``persistence.get_store()`` dispatcher so the
@@ -7,9 +7,11 @@ mode="memory") or the SQLAlchemy-backed ``DBStore`` (mode="database").
 """
 from fastapi import APIRouter, HTTPException
 from typing import Dict, Any, List
-from datetime import datetime
+from datetime import datetime, timezone
 
 from .. import persistence
+UTC = timezone.utc
+
 
 store = persistence.get_store()
 
@@ -40,10 +42,8 @@ ALLOWED_UPDATE_PATHS = {
     "inventory": "dict",
 }
 
-
 def _now_iso() -> str:
-    return datetime.utcnow().isoformat() + "Z"
-
+    return datetime.now(UTC).isoformat().replace('+00:00', 'Z')
 
 def _get_path(data: Dict[str, Any], dotted: str) -> Any:
     node: Any = data
@@ -53,9 +53,7 @@ def _get_path(data: Dict[str, Any], dotted: str) -> Any:
         node = node[part]
     return node
 
-
 _MISSING = object()
-
 
 def _validate_required_fields(data: Dict[str, Any]) -> List[str]:
     errors: List[str] = []
@@ -63,7 +61,6 @@ def _validate_required_fields(data: Dict[str, Any]) -> List[str]:
         if _get_path(data, field) is _MISSING:
             errors.append(f"Missing required field: {field}")
     return errors
-
 
 def _validate_enum_values(data: Dict[str, Any]) -> List[str]:
     errors: List[str] = []
@@ -78,7 +75,6 @@ def _validate_enum_values(data: Dict[str, Any]) -> List[str]:
         errors.append(f"Invalid mental.morale_level '{morale}'. Must be one of: {sorted(VALID_MORALE)}")
     return errors
 
-
 def _apply_defaults(data: Dict[str, Any]) -> Dict[str, Any]:
     now = _now_iso()
     if not data.get("created_at"):
@@ -92,7 +88,6 @@ def _apply_defaults(data: Dict[str, Any]) -> Dict[str, Any]:
     if "active_effects" not in physical or physical["active_effects"] is None:
         physical["active_effects"] = []
     return data
-
 
 def _validate_update_value(path: str, value: Any) -> str:
     expected = ALLOWED_UPDATE_PATHS[path]
@@ -122,14 +117,12 @@ def _validate_update_value(path: str, value: Any) -> str:
             return f"Field '{path}' must be a dict"
     return ""
 
-
 def _set_path(target: Dict[str, Any], dotted: str, value: Any) -> None:
     parts = dotted.split(".")
     node = target
     for part in parts[:-1]:
         node = node.setdefault(part, {})
     node[parts[-1]] = value
-
 
 @router.post("/")
 async def create_character(character_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -148,12 +141,10 @@ async def create_character(character_data: Dict[str, Any]) -> Dict[str, Any]:
     await store.save_character(character)
     return character
 
-
 @router.get("/")
 async def list_characters() -> Dict[str, Any]:
     characters = await store.list_characters()
     return {"count": len(characters), "characters": characters}
-
 
 @router.get("/{character_id}")
 async def get_character(character_id: str) -> Dict[str, Any]:
@@ -162,7 +153,6 @@ async def get_character(character_id: str) -> Dict[str, Any]:
         raise HTTPException(status_code=404, detail=f"Character '{character_id}' not found")
     character["updated_at"] = _now_iso()
     return character
-
 
 @router.put("/{character_id}")
 async def update_character(character_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:

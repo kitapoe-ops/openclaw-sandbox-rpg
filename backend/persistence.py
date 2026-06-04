@@ -1,4 +1,4 @@
-"""
+﻿"""
 High-level persistence API
 ============================
 Provides drop-in async functions for saving/loading characters, scenes, and
@@ -14,8 +14,8 @@ Persistence-mode switch
 The module exposes ``get_store()`` which returns a backend object with a
 uniform interface. Two backends are supported:
 
-- ``"memory"`` (default) — ``backend.store.store`` (``InMemoryStore``)
-- ``"database"``          — ``backend.persistence_db.db_store`` (``DBStore``)
+- ``"memory"`` (default) ??``backend.store.store`` (``InMemoryStore``)
+- ``"database"``          ??``backend.persistence_db.db_store`` (``DBStore``)
 
 The mode is controlled by ``settings.persistence_mode`` (env var
 ``SANDBOX_PERSISTENCE_MODE``). The legacy high-level async functions in this
@@ -28,7 +28,8 @@ import logging
 import os
 import threading
 import traceback
-from datetime import datetime
+
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import select, delete
@@ -37,10 +38,11 @@ from sqlalchemy.exc import SQLAlchemyError
 from .config import settings
 from .db import get_session, init_db
 from .orm import Character as CharacterORM, Scene as SceneORM, World as WorldORM
+UTC = timezone.utc
+
 from .store import store
 
 logger = logging.getLogger(__name__)
-
 
 # ============================================
 # Backend dispatcher
@@ -50,7 +52,6 @@ logger = logging.getLogger(__name__)
 # the same instance for the lifetime of the process.
 _BACKEND_CACHE: Dict[str, Any] = {}
 _BACKEND_LOCK = threading.Lock()
-
 
 class AsyncInMemoryStore:
     """
@@ -107,7 +108,6 @@ class AsyncInMemoryStore:
     def inner(self):
         return self._inner
 
-
 def _resolve_mode() -> str:
     """
     Determine the active persistence mode.
@@ -120,7 +120,6 @@ def _resolve_mode() -> str:
     if env_mode:
         return env_mode.strip().lower()
     return (settings.persistence_mode or "memory").strip().lower()
-
 
 def get_store():
     """
@@ -135,8 +134,8 @@ def get_store():
     uniformly.
 
     Two modes are supported:
-    - ``"memory"``  — :data:`backend.store.store`
-    - ``"database"`` — :data:`backend.persistence_db.db_store`
+    - ``"memory"``  ??:data:`backend.store.store`
+    - ``"database"`` ??:data:`backend.persistence_db.db_store`
     """
     mode = _resolve_mode()
     with _BACKEND_LOCK:
@@ -156,7 +155,6 @@ def get_store():
         _BACKEND_CACHE[mode] = backend
     return backend
 
-
 def reset_backend_cache() -> None:
     """
     Clear the cached backend instances. Test-only convenience.
@@ -164,12 +162,9 @@ def reset_backend_cache() -> None:
     with _BACKEND_LOCK:
         _BACKEND_CACHE.clear()
 
-
 def current_mode() -> str:
     """Return the resolved persistence mode string (``"memory"``/``"database"``)."""
     return _resolve_mode()
-
-
 
 # ============================================
 # Helpers
@@ -182,7 +177,6 @@ def _is_fatal_db_error(exc: BaseException) -> bool:
     (fallback), since persistence should never crash the dev workflow.
     """
     return isinstance(exc, (SQLAlchemyError, ConnectionError, OSError))
-
 
 # ============================================
 # Character
@@ -201,7 +195,7 @@ async def save_character(char: Dict[str, Any]) -> None:
     character_id = char["character_id"]
     name = char.get("name", "")
     world_id = char.get("world_id", "default")
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
 
     # Build the json_state blob: everything except a small set of "header" fields
     header_fields = {"character_id", "name", "world_id", "created_at", "updated_at"}
@@ -238,10 +232,9 @@ async def save_character(char: Dict[str, Any]) -> None:
                 exc, traceback.format_exc(),
             )
         else:
-            # Unknown error — still fallback so dev never breaks
+            # Unknown error ??still fallback so dev never breaks
             logger.warning("save_character: unexpected error, falling back: %s", exc)
         store.save_character(char)
-
 
 async def load_character(character_id: str) -> Optional[Dict[str, Any]]:
     """
@@ -271,7 +264,6 @@ async def load_character(character_id: str) -> Optional[Dict[str, Any]]:
         logger.warning("load_character: DB read failed, falling back: %s", exc)
         return store.get_character(character_id)
 
-
 # ============================================
 # Scene
 # ============================================
@@ -287,7 +279,7 @@ async def save_scene(character_id: str, scene: Dict[str, Any]) -> None:
         raise ValueError("scene must be a dict")
 
     round_number = int(scene.get("round", 0))
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
 
     try:
         await init_db()
@@ -317,7 +309,6 @@ async def save_scene(character_id: str, scene: Dict[str, Any]) -> None:
         logger.warning("save_scene: DB write failed, falling back: %s", exc)
         store.save_scene(character_id, scene)
 
-
 async def load_scenes(character_id: str, limit: int = 20) -> List[Dict[str, Any]]:
     """
     Load the latest ``limit`` scenes for a character, ordered by id DESC
@@ -341,7 +332,6 @@ async def load_scenes(character_id: str, limit: int = 20) -> List[Dict[str, Any]
         logger.warning("load_scenes: DB read failed, falling back: %s", exc)
         return store.get_scene_history(character_id, limit=limit)
 
-
 # ============================================
 # World
 # ============================================
@@ -352,7 +342,7 @@ async def save_world(world_id: str, config: Dict[str, Any]) -> None:
         raise ValueError("world_id is required")
     if not isinstance(config, dict):
         raise ValueError("config must be a dict")
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     try:
         await init_db()
         async with get_session() as session:
@@ -373,7 +363,6 @@ async def save_world(world_id: str, config: Dict[str, Any]) -> None:
         logger.warning("save_world: DB write failed, falling back: %s", exc)
         store.load_world(world_id, config)
 
-
 async def load_world(world_id: str) -> Optional[Dict[str, Any]]:
     """Load a world config, or None if not found."""
     if not world_id:
@@ -392,7 +381,6 @@ async def load_world(world_id: str) -> Optional[Dict[str, Any]]:
     except Exception as exc:  # noqa: BLE001
         logger.warning("load_world: DB read failed, falling back: %s", exc)
         return store.get_world(world_id)
-
 
 # ============================================
 # Test helpers
@@ -413,7 +401,6 @@ async def reset_all() -> None:
         store.characters.clear()
         store.scenes.clear()
         store.worlds.clear()
-
 
 __all__ = [
     "save_character",

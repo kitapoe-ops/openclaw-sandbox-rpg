@@ -1,4 +1,4 @@
-"""
+﻿"""
 In-Memory Character & Scene Store
 ====================================
 Lightweight in-process storage for development.
@@ -9,9 +9,10 @@ Storage:
 - scenes: dict[character_id, list[scene_output]]
 """
 from typing import Dict, Any, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import threading
 import copy
+UTC = timezone.utc
 
 
 class InMemoryStore:
@@ -25,7 +26,7 @@ class InMemoryStore:
 
     def save_character(self, character: Dict[str, Any]) -> None:
         with self._lock:
-            character["updated_at"] = datetime.utcnow().isoformat() + "Z"
+            character["updated_at"] = datetime.now(UTC).isoformat().replace('+00:00', 'Z')
             self.characters[character["character_id"]] = copy.deepcopy(character)
 
     def get_character(self, character_id: str) -> Optional[Dict[str, Any]]:
@@ -61,7 +62,6 @@ class InMemoryStore:
         with self._lock:
             w = self.worlds.get(world_id)
             return copy.deepcopy(w) if w else None
-
 
 # Global singleton
 store = InMemoryStore()

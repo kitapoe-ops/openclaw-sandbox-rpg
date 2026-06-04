@@ -47,7 +47,7 @@ app.include_router(scene.router, prefix="/api/scene", tags=["scene"])
 app.include_router(world.router, prefix="/api/world", tags=["world"])
 
 # WebSocket
-app.add_websocket_route("/ws/game/{character_id}", game_socket.websocket_endpoint)
+app.add_api_websocket_route("/ws/game/{character_id}", game_socket.websocket_endpoint)
 
 
 @app.get("/health")

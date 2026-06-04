@@ -310,3 +310,85 @@ chore: Update dependencies
 ## License
 
 MIT — see [LICENSE](../LICENSE)
+
+---
+
+## Wave 1 Quickstart (current delivery)
+
+### 1. Install backend deps
+
+`ash
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r backend/requirements.txt
+`
+
+### 2. Run tests
+
+`ash
+.\.venv\Scripts\python.exe -m pytest backend/tests/ -v
+`
+
+Expected: **133 passed, 1 skipped, 0 failed** (1 skip is the cloud API key test, which is skipped if no API key is set).
+
+### 3. Seed demo data
+
+`ash
+.\.venv\Scripts\python.exe backend/seed_demo.py
+`
+
+Loads worlds/dnd_5e_forgotten_realms.yaml (1,025 lines, 10 NPCs, 21 items, 5 locations, 3 quests, 3 starter characters) into the in-memory store and creates char_starter_aria (half-elf ranger 雅莉亞・月羽).
+
+The script prints CHARACTER_ID=... and WORLD_ID=... on success.
+
+### 4. Run the HTTP server
+
+`ash
+.\.venv\Scripts\python.exe -m uvicorn backend.main:app --host 127.0.0.1 --port 8765
+`
+
+### 5. Smoke-test the API
+
+`ash
+# Health
+curl http://127.0.0.1:8765/health
+
+# Get the demo character
+curl http://127.0.0.1:8765/api/character/char_starter_aria
+
+# Get the world state
+curl http://127.0.0.1:8765/api/world/dnd_5e_forgotten_realms/state
+`
+
+### 6. Full HTTP smoke test (6 steps)
+
+`powershell
+.\scripts\smoke_test.ps1
+`
+
+Verifies: health → character load → world state → action submit (400 expected) → scene seed → action submit (200 with scene).
+
+### Persistence modes
+
+Default persistence_mode is memory (in-process InMemoryStore; data lost on restart).
+
+Switch to SQLAlchemy-backed persistence:
+
+`powershell
+="database"
+="postgresql+asyncpg://user:pass@localhost:5432/sandbox_rpg"
+# or for SQLite (dev):
+="sqlite+aiosqlite:///./sandbox_rpg.db"
+
+.\.venv\Scripts\python.exe -m alembic upgrade head
+`
+
+## Wave 1 Audit History
+
+R1-14B audit completed. All 4 issues resolved:
+
+1. **db.py::init_db race condition** — fixed with syncio.Lock + idempotency flag (ackend/db.py)
+2. **Persistence not integrated** — all 4 API endpoints now use persistence.get_store() dispatcher
+3. **Schema field mismatch** — state_change unified to {old, new, reason} format
+4. **YAML enum violations** — steady→calm, high→elated
+
+Branch: local-wave1-stub (pushed to remote as snapshot of Wave 1 delivery; main is v3.7 production).

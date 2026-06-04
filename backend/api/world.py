@@ -1,15 +1,17 @@
-"""
+﻿"""
 World API endpoints - world state and management.
 
 All persistence calls go through the ``persistence.get_store()`` dispatcher.
 """
 from fastapi import APIRouter, HTTPException
 from typing import Dict, Any, List
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .. import persistence
 from ..world_lore_db import WorldLoreDB
+UTC = timezone.utc
+
 
 store = persistence.get_store()
 
@@ -18,14 +20,11 @@ router = APIRouter()
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _WORLDS_DIR = _REPO_ROOT / "worlds"
 
-
 def _now_iso() -> str:
-    return datetime.utcnow().isoformat() + "Z"
-
+    return datetime.now(UTC).isoformat().replace('+00:00', 'Z')
 
 def _world_yaml_path(world_id: str) -> Path:
     return _WORLDS_DIR / f"{world_id}.yaml"
-
 
 async def _ensure_world_loaded(world_id: str) -> Dict[str, Any]:
     existing = await store.get_world(world_id)
@@ -59,7 +58,6 @@ async def _ensure_world_loaded(world_id: str) -> Dict[str, Any]:
     await store.load_world(world_id, world_data)
     return world_data
 
-
 @router.get("/{world_id}/state")
 async def get_world_state(world_id: str) -> Dict[str, Any]:
     world = await _ensure_world_loaded(world_id)
@@ -72,7 +70,6 @@ async def get_world_state(world_id: str) -> Dict[str, Any]:
         "npcs_count": len(world.get("npcs", [])),
         "items_count": len(world.get("items", [])),
     }
-
 
 @router.get("/{world_id}/parameters")
 async def get_world_parameters(world_id: str) -> Dict[str, Any]:
@@ -91,7 +88,6 @@ async def get_world_parameters(world_id: str) -> Dict[str, Any]:
         })
     return {"world_id": world_id, "parameters": out, "count": len(out)}
 
-
 @router.post("/{world_id}/etl")
 async def trigger_daily_etl(world_id: str) -> Dict[str, Any]:
     if not _world_yaml_path(world_id).is_file():
@@ -104,7 +100,6 @@ async def trigger_daily_etl(world_id: str) -> Dict[str, Any]:
     world["last_etl_status"] = "queued"
     await store.load_world(world_id, world)
     return {"world_id": world_id, "etl_triggered_at": now, "status": "queued"}
-
 
 @router.get("/{world_id}")
 async def get_full_world(world_id: str) -> Dict[str, Any]:

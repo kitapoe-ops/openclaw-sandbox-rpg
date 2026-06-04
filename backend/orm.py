@@ -1,4 +1,4 @@
-"""
+﻿"""
 SQLAlchemy ORM Models
 ======================
 Persistent storage layer for Sandbox RPG.
@@ -20,11 +20,12 @@ transparently handled by SQLAlchemy's `JSON` type).
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import String, Integer, ForeignKey, DateTime, JSON, Index
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+UTC = timezone.utc
 
 
 # ============================================
@@ -34,7 +35,6 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 class Base(DeclarativeBase):
     """Declarative base for all ORM models."""
     pass
-
 
 # ============================================
 # Tables
@@ -48,9 +48,9 @@ class Character(Base):
     name: Mapped[str] = mapped_column(String(256), nullable=False, default="")
     world_id: Mapped[str] = mapped_column(String(128), nullable=False, default="default", index=True)
     json_state: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime, nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
 
     scenes: Mapped[list["Scene"]] = relationship(
@@ -67,7 +67,6 @@ class Character(Base):
             "updated_at": self.updated_at.isoformat() + "Z" if self.updated_at else None,
         }
 
-
 class Scene(Base):
     """Per-round scene output (full scene dict in json_output column)."""
     __tablename__ = "scenes"
@@ -79,7 +78,7 @@ class Scene(Base):
     )
     round: Mapped[int] = mapped_column(Integer, nullable=False, default=0, index=True)
     json_output: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
 
     character: Mapped["Character"] = relationship("Character", back_populates="scenes")
 
@@ -97,14 +96,13 @@ class Scene(Base):
             "created_at": self.created_at.isoformat() + "Z" if self.created_at else None,
         }
 
-
 class World(Base):
     """World configuration (full YAML/JSON config in json_config column)."""
     __tablename__ = "worlds"
 
     world_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     json_config: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict:
         return {
@@ -112,6 +110,5 @@ class World(Base):
             "json_config": self.json_config,
             "created_at": self.created_at.isoformat() + "Z" if self.created_at else None,
         }
-
 
 __all__ = ["Base", "Character", "Scene", "World"]

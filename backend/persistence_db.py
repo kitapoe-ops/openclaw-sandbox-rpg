@@ -1,4 +1,4 @@
-"""
+﻿"""
 DBStore - SQLAlchemy-backed persistence backend
 ================================================
 Mirror of ``backend.store.InMemoryStore`` for the "database" persistence
@@ -23,7 +23,7 @@ factory, and table definitions.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import select
@@ -31,9 +31,10 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from .db import get_session, init_db
 from .orm import Character as CharacterORM, Scene as SceneORM, World as WorldORM
+UTC = timezone.utc
+
 
 logger = logging.getLogger(__name__)
-
 
 # ============================================
 # Header fields: small set of keys that live as their own columns
@@ -47,7 +48,6 @@ _CHARACTER_HEADER_FIELDS = {
     "updated_at",
 }
 
-
 def _split_character(char: Dict[str, Any]) -> Dict[str, Any]:
     """Pull out the header fields from a full character dict."""
     return {
@@ -56,7 +56,6 @@ def _split_character(char: Dict[str, Any]) -> Dict[str, Any]:
         "world_id": char.get("world_id", "default"),
         "json_state": {k: v for k, v in char.items() if k not in _CHARACTER_HEADER_FIELDS},
     }
-
 
 def _row_to_character(row: CharacterORM) -> Dict[str, Any]:
     """Reassemble a full character dict from a Character row."""
@@ -67,7 +66,6 @@ def _row_to_character(row: CharacterORM) -> Dict[str, Any]:
     char["created_at"] = row.created_at.isoformat() + "Z" if row.created_at else None
     char["updated_at"] = row.updated_at.isoformat() + "Z" if row.updated_at else None
     return char
-
 
 # ============================================
 # DBStore
@@ -87,7 +85,7 @@ class DBStore:
         if not isinstance(character, dict) or "character_id" not in character:
             raise ValueError("character must be a dict containing 'character_id'")
         character_id = character["character_id"]
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         header = _split_character(character)
         try:
             await init_db()
@@ -157,7 +155,7 @@ class DBStore:
             )
         ).scalar_one_or_none()
         if existing is None:
-            now = datetime.utcnow()
+            now = datetime.now(UTC)
             session.add(CharacterORM(
                 character_id=character_id,
                 name=name,
@@ -174,7 +172,7 @@ class DBStore:
         if not isinstance(scene, dict):
             raise ValueError("scene must be a dict")
         round_number = int(scene.get("round", 0))
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         try:
             await init_db()
             async with get_session() as session:
@@ -244,7 +242,7 @@ class DBStore:
             raise ValueError("world_id is required")
         if not isinstance(world_data, dict):
             raise ValueError("world_data must be a dict")
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         try:
             await init_db()
             async with get_session() as session:
@@ -284,11 +282,9 @@ class DBStore:
             logger.error("DBStore.get_world failed: %s", exc)
             raise
 
-
 # ============================================
 # Module-level singleton (mirrors ``store`` in backend.store)
 # ============================================
 db_store = DBStore()
-
 
 __all__ = ["DBStore", "db_store"]
