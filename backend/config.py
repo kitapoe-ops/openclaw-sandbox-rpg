@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     postgres_user: str = "rpg_user"
     postgres_password: str = "dev_password"
 
+    # Persistence mode: "memory" (default, in-process InMemoryStore) or
+    # "database" (SQLAlchemy + Postgres/SQLite via ``persistence_db``).
+    # Switchable per-process; can be overridden via the
+    # ``SANDBOX_PERSISTENCE_MODE`` env var (handled in ``persistence.get_store``).
+    persistence_mode: str = "memory"
+
     # Backend
     backend_host: str = "0.0.0.0"
     backend_port: int = 8000

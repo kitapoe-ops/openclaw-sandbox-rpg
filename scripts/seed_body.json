@@ -1,0 +1,24 @@
+{
+  "round": 1,
+  "narrative": "你企喺銀月森林入口，樹葉沙沙作響，遠處傳嚟盜匪嘅叫囂聲。",
+  "location_id": "loc_silvermoon_forest",
+  "choices": [
+    {
+      "id": "opt_01",
+      "text": "循住聲音方向行過去",
+      "intent_category": "environment",
+      "attitude_options": [
+        {"dimension": "caution", "level": "balanced", "effect": "保持警覺"}
+      ]
+    },
+    {"id": "opt_02", "text": "繞路避開",       "intent_category": "environment",   "attitude_options": []},
+    {"id": "opt_03", "text": "用弓警戒",       "intent_category": "item_interaction", "attitude_options": []},
+    {"id": "opt_04", "text": "等一等觀察",     "intent_category": "delay",          "attitude_options": []}
+  ],
+  "state_changes": {},
+  "minor_event": {
+    "id": "minor_01",
+    "description": "樹上有一隻烏鴉盯住你",
+    "narrative_impact": "subtle"
+  }
+}

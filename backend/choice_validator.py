@@ -5,11 +5,33 @@ Validates player input against character state, world state, and game rules.
 
 Reference: docs/SCHEMAS/player_input.schema.json
 """
-from typing import Dict, Any, Tuple, List
-from jsonschema import validate, ValidationError
+from typing import Dict, Any, Tuple, List, Optional
+from pathlib import Path
+import json
+import logging
 
 from .physics_lock import PhysicsLock
-from .semantic_gradient import SemanticGradient
+
+logger = logging.getLogger(__name__)
+
+
+def _load_schema(schema_filename: str) -> Optional[Dict[str, Any]]:
+    """
+    Load a JSON schema from docs/SCHEMAS/ relative to repo root.
+    Returns None if file not found.
+    """
+    # backend/choice_validator.py → repo root is parent of parent
+    repo_root = Path(__file__).resolve().parent.parent
+    schema_path = repo_root / "docs" / "SCHEMAS" / schema_filename
+    if not schema_path.exists():
+        logger.warning(f"Schema file not found: {schema_path}")
+        return None
+    try:
+        with open(schema_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Failed to load schema {schema_path}: {e}")
+        return None
 
 
 class ChoiceValidator:
@@ -23,12 +45,17 @@ class ChoiceValidator:
     4. Equipment validity (does player own the equipment?)
     5. Item usage validity (does player have enough items?)
     6. Physics lock (can character physically do this?)
-
-    TODO: Implement full validation.
     """
 
-    def __init__(self, physics_lock: PhysicsLock = None):
+    def __init__(self, physics_lock: Optional[PhysicsLock] = None):
         self.physics_lock = physics_lock or PhysicsLock()
+        # Try to load schema; if jsonschema is installed, use it
+        self._schema = _load_schema("player_input.schema.json")
+        try:
+            from jsonschema import validate, ValidationError  # noqa
+            self._validator_available = True
+        except ImportError:
+            self._validator_available = False
 
     def validate(
         self,
@@ -41,12 +68,15 @@ class ChoiceValidator:
         """
         errors = []
 
-        # 1. Schema validation
-        try:
-            from ..docs.SCHEMAS.player_input_schema import PLAYER_INPUT_SCHEMA
-            validate(instance=player_input, schema=PLAYER_INPUT_SCHEMA)
-        except (ImportError, ValidationError) as e:
-            errors.append(f"Schema validation failed: {e}")
+        # 1. Schema validation (only if jsonschema is available)
+        if self._validator_available and self._schema:
+            try:
+                from jsonschema import validate, ValidationError
+                validate(instance=player_input, schema=self._schema)
+            except ValidationError as e:
+                errors.append(f"Schema validation failed: {e.message}")
+            except Exception as e:
+                errors.append(f"Schema validation error: {e}")
 
         # 2. Choice availability
         available_choices = current_scene.get("choices", [])
@@ -70,12 +100,18 @@ class ChoiceValidator:
         # 5. Item usage validity
         items_used = player_input.get("items_used", [])
         if items_used:
-            character_items = {i["item_id"]: i.get("quantity", 1) for i in character_state.get("inventory", {}).get("items", [])}
+            character_items = {
+                i["item_id"]: i.get("quantity", 1)
+                for i in character_state.get("inventory", {}).get("items", [])
+            }
             for used in items_used:
                 item_id = used["item_id"]
                 qty = used["quantity"]
                 if character_items.get(item_id, 0) < qty:
-                    errors.append(f"Insufficient quantity of '{item_id}' (need {qty}, have {character_items.get(item_id, 0)})")
+                    errors.append(
+                        f"Insufficient quantity of '{item_id}' "
+                        f"(need {qty}, have {character_items.get(item_id, 0)})"
+                    )
 
         # 6. Physics lock
         if available_choices and option_id:
@@ -91,3 +127,4 @@ class ChoiceValidator:
                     player_input["_physics_lock_warning"] = reason
 
         return len(errors) == 0, errors
+

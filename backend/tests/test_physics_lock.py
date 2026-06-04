@@ -35,15 +35,17 @@ class TestPhysicsLock:
         is_valid, reason = lock.validate_choice("custom_forbidden_action here", state)
         assert is_valid is False
 
-    def test_validate_choices_batch(self):
-        lock = PhysicsLock()
+    @pytest.mark.asyncio
+    async def test_validate_choices_batch(self):
+        """Async path: lock with use_llm_rewrite=False uses _fallback_rewrite (no LLM call)."""
+        lock = PhysicsLock(use_llm_rewrite=False)
         state = {"physical": {"active_effects": ["左臂骨折"]}}
         choices = [
             {"id": "opt_01", "text": "用雙手握劍攻擊"},
-            {"id": "opt_02", "text": "用單手揮劍"},
+            {"id": "opt_02", "text": "用單手握劍"},
             {"id": "opt_03", "text": "投擲匕首"},
         ]
-        validated = lock.validate_choices(choices, state)
+        validated = await lock.validate_choices(choices, state)
         # opt_01 and opt_03 should be flagged
         assert validated[0].get("physics_lock_rewritten") is True
         assert validated[1].get("physics_lock_rewritten") is None

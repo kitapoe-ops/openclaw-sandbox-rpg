@@ -1,0 +1,10 @@
+{
+  "round": 1,
+  "character_id": "char_starter_aria",
+  "choice": {
+    "option_id": "opt_01",
+    "attitude_selections": [
+      {"dimension": "caution", "level": "balanced"}
+    ]
+  }
+}
