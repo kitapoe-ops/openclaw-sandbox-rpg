@@ -125,11 +125,52 @@ class WorldLoreDB:
         top_k: int = 5,
     ) -> List[Dict[str, Any]]:
         """
-        Search world lore using vector similarity (RAG).
+        Search world lore using in-memory keyword matching.
 
-        TODO: Integrate LanceDB.
+        Production note: This is a placeholder for LanceDB RAG integration.
+        For now, returns matches from in-memory entity dicts via simple
+        substring scoring (case-insensitive). Acceptable for demo mode.
         """
-        raise NotImplementedError("TODO: Implement LanceDB integration")
+        if not query:
+            return []
+        q_lower = query.lower()
+        results: List[tuple] = []  # (score, entity)
+
+        # Search in selected entity types (or all)
+        type_to_dict = {
+            "npc": self.npcs,
+            "item": self.items,
+            "location": self.locations,
+            "quest": self.quests,
+        }
+        types_to_search = entity_types or list(type_to_dict.keys())
+
+        for etype in types_to_search:
+            entity_dict = type_to_dict.get(etype)
+            if not entity_dict:
+                continue
+            for eid, entity in entity_dict.items():
+                # Score by keyword matches in name + description
+                score = 0
+                name = (entity.get("name", "") or "").lower()
+                desc = (entity.get("description", "") or "").lower()
+                if q_lower in name:
+                    score += 3
+                if q_lower in desc:
+                    score += 1
+                # Count word overlaps
+                query_words = set(q_lower.split())
+                for word in query_words:
+                    if len(word) > 2 and word in name:
+                        score += 1
+                    if len(word) > 2 and word in desc:
+                        score += 0.5
+                if score > 0:
+                    results.append((score, {"type": etype, **entity}))
+
+        # Sort by score desc, return top_k
+        results.sort(key=lambda x: -x[0])
+        return [r[1] for r in results[:top_k]]
 
     def get_context_for_scene(
         self,

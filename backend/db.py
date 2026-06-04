@@ -99,16 +99,46 @@ async def transaction() -> AsyncIterator[AsyncSession]:
 # ============================================
 # Schema (placeholder — load from schema.sql on startup)
 # ============================================
+import asyncio
+
+# Init lock + flag for race-safe idempotent initialization
+_init_lock: Optional[asyncio.Lock] = None
+_init_done: bool = False
+
+
+def reset_init_state() -> None:
+    """Reset initialization state. For testing only."""
+    global _init_done
+    _init_done = False
+
+
 async def init_db():
     """
-    Create all tables on startup.
+    Create all tables on startup. Safe to call concurrently from multiple
+    workers / coroutines — uses asyncio.Lock + idempotency flag to prevent
+    duplicate initialization (which would deadlock on connection pool).
     In production, use Alembic migrations instead.
     """
-    # Import models to register them with Base
-    from . import models  # noqa: F401
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    logger.info("Database tables created (or already exist)")
+    global _init_lock, _init_done
+
+    if _init_lock is None:
+        _init_lock = asyncio.Lock()
+
+    async with _init_lock:
+        if _init_done:
+            return  # Already initialized, no-op
+
+        try:
+            # Import models to register them with Base
+            from . import models  # noqa: F401
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            _init_done = True
+            logger.info("Database tables created (or already exist)")
+        except Exception as e:
+            logger.error(f"Database initialization failed: {e}")
+            # Do NOT set _init_done=True on failure — allow retry
+            raise
 
 
 # ============================================
