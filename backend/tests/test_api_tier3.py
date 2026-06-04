@@ -79,20 +79,86 @@ class TestCharacterApi:
 
 
 class TestWorldApi:
-    @pytest.mark.xfail(reason="v3.7 world API requires DB; no demo mode fallback")
     def test_load_dnd_world(self, monkeypatch):
         """
-        v3.7 world API requires DB connection (no demo mode fallback).
-        Without DB, raises ConnectionRefusedError.
+        v3.7 world API: in demo mode, the endpoint reads from
+        `worlds/dnd_5e_forgotten_realms.yaml` instead of PostgreSQL.
         """
         monkeypatch.setenv("DEMO_MODE", "true")
         import importlib
         from backend import demo_mode
         importlib.reload(demo_mode)
         client = TestClient(app)
-        # In TestClient context, server exceptions are raised, not returned
-        # as 500. We expect this to fail (xfail) until v3.7 adds demo fallback.
-        client.get("/api/world/dnd_5e_forgotten_realms/state")
+        r = client.get("/api/world/dnd_5e_forgotten_realms/state")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        # Demo mode payload contract
+        assert body.get("world_id") == "dnd_5e_forgotten_realms"
+        assert body.get("loaded") is True
+        assert body.get("mode") == "demo"
+        assert "world_meta" in body
+        assert isinstance(body.get("parameters"), list)
+        # The dnd_5e_forgotten_realms.yaml world has populated these sections
+        assert body.get("locations_count", 0) > 0
+        assert body.get("npcs_count", 0) > 0
+        assert body.get("items_count", 0) > 0
+
+    def test_list_worlds_demo(self, monkeypatch):
+        """GET /api/world/ in demo mode scans the worlds/ directory."""
+        monkeypatch.setenv("DEMO_MODE", "true")
+        import importlib
+        from backend import demo_mode
+        importlib.reload(demo_mode)
+        client = TestClient(app)
+        r = client.get("/api/world/")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body.get("mode") == "demo"
+        worlds = body.get("worlds", [])
+        assert any(w["world_id"] == "dnd_5e_forgotten_realms" for w in worlds)
+
+    def test_world_parameters_demo(self, monkeypatch):
+        """GET /api/world/{id}/parameters returns the YAML world_parameters list."""
+        monkeypatch.setenv("DEMO_MODE", "true")
+        import importlib
+        from backend import demo_mode
+        importlib.reload(demo_mode)
+        client = TestClient(app)
+        r = client.get("/api/world/dnd_5e_forgotten_realms/parameters")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body.get("mode") == "demo"
+        params = body.get("parameters", [])
+        assert isinstance(params, list)
+        assert len(params) > 0
+        # Each parameter has an id and a semantic_gradient in the source schema
+        first = params[0]
+        assert "id" in first
+        assert "name" in first
+
+    def test_world_etl_demo(self, monkeypatch):
+        """POST /api/world/{id}/etl in demo mode is a no-op ack."""
+        monkeypatch.setenv("DEMO_MODE", "true")
+        import importlib
+        from backend import demo_mode
+        importlib.reload(demo_mode)
+        client = TestClient(app)
+        r = client.post("/api/world/dnd_5e_forgotten_realms/etl")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body.get("mode") == "demo"
+        assert body.get("status") == "queued"
+        assert "queued_at" in body
+
+    def test_unknown_world_404_demo(self, monkeypatch):
+        """Unknown world_id returns 404 even in demo mode (no YAML found)."""
+        monkeypatch.setenv("DEMO_MODE", "true")
+        import importlib
+        from backend import demo_mode
+        importlib.reload(demo_mode)
+        client = TestClient(app)
+        r = client.get("/api/world/this_world_does_not_exist_xyz/state")
+        assert r.status_code == 404
 
 
 class TestCORS:
