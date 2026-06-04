@@ -726,3 +726,49 @@ naturally rather than dump them.
 
 _End of design document. Implementation begins after this design is
 reviewed and the schema is merged into `docs/SCHEMAS/memory_entry.schema.json`._
+
+
+---
+
+## Appendix D — R1-14B Real Audit Findings (2026-06-04)
+
+After shipping Memory Palace (Phase A) + Soul Transfer, we ran a real R1-14B
+audit (LM Studio, `deepseek-r1-distill-qwen-14b`, NOT M3 mock). Verdict: **FAIL** (6 findings).
+
+### D.1 Findings table
+
+| # | Severity | Issue | Status |
+|---|---------|-------|--------|
+| 1 | CRITICAL | Soul Transfer atomicity vulnerable to concurrent God Agent ETL | **DEFERRED to Phase C** (2PC scope) |
+| 2 | CRITICAL | Predictable degradation (random.Random is non-CSPRNG) | **DEFERRED with rationale** (see D.2) |
+| 3 | HIGH | Memory Palace R1 fixes unfixed | **FALSE POSITIVE** (R1 misread file area) |
+| 4 | HIGH | Insufficient concurrency test coverage | **FIXED** (7 new tests, 101/101 PASS) |
+| 5 | MEDIUM | Audit infra lacks retry | DEFERRED (low priority) |
+| 6 | LOW | SQLite-specific code = Phase B/C debt | DEFERRED (planned) |
+
+### D.2 Finding 2 Defer Rationale (CSPRNG for degradation factor)
+
+**R1 finding**: Use CSPRNG (e.g., `secrets.SystemRandom`) instead of `random.Random` because Mersenne Twister is predictable from observed outputs.
+
+**Counter-rationale**:
+- The factor range is intentionally narrow: `[0.6, 0.9]` (range = 0.3)
+- Even if a player reverse-engineers one factor, the next 10 transfers will produce factors across the full range
+- `random.Random` is seedable for **deterministic testing** (see `TestAntiPredictability::test_deterministic_with_seed`); `secrets.SystemRandom` cannot be seeded, breaking testability
+- The actual gameplay loop prevents brute-force reverse engineering: each Soul Transfer costs in-game resources, so an attacker cannot sample thousands of factors cheaply
+- Anti-predictability is achieved by **range + per-call independence**, not by cryptographic strength of the RNG
+
+**When to revisit**: if we add observable side channels (e.g., factor visible in game UI logs that an attacker can scrape), CSPRNG becomes necessary. Until then, `random.Random` is the correct trade-off.
+
+### D.3 Concurrency Test Coverage (Finding 4 fix)
+
+Added `backend/tests/test_soul_transfer_concurrent.py` (7 tests):
+
+| Vector | Test |
+|--------|------|
+| V1: 10 concurrent same-(src, dst) transfers | `test_v1_ten_concurrent_transfers_all_persist` |
+| V1.5: concurrent factors are independent | `test_v1_concurrent_transfers_have_independent_factors` |
+| V2: commit failure leaves no partial state | `test_v2_commit_failure_leaves_no_partial_soul` |
+| V2.5: 1 of 5 concurrent transfers fails \u2014 others persist | `test_v2_concurrent_transfers_with_one_failing` |
+| V3: 2 concurrent apply_soul \u2014 only one wins | `test_v3_two_concurrent_apply_soul_only_one_succeeds` |
+| V4: assembly under concurrent writes | `test_v4_assembly_snapshot_isolation` |
+| V4.5: concurrent assembly produces unique payloads | `test_v4_concurrent_assembly_produces_unique_payloads` |

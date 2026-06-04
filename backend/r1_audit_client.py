@@ -249,3 +249,50 @@ async def audit_memory_palace(repo_root: str = ".") -> Dict[str, Any]:
         return result
     finally:
         await client.close()
+
+
+async def audit_full_wave2(repo_root: str = ".") -> Dict[str, Any]:
+    """
+    Real R1 audit covering all Wave 2 deliverables:
+    - memory_palace.py (post R1 fixes)
+    - soul_transfer.py (new)
+    - r1_audit_client.py (audit infrastructure)
+    - test_soul_transfer.py (22 new tests)
+
+    Verifies:
+    1. Soul Transfer atomicity (no partial-state risk)
+    2. Degradation engine is anti-predictable
+    3. Memory Palace R1 fixes are correctly implemented
+    4. R1 audit client itself meets production quality bar
+    """
+    client = R1AuditClient()
+    try:
+        await client.verify_endpoint()
+        result = await client.audit(
+            target_files=[
+                f"{repo_root}/backend/memory_palace.py",
+                f"{repo_root}/backend/soul_transfer.py",
+                f"{repo_root}/backend/r1_audit_client.py",
+                f"{repo_root}/backend/tests/test_soul_transfer.py",
+            ],
+            concerns=[
+                "Soul Transfer atomicity: does transfer_memories' all-or-nothing semantics actually prevent partial-state corruption under concurrent God Agent ETL?",
+                "Anti-predictability: is the random [0.6, 0.9] degradation factor truly non-deterministic, or could a player game it by repeat-transfer?",
+                "Memory Palace R1-fix correctness: are the 3 HIGH issues (N+1 connection, transfer transaction, exponential decay formula) ACTUALLY fixed in the current code? Or are they merely renamed/shuffled?",
+                "Test coverage: do the 22 new Soul Transfer tests genuinely exercise the contract, or are they tautological?",
+                "Audit infrastructure quality: is R1AuditClient production-grade (timeout, error handling, retry on transient failures)?",
+                "Cross-cutting: any new architectural debt that Phase B/C will inherit?",
+            ],
+            context={
+                "version": "Wave 2 v0.2.0",
+                "shipped_commits": [
+                    "fc1384b (R1 audit fixes for memory_palace)",
+                    "8cd60b9 (real R1 audit client)",
+                    "3deea0c (Soul Transfer implementation)",
+                ],
+                "test_count": 94,
+            },
+        )
+        return result
+    finally:
+        await client.close()
