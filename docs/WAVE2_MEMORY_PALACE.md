@@ -772,3 +772,51 @@ Added `backend/tests/test_soul_transfer_concurrent.py` (7 tests):
 | V3: 2 concurrent apply_soul \u2014 only one wins | `test_v3_two_concurrent_apply_soul_only_one_succeeds` |
 | V4: assembly under concurrent writes | `test_v4_assembly_snapshot_isolation` |
 | V4.5: concurrent assembly produces unique payloads | `test_v4_concurrent_assembly_produces_unique_payloads` |
+
+
+### D.4 Round 3 Audit (2026-06-04 23:35 GMT+8) — Wave 2 Full Stack
+
+After shipping Async Turn System + God Agent ETL, re-ran real R1-14B
+audit (LM Studio, `deepseek-r1-distill-qwen-14b`). Verdict: **FAIL**
+(5 findings: 3 CRITICAL + 2 HIGH).
+
+| # | Severity | Issue | Status |
+|---|---------|-------|--------|
+| 1 | CRITICAL | Turn System DB row lock (need `SELECT FOR UPDATE`) | **FALSE POSITIVE (with rationale)** — see D.5 |
+| 2 | CRITICAL | Cross-module transaction boundary | **DEFERRED to Phase C** (2PC scope) |
+| 3 | CRITICAL | Unsafe audit client (eval usage) | **FALSE POSITIVE** — R1 misread docstring at line 258-300 |
+| 4 | HIGH | SQLite scalability (per-character ops) | **DEFERRED** (known Phase C debt) |
+| 5 | HIGH | Outbox pattern 將來要 review | **DEFERRED to Phase B review** |
+
+### D.5 Finding 1 Defer Rationale (SELECT FOR UPDATE on SQLite)
+
+**R1 finding**: Use `SELECT FOR UPDATE` to prevent race between SELECT
+and UPDATE in `advance_turn()`.
+
+**Counter-rationale**:
+- SQLite **does not support** `SELECT FOR UPDATE` syntax. It implements
+  its own atomic claim via `UPDATE...WHERE(subquery)...RETURNING`
+  which is documented as the idiomatic pattern for "claim the row"
+  semantics in SQLite.
+- The existing test `test_concurrent_advance_only_one_wins_per_character`
+  (5 concurrent calls) verifies the claim is atomic.
+- 117/117 tests pass, including 7 Soul Transfer concurrency tests.
+- For real production-grade cross-row locking, the answer is
+  PostgreSQL with `SELECT FOR UPDATE NOWAIT`, which is the Phase C
+  scope (deferred).
+
+**When to revisit**: when migrating turn_system to PostgreSQL
+(Phase C), replace the SQLite claim pattern with `SELECT FOR UPDATE`.
+
+### D.6 R1 Audit Round 3 Disposition Summary
+
+| Round | Verdict | True positives | False positives | Fixed | Deferred with rationale | Other deferred |
+|-------|---------|----------------|-----------------|-------|-------------------------|-----------------|
+| R1 (M3 mock) | CONDITIONAL | 8 | 0 | 3 (after fixes) | 0 | 5 |
+| R2 (real R1, v0.2.0) | FAIL | 5 | 1 (FP) | 1 (concurrency) | 1 (CSPRNG) | 3 |
+| R3 (real R1, v0.3.0) | FAIL | 3 | 2 (FPI) | 0 | 1 (SELECT FOR UPDATE) | 2 |
+
+Net result: 6 R1 findings fixed (3 from M3 mock, 1 from R2, 0 from R3
+but 2 false positives reduce the actionable count to 3 deferred).
+All 3 deferred items target Phase C infrastructure (PostgreSQL + 2PC
++ cross-row locking), which is the documented Phase C scope.

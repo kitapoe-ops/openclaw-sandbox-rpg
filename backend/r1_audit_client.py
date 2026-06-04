@@ -155,11 +155,11 @@ class R1AuditClient:
         for f in target_files:
             p = Path(f)
             if p.exists():
-                # Read at most 150 lines to fit R1's 6K context
+                # Read at most 100 lines to fit R1's 6K context (5 files)
                 content = p.read_text(encoding="utf-8", errors="replace")
                 lines = content.split("\n")
-                if len(lines) > 150:
-                    content = "\n".join(lines[:150]) + f"\n... [truncated; {len(lines)-150} more lines]"
+                if len(lines) > 100:
+                    content = "\n".join(lines[:100]) + f"\n... [truncated; {len(lines)-100} more lines]"
                 file_contents[f] = content
             else:
                 file_contents[f] = f"[FILE NOT FOUND]"
@@ -291,6 +291,65 @@ async def audit_full_wave2(repo_root: str = ".") -> Dict[str, Any]:
                     "3deea0c (Soul Transfer implementation)",
                 ],
                 "test_count": 94,
+            },
+        )
+        return result
+    finally:
+        await client.close()
+
+
+async def audit_full_wave2_stack(repo_root: str = ".") -> Dict[str, Any]:
+    """
+    Real R1 audit covering the entire Wave 2 stack:
+    - turn_system.py (Async Turn System)
+    - etl_service.py (God Agent ETL with outbox pattern)
+    - soul_transfer.py (already audited in round 2, re-verify)
+    - memory_palace.py (already audited, re-verify post-Core3)
+    - r1_audit_client.py (audit infra self-quality)
+
+    Verifies:
+    1. Async Turn System's DB row lock is actually concurrent-safe
+       under God Agent ETL concurrency
+    2. Outbox pattern correctly mitigates R1 finding 1 (cross-file
+       atomicity) for the ETL use case
+    3. No new architectural debt introduced by Core #3
+    4. Cross-module integration: turn_system + etl_service +
+       memory_palace + soul_transfer work together coherently
+    5. Performance: do the new patterns scale to 500+ characters?
+    """
+    client = R1AuditClient()
+    try:
+        await client.verify_endpoint()
+        result = await client.audit(
+            target_files=[
+                f"{repo_root}/backend/turn_system.py",
+                f"{repo_root}/backend/etl_service.py",
+                f"{repo_root}/backend/soul_transfer.py",
+                f"{repo_root}/backend/memory_palace.py",
+                f"{repo_root}/backend/r1_audit_client.py",
+            ],
+            concerns=[
+                "Async Turn System: does the DB row lock (UPDATE ... WHERE turn_id = subquery RETURNING) actually prevent two concurrent advance_turn() from claiming the same turn? Or is there a race window between SELECT and UPDATE?",
+                "God Agent ETL outbox pattern: does the etl_outbox approach actually mitigate R1 finding 1 (cross-file atomicity) for the apply_decay case, or is it a partial fix that hides deeper issues?",
+                "Cross-module integration: when turn_system.complete_turn triggers memory_palace.apply_round + soul_transfer, do the three modules agree on transaction boundaries? Or does each module hold its own SQLite connection without coordination?",
+                "Performance: at 500+ characters, do the per-character SQLite operations (turns + memory_palace + soul_transfer) scale linearly, or do they create connection-pool exhaustion / lock contention?",
+                "Audit infrastructure: is the R1AuditClient itself production-grade (timeout handling, retry on transient errors, JSON parsing safety)?",
+                "New architectural debt: did Core #3 introduce any patterns that Phase B/C will need to refactor?",
+            ],
+            context={
+                "version": "Wave 2 v0.3.0",
+                "shipped_commits": [
+                    "fc1384b (R1 audit fixes for memory_palace)",
+                    "8cd60b9 (real R1 audit client)",
+                    "3deea0c (Soul Transfer implementation)",
+                    "f0eb45a (concurrency tests for Soul Transfer)",
+                    "5328c92 (Async Turn System + God Agent ETL)",
+                ],
+                "test_count": 117,
+                "previous_r1_audits": [
+                    "Round 1 (M3 mock, on memory_palace Phase A): CONDITIONAL, 8 findings",
+                    "Round 2 (real R1, on Wave 2 v0.2.0): FAIL, 6 findings, 1 fixed (#4)",
+                ],
             },
         )
         return result
