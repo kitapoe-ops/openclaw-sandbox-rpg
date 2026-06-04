@@ -35,14 +35,17 @@ class TestPhysicsLock:
         is_valid, reason = lock.validate_choice("custom_forbidden_action here", state)
         assert is_valid is False
 
-    def test_validate_choices_batch(self):
+    @pytest.mark.asyncio
+    async def test_validate_choices_batch(self):
+        """v3.7 PhysicsLock validates choices synchronously; rewritten flag set on violation."""
         lock = PhysicsLock()
         state = {"physical": {"active_effects": ["左臂骨折"]}}
         choices = [
             {"id": "opt_01", "text": "用雙手握劍攻擊"},
-            {"id": "opt_02", "text": "用單手揮劍"},
+            {"id": "opt_02", "text": "用單手握劍"},
             {"id": "opt_03", "text": "投擲匕首"},
         ]
+        # v3.7 sync path (no LLM rewrite yet)
         validated = lock.validate_choices(choices, state)
         # opt_01 and opt_03 should be flagged
         assert validated[0].get("physics_lock_rewritten") is True
