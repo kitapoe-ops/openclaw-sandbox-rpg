@@ -306,25 +306,43 @@ class TestPollingFallbackRemoved:
     """``setInterval`` is gone; WS retry + manual reconnect are the path."""
 
     def test_polling_fallback_removed(self) -> None:
-        """demo.html has no live ``setInterval(`` call.
+        """demo.html does not poll the *single-player* ``loadScene`` flow.
 
-        Comments are fine (and exist) — the test looks for the
-        *call* form ``setInterval(``, not the bare word. A regression
-        that re-introduces ``setInterval(loadScene, 5000)`` will
-        fail this test on the spot.
+        E-Blocker 4 was specifically about a 5-second ``setInterval``
+        that re-fetched the scene in single-player demo mode, which
+        produced pure log noise because the scene never changes between
+        calls. The fix in D4 v2 was to drop *that* interval.
+
+        Phase E6c (multiplayer frontend) legitimately re-introduced a
+        ``setInterval`` for ``mpRefreshRoster`` so the slot list stays
+        honest when a player joins from another tab and no WebSocket
+        push arrives. That is a *cross-tab sync* concern, not the same
+        log-noise problem.
+
+        Scope of this test: scan for ``setInterval(loadScene`` (or any
+        call that targets the single-player scene-refresh pipeline).
+        The multiplayer roster refresh is permitted.
         """
         import re
 
         src = DEMO_HTML.read_text(encoding="utf-8")
-        # Strip // and /* */ comments to ignore the explanatory
-        # "we removed setInterval" notes. We only care about live code.
+        # Strip // and /* */ comments to ignore explanatory notes.
         no_block_comments = re.sub(r"/\*.*?\*/", "", src, flags=re.DOTALL)
         no_line_comments = re.sub(r"//[^\n]*", "", no_block_comments)
-        match = re.search(r"setInterval\s*\(", no_line_comments)
-        assert match is None, (
-            "demo.html still calls setInterval(...) — E-Blocker 4 (polling "
-            "log noise) has been reintroduced."
-        )
+
+        # Disallow the original single-player polling targets.
+        forbidden_patterns = [
+            r"setInterval\s*\(\s*loadScene",
+            r"setInterval\s*\(\s*getCurrentScene",
+        ]
+        for pattern in forbidden_patterns:
+            match = re.search(pattern, no_line_comments)
+            assert match is None, (
+                f"demo.html still polls the single-player scene pipeline "
+                f"({pattern!r}) — E-Blocker 4 (polling log noise) has been "
+                f"reintroduced. The multiplayer roster refresh interval is "
+                f"permitted because it serves cross-tab sync."
+            )
 
     def test_manual_reconnect_button_is_exposed(self) -> None:
         """A user-visible reconnect button is wired to ``manualReconnect``.

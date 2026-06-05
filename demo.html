@@ -185,6 +185,105 @@
       animation: spin 0.8s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* E6c — Multiplayer UI */
+    .mp-panel {
+      background: var(--color-card);
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .mp-panel.collapsed { padding: 8px 14px; }
+    .mp-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+    @media (max-width: 768px) {
+      .mp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    .mp-slot {
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      padding: 10px;
+      min-height: 84px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: all 0.2s;
+    }
+    .mp-slot.active {
+      border-color: var(--color-accent);
+      background: rgba(183, 141, 74, 0.08);
+    }
+    .mp-slot.me {
+      border-color: #64c864;
+    }
+    .mp-slot-id {
+      font-family: monospace;
+      font-size: 12px;
+      color: var(--color-accent);
+      word-break: break-all;
+    }
+    .mp-slot-char {
+      font-size: 10px;
+      color: var(--color-dim);
+      margin-top: 2px;
+      word-break: break-all;
+    }
+    .mp-status {
+      font-size: 11px;
+      margin-top: 6px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .mp-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+    .mp-dot.on { background: #64c864; }
+    .mp-dot.off { background: #555; }
+    .mp-queue-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: rgba(123, 163, 212, 0.15);
+      color: #7ba3d4;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .mp-event-line {
+      font-size: 11px;
+      color: var(--color-text);
+      padding: 3px 0;
+      font-family: monospace;
+      word-break: break-all;
+    }
+    .mp-event-line.system { color: var(--color-dim); font-style: italic; }
+    .mp-mode-toggle {
+      display: inline-flex;
+      gap: 0;
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .mp-mode-toggle button {
+      background: transparent;
+      border: none;
+      color: var(--color-dim);
+      padding: 4px 10px;
+      font-size: 11px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .mp-mode-toggle button.active {
+      background: var(--color-accent);
+      color: white;
+    }
   </style>
 </head>
 <body>
@@ -206,6 +305,21 @@
           <span v-else-if="connState.ws === 'open'">● WS Connected</span>
           <span v-else>● WS {{ transportMode }} mode</span>
         </span>
+        <!-- E6c — Multiplayer mode toggle (additive) -->
+        <div class="mp-mode-toggle" role="group" aria-label="Mode">
+          <button
+            :class="mpMode === 'off' ? 'active' : ''"
+            @click="mpMode === 'on' && toggleMpMode()"
+            :disabled="mpMode === 'off'"
+            title="Single-player mode (default)"
+          >Solo</button>
+          <button
+            :class="mpMode === 'on' ? 'active' : ''"
+            @click="mpMode === 'off' && toggleMpMode()"
+            :disabled="mpMode === 'on'"
+            title="Multiplayer mode (1-4 players)"
+          >Multi</button>
+        </div>
       </div>
     </header>
 
@@ -240,6 +354,112 @@
             {{ connState.ws === 'connecting' ? '連線中…' : '🔄 重新連線' }}
           </button>
         </div>
+      </div>
+    </div>
+
+    <!-- E6c — Multiplayer panel (additive; only shown when mpMode === 'on') -->
+    <div
+      v-if="mpMode === 'on'"
+      class="max-w-7xl mx-auto px-6 pt-2"
+    >
+      <div class="mp-panel" data-testid="mp-panel">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <h2 class="text-sm font-bold" style="color: var(--color-accent)">🎮 Multiplayer (1-4)</h2>
+            <span class="mp-queue-badge" :title="'Pending actions in turn queue'">Queue: {{ mpTurnQueueSize }}</span>
+            <span class="text-xs" style="color: var(--color-dim)">scene: <code>{{ mpSceneId }}</code></span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs" style="color: var(--color-dim)">
+              <span :class="['mp-dot', mpConnected ? 'on' : 'off']"></span>
+              {{ mpConnected ? 'WS open' : 'WS closed' }}
+            </span>
+            <button class="btn btn-ghost" @click="mpCreateScene()" :disabled="connState.backend !== 'ok'">Create scene</button>
+            <button class="btn btn-ghost" @click="mpRefreshRoster()">Refresh</button>
+          </div>
+        </div>
+
+        <!-- 4-slot player picker -->
+        <div class="mp-grid" data-testid="mp-slots">
+          <div
+            v-for="(slot, i) in mpPlayers"
+            :key="i"
+            :class="['mp-slot', mpSelfSlot === i ? 'me' : '', slot ? 'active' : '']"
+            :data-slot="i + 1"
+          >
+            <template v-if="slot">
+              <div>
+                <div class="mp-slot-id">#{{ i + 1 }} · {{ slot.player_id }}</div>
+                <div class="mp-slot-char">char: {{ slot.character_id }}</div>
+              </div>
+              <div class="mp-status">
+                <span :class="['mp-dot', slot.ws_online ? 'on' : 'off']"></span>
+                <span style="color: var(--color-dim)">
+                  {{ slot.is_me ? 'You' : (slot.ws_online ? 'connected' : 'registered') }}
+                </span>
+              </div>
+            </template>
+            <template v-else>
+              <div>
+                <div class="mp-slot-id" style="color: var(--color-dim)">#{{ i + 1 }} · empty</div>
+                <div class="mp-slot-char">no player yet</div>
+              </div>
+              <button
+                class="btn btn-primary"
+                style="font-size: 11px; padding: 4px 8px; align-self: flex-start;"
+                :disabled="connState.backend !== 'ok' || mpSelfSlot !== null"
+                @click="mpJoinSlot(i)"
+                :data-testid="'mp-join-' + (i + 1)"
+              >
+                Join as Player {{ i + 1 }}
+              </button>
+            </template>
+          </div>
+        </div>
+
+        <!-- Leave button (only visible after join) -->
+        <div v-if="mpSelfSlot !== null" class="mt-3 flex items-center gap-2">
+          <button class="btn btn-ghost" @click="mpLeaveScene">Leave scene</button>
+          <span class="text-xs" style="color: var(--color-dim)">
+            you are Player {{ mpSelfSlot + 1 }} · reconnects with exponential backoff (max 30s)
+          </span>
+        </div>
+
+        <!-- NPC list (read-only, shared canon) -->
+        <div v-if="mpNpcs.length > 0" class="mt-3">
+          <p class="text-xs mb-1" style="color: var(--color-dim)">NPCs in scene ({{ mpNpcs.length }})</p>
+          <div class="flex flex-wrap gap-1">
+            <span
+              v-for="npc in mpNpcs"
+              :key="npc.npc_id"
+              class="stat-tag"
+              :title="npc.location || 'unknown location'"
+            >{{ npc.npc_id }} @ {{ npc.location }}</span>
+          </div>
+        </div>
+
+        <!-- Event log (last 30 WS / system events) -->
+        <div v-if="mpEvents.length > 0" class="mt-3">
+          <p class="text-xs mb-1" style="color: var(--color-dim)">Event log ({{ mpEvents.length }})</p>
+          <div
+            class="rounded p-2 max-h-32 overflow-y-auto"
+            style="background: rgba(0,0,0,0.3); border: 1px solid var(--color-border)"
+            data-testid="mp-events"
+          >
+            <div
+              v-for="(ev, idx) in mpEvents"
+              :key="idx"
+              :class="['mp-event-line', ev.kind === 'system' ? 'system' : '']"
+            >
+              <span style="color: var(--color-dim)">{{ ev.ts }}</span> · {{ ev.text }}
+            </div>
+          </div>
+        </div>
+
+        <p class="text-xs mt-3 italic" style="color: var(--color-dim)">
+          E6c · 1-4 player scene via WebSocket fan-out (E6a) + scene state (E6b).
+          Single-player experience below is unchanged.
+        </p>
       </div>
     </div>
 
@@ -586,6 +806,35 @@
         const selectedAttitudes = ref([]);
         const submitting = ref(false);
         const freeTextAction = ref('');
+
+        // ============================================
+        // E6c — Multiplayer state (additive, does not
+        // change the single-player flow above)
+        // ============================================
+        // All user-controlled strings (player_id,
+        // character_id, broadcast text) flow through
+        // Vue's auto-escaping {{ }} binding. We never
+        // use v-html, innerHTML, or document.write
+        // anywhere in this file (XSS invariant from
+        // docs/AUDIT_D4_M3.json finding #3).
+        const mpMode = ref('off');  // 'off' | 'on' — UI toggle for the panel
+        const mpSceneId = ref('scene_default');
+        const mpSelfSlot = ref(null);  // 0-3 once joined
+        const mpWs = ref(null);
+        const mpConnected = ref(false);
+        const mpReconnectAttempts = ref(0);
+        const mpReconnectTimer = ref(null);
+        // 4-slot player roster. Each entry is null or
+        // {player_id, character_id, ws_online, is_me}.
+        const mpPlayers = ref([null, null, null, null]);
+        // E6b scene-state mirror (filled by GET /players
+        // and /npcs). Last 30 broadcast events from the
+        // WebSocket — capped to keep the DOM bounded.
+        const mpNpcs = ref([]);
+        const mpTurnQueueSize = ref(0);
+        const mpEvents = ref([]);
+        const MP_MAX_EVENTS = 30;
+        const MP_RECONNECT_DELAY_MS = 3000;
 
         // ---- Internal ----
         let ws = null;
@@ -995,6 +1244,286 @@
         }
 
         // ============================================
+        // E6c — Multiplayer functions
+        // ============================================
+        // The panel toggle. Switching ON fires the
+        // initial scene create + roster refresh so
+        // the user sees the 4 empty slots immediately.
+        function toggleMpMode() {
+          mpMode.value = mpMode.value === 'on' ? 'off' : 'on';
+          if (mpMode.value === 'on') {
+            mpCreateScene();
+            mpRefreshRoster();
+            // Periodic roster refresh — cheap, lock-free
+            // GET that keeps the slot list honest in case
+            // a player joins from another tab and we
+            // don't have a WS push for that event.
+            if (!window.__mpRosterTimer) {
+              window.__mpRosterTimer = setInterval(
+                mpRefreshRoster,
+                5000,
+              );
+            }
+          } else {
+            // Tearing down: close WS, clear the roster
+            // timer, mark slots as gone.
+            if (window.__mpRosterTimer) {
+              clearInterval(window.__mpRosterTimer);
+              window.__mpRosterTimer = null;
+            }
+            mpLeaveScene();
+            mpPlayers.value = [null, null, null, null];
+            mpEvents.value = [];
+            mpNpcs.value = [];
+            mpTurnQueueSize.value = 0;
+          }
+        }
+
+        async function mpCreateScene() {
+          // E6b: POST /api/scene-multiplayer/{scene_id}/create
+          // Idempotent — returns the existing scene if present.
+          try {
+            const r = await fetch(
+              `${API_BASE}/api/scene-multiplayer/${encodeURIComponent(mpSceneId.value)}/create`,
+              { method: 'POST' },
+            );
+            if (r.ok) {
+              mpPushEvent('system', `scene ${mpSceneId.value} ready`);
+            } else {
+              mpPushEvent(
+                'system',
+                `create_scene failed: HTTP ${r.status}`,
+              );
+            }
+          } catch (e) {
+            mpPushEvent('system', `create_scene error: ${e.message}`);
+          }
+        }
+
+        async function mpJoinSlot(slot) {
+          // slot: 0-3 → player_N with N = slot+1
+          if (mpSelfSlot.value !== null) {
+            mpPushEvent(
+              'system',
+              'already joined — leave first to switch slots',
+            );
+            return;
+          }
+          if (mpPlayers.value[slot]) {
+            mpPushEvent(
+              'system',
+              `slot ${slot + 1} already taken by ${mpPlayers.value[slot].player_id}`,
+            );
+            return;
+          }
+          const player_id = `player_${slot + 1}`;
+          const character_id = `char_player_${slot + 1}`;
+          try {
+            const r = await fetch(
+              `${API_BASE}/api/scene-multiplayer/${encodeURIComponent(mpSceneId.value)}/player/${encodeURIComponent(player_id)}/join?character_id=${encodeURIComponent(character_id)}`,
+              { method: 'POST' },
+            );
+            if (r.ok) {
+              mpSelfSlot.value = slot;
+              mpPlayers.value[slot] = {
+                player_id,
+                character_id,
+                ws_online: false,  // will flip on WS open
+                is_me: true,
+              };
+              mpPushEvent(
+                'system',
+                `joined as ${player_id} (character=${character_id})`,
+              );
+              mpConnectWS();
+              // Refresh roster so the sidebar shows us
+              // immediately (in case the WS push is slow).
+              mpRefreshRoster();
+            } else if (r.status === 409) {
+              mpPushEvent('system', `slot rejected: scene full or seat taken (HTTP 409)`);
+            } else if (r.status === 404) {
+              mpPushEvent('system', `scene not found — click "Refresh" or "Create scene"`);
+            } else {
+              mpPushEvent('system', `join failed: HTTP ${r.status}`);
+            }
+          } catch (e) {
+            mpPushEvent('system', `join error: ${e.message}`);
+          }
+        }
+
+        async function mpLeaveScene() {
+          // Close the WS first so the server-side
+          // disconnect() fires (E6a path). We don't
+          // need a /leave HTTP roundtrip — the WS
+          // close is the authoritative leave signal.
+          if (mpReconnectTimer.value) {
+            clearTimeout(mpReconnectTimer.value);
+            mpReconnectTimer.value = null;
+          }
+          if (mpWs.value) {
+            try { mpWs.value.close(); } catch (_) {}
+            mpWs.value = null;
+          }
+          mpConnected.value = false;
+          mpSelfSlot.value = null;
+          // Mark our slot as offline (keep the row so
+          // the user can see where they were).
+          for (let i = 0; i < 4; i++) {
+            if (mpPlayers.value[i] && mpPlayers.value[i].is_me) {
+              mpPlayers.value[i] = {
+                ...mpPlayers.value[i],
+                ws_online: false,
+                is_me: false,
+              };
+            }
+          }
+        }
+
+        function mpConnectWS() {
+          if (mpSelfSlot.value === null) return;
+          const player_id = `player_${mpSelfSlot.value + 1}`;
+          const url = `${WS_BASE}/ws/multiplayer/${encodeURIComponent(mpSceneId.value)}/${encodeURIComponent(player_id)}`;
+          try {
+            const sock = new WebSocket(url);
+            mpWs.value = sock;
+          } catch (e) {
+            mpPushEvent('system', `WS construct failed: ${e.message}`);
+            mpScheduleReconnect();
+            return;
+          }
+          sock.onopen = () => {
+            mpConnected.value = true;
+            mpReconnectAttempts.value = 0;
+            // Mark our slot as online in the roster.
+            if (mpSelfSlot.value !== null && mpPlayers.value[mpSelfSlot.value]) {
+              mpPlayers.value[mpSelfSlot.value] = {
+                ...mpPlayers.value[mpSelfSlot.value],
+                ws_online: true,
+              };
+            }
+            mpPushEvent('system', 'WebSocket connected');
+          };
+          sock.onmessage = (e) => {
+            // E6a payloads are JSON: {event, ...data}.
+            // We render all fields through {{ }} (auto-
+            // escaped) below, so the XSS invariant holds
+            // even for attacker-controlled broadcast text.
+            let msg = null;
+            try { msg = JSON.parse(e.data); }
+            catch (_) {
+              mpPushEvent('recv', String(e.data).slice(0, 200));
+              return;
+            }
+            if (msg.event === 'connected') {
+              const players = Array.isArray(msg.active_players) ? msg.active_players : [];
+              mpPushEvent('system', `connected (${players.length} player(s) in scene)`);
+            } else if (msg.event === 'broadcast') {
+              const from = (msg.data && msg.data.from) || '?';
+              const text = (msg.data && msg.data.text) || JSON.stringify(msg.data);
+              mpPushEvent('recv', `[${from}] ${text}`);
+            } else if (msg.event === 'received') {
+              const from = msg.from || '?';
+              const data = msg.data ? JSON.stringify(msg.data) : '';
+              mpPushEvent('recv', `[echo from ${from}] ${data.slice(0, 120)}`);
+            } else if (msg.event === 'error') {
+              mpPushEvent('system', `WS error: ${msg.reason || 'unknown'}`);
+            } else {
+              mpPushEvent('recv', JSON.stringify(msg).slice(0, 200));
+            }
+          };
+          sock.onclose = () => {
+            mpConnected.value = false;
+            // Mark our slot offline in the roster mirror.
+            if (mpSelfSlot.value !== null && mpPlayers.value[mpSelfSlot.value]) {
+              mpPlayers.value[mpSelfSlot.value] = {
+                ...mpPlayers.value[mpSelfSlot.value],
+                ws_online: false,
+              };
+            }
+            mpPushEvent('system', 'WebSocket disconnected');
+            mpScheduleReconnect();
+          };
+          sock.onerror = () => {
+            // onclose fires next; we just log.
+            mpPushEvent('system', 'WebSocket error event');
+          };
+        }
+
+        function mpScheduleReconnect() {
+          if (mpSelfSlot.value === null) return;  // user left
+          if (mpReconnectTimer.value) return;  // already scheduled
+          const attempt = mpReconnectAttempts.value;
+          // Exponential backoff capped at 30s, mirroring
+          // the D4 v2 single-player WS retry pattern.
+          const delay = Math.min(30000, 1000 * Math.pow(2, attempt));
+          mpReconnectAttempts.value = attempt + 1;
+          mpReconnectTimer.value = setTimeout(() => {
+            mpReconnectTimer.value = null;
+            mpConnectWS();
+          }, delay);
+        }
+
+        async function mpRefreshRoster() {
+          // GET /api/scene-multiplayer/{scene_id}/players
+          // + GET /api/scene-multiplayer/{scene_id}/npcs
+          // + GET /api/scene-multiplayer/{scene_id}/turn/queue-size
+          // We do all three in parallel to minimise latency.
+          const base = `${API_BASE}/api/scene-multiplayer/${encodeURIComponent(mpSceneId.value)}`;
+          try {
+            const [pr, nr, qr] = await Promise.all([
+              fetch(`${base}/players`),
+              fetch(`${base}/npcs`),
+              fetch(`${base}/turn/queue-size`),
+            ]);
+            if (pr.ok) {
+              const body = await pr.json();
+              const players = Array.isArray(body.players) ? body.players : [];
+              // Re-merge server-side players with our local
+              // ws_online mirror. Don't drop slots we know
+              // about (e.g. our own row) just because the
+              // server response is stale.
+              const fresh = [null, null, null, null];
+              for (const p of players) {
+                const idx = parseInt(String(p.player_id).replace(/[^0-9]/g, ''), 10) - 1;
+                if (idx >= 0 && idx < 4) {
+                  const local = mpPlayers.value[idx];
+                  fresh[idx] = {
+                    player_id: p.player_id,
+                    character_id: p.character_id,
+                    ws_online: local ? local.ws_online : false,
+                    is_me: local ? local.is_me : false,
+                  };
+                }
+              }
+              mpPlayers.value = fresh;
+            }
+            if (nr.ok) {
+              const body = await nr.json();
+              mpNpcs.value = Array.isArray(body.npcs) ? body.npcs : [];
+            }
+            if (qr.ok) {
+              const body = await qr.json();
+              mpTurnQueueSize.value = Number(body.queue_size || 0);
+            }
+          } catch (e) {
+            // Silent — the user will see the WS state
+            // pill and the manual refresh button.
+            mpPushEvent('system', `roster refresh failed: ${e.message}`);
+          }
+        }
+
+        function mpPushEvent(kind, text) {
+          mpEvents.value.unshift({
+            kind,  // 'system' | 'recv' | 'send'
+            text: String(text),
+            ts: new Date().toLocaleTimeString(),
+          });
+          if (mpEvents.value.length > MP_MAX_EVENTS) {
+            mpEvents.value = mpEvents.value.slice(0, MP_MAX_EVENTS);
+          }
+        }
+
+        // ============================================
         // Retry-all (D4 — new)
         // ============================================
         async function retryAll() {
@@ -1023,6 +1552,13 @@
           if (ws) try { ws.close(); } catch (_) {}
           if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
           stopPolling();
+          // E6c: tear down multiplayer state too.
+          if (window.__mpRosterTimer) {
+            clearInterval(window.__mpRosterTimer);
+            window.__mpRosterTimer = null;
+          }
+          if (mpWs.value) try { mpWs.value.close(); } catch (_) {}
+          if (mpReconnectTimer.value) clearTimeout(mpReconnectTimer.value);
         });
 
         return {
@@ -1036,6 +1572,11 @@
           selectOption, isAttitudeSelected, toggleAttitude,
           pickCharacter,
           submitChoice, submitFreeText, retryAll, manualReconnect,
+          // E6c — Multiplayer (additive)
+          mpMode, mpSceneId, mpSelfSlot, mpConnected,
+          mpReconnectAttempts, mpPlayers, mpNpcs, mpTurnQueueSize, mpEvents,
+          toggleMpMode, mpCreateScene, mpJoinSlot, mpLeaveScene,
+          mpRefreshRoster,
         };
       },
     }).mount('#app');
