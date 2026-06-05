@@ -1,204 +1,261 @@
-# OpenClaw Sandbox RPG - Architecture
+# Architecture
 
-> Version 0.1.0 | Last updated: 2026-06-03
+> Version 0.1.0 | Last updated: 2026-06-05
+> Audience: engineers contributing to the framework
 
-## 1. 系統定位
+---
 
-**異步多人純語意狀態機沙盒劇本世界** — 預設 D&D 5e 世界觀，玩家透過事件選擇 + 態度組合 + 裝備配置推動世界。
+## 1. System Overview
 
-### 核心特色
+OpenClaw Sandbox RPG is a backend-first framework for AI-driven narrative games. It is organized around five independent core engines, four shared subsystems, and a single FastAPI app that exposes them all as REST + WebSocket endpoints. The design constraint throughout is: **persistent state is the source of truth, the LLM is a renderer of state, not the other way around**.
 
-- **純語意狀態**：無數字，全部用 semantic bucket labels
-- **預載世界觀**：D&D 5e SRD（被遺忘嘅國度）
-- **15 分鐘異步回合**：每 15 分鐘揀 1 個選擇
-- **三層 Agent 矩陣**：上帝 Agent + 場景 Agent + 副 Agent
-- **物理邏輯鎖 v2.0**：保留玩家意圖，演繹「想做但做唔到」
+---
 
-## 2. 技術棧
-
-| 層 | 技術 |
-|----|------|
-| 後端 | Python 3.11+ / FastAPI |
-| 前端 | Vue 3 + Vite + TypeScript |
-| 資料庫 | PostgreSQL 15 + LanceDB |
-| LLM 雲端 | MiniMax M3 (1M context) |
-| LLM 本地 | Qwen2.5-14B-Instruct (LM Studio :1234) |
-| 部署 | Docker Compose |
-
-## 3. 整體架構
+## 2. Three-Layer Architecture
 
 ```
-┌─────────────────────────────────────────────┐
-│ Frontend (Vue 3 SPA)                         │
-│  ├─ 場景面板 (ScenePanel)                   │
-│  ├─ 選擇面板 (ChoicePanel + AttitudeSelector)│
-│  ├─ 角色狀態 (CharacterStatus)              │
-│  ├─ 背包 + 裝備 (Inventory + Equipment)     │
-│  └─ 倒計時器 (CountdownTimer)              │
-└────────────────┬────────────────────────────┘
-                 │ HTTPS + WebSocket
-┌────────────────▼────────────────────────────┐
-│ Backend (FastAPI)                            │
-│  ├─ REST API (/api/character, /api/action)  │
-│  ├─ WebSocket (/ws/game/{id})               │
-│  ├─ 語意狀態機 (semantic_gradient.py)       │
-│  ├─ 物理邏輯鎖 (physics_lock.py)            │
-│  └─ 選擇驗證 (choice_validator.py)          │
-└────────────────┬────────────────────────────┘
-                 │
-    ┌────────────┼────────────┐
-    │            │            │
-    ▼            ▼            ▼
-┌────────┐  ┌─────────┐  ┌────────────────┐
-│ Postgres│  │ LanceDB │  │ LLM Clients    │
-│ (硬狀態)│  │ (向量)  │  │ ├─ MiniMax M3  │
-│        │  │         │  │ └─ Qwen Local  │
-└────────┘  └─────────┘  └────────────────┘
++-----------------------------------------------------------------+
+|  Layer 1: Frontend                                               |
+|    demo.html (static SPA) -> WebSocket + REST to Layer 2         |
++----------------------------+------------------------------------+
+                             |
++----------------------------v------------------------------------+
+|  Layer 2: FastAPI App                                           |
+|    main.py  +  app_with_memory.py  (zero main.py modification)  |
+|    Routes:                                                      |
+|      character (8)  scene (3)  action (4)  world (3)           |
+|      /memory/* (4)   /demo/info (1)                            |
++----------------------------+------------------------------------+
+                             |
++----------------------------v------------------------------------+
+|  Layer 3: Core Engines + Subsystems                            |
+|                                                                  |
+|    [Core Engines]                       [Subsystems]            |
+|    1. State Machine                     - R1 Audit (fail-close) |
+|    2. Scene + World Lore                - ETL (log -> lore)     |
+|    3. Action + Physics Lock             - Semantic Gradient     |
+|    4. Turn System (Async + Soul)        - DB Race arbitration   |
+|    5. Memory Palace (PG + Vector)                                |
++-----------------------------------------------------------------+
 ```
 
-## 4. 三層世界觀模型
+---
 
+## 3. Engine Deep-Dives
+
+### 3.1 State Machine
+- **File:** `backend/state_machine.py` (168L)
+- **Mode:** Synchronous, in-memory
+- **Key methods:** `transition(state, event)`, `add_status_tag`, `remove_status_tag`
+- **Test count:** 19 (tier 1 logic)
+- **Design rationale:** State transitions are the cheapest possible gate. By the time we call the LLM, we have already ruled out obviously-invalid actions. The state machine also owns the timestamp fields (`created_at`, `updated_at`) which are timezone-aware UTC since Phase C1.
+
+### 3.2 Scene and World Lore
+- **Files:** `backend/api/scene.py`, `backend/world_lore_db.py`, `backend/world_lore_loader.py`
+- **Mode:** Mixed — scene is mutable runtime state, lore is immutable YAML-loaded
+- **YAML source:** `worlds/dnd_5e_forgotten_realms.yaml` (D&D 5e SRD)
+- **Test count:** Covered by tier 3 HTTP smoke + the world API tests
+- **Design rationale:** The LLM must never invent canon. Anything the LLM says about a location, an NPC, or a historical event must come from the lore database. If the lore database doesn't have an answer, the LLM must say "I don't know" rather than confabulate. This is enforced by a two-layer check: the prompt is constrained, and R1-14B audits the output.
+
+### 3.3 Action and Physics Lock
+- **Files:** `backend/api/action.py`, `backend/physics_lock.py`
+- **Mode:** Async, concurrency-safe
+- **Key methods:** `ActionProcessor.process()`, `PhysicsLock.check(state_before, proposed_state)`
+- **Test count:** 19+ (logic + concurrency)
+- **Concurrency model:** `asyncio.Lock` per scene. Each scene has a single physics lock; multiple actions against the same scene are serialized. Actions against different scenes run in parallel.
+- **Audit hook integration:** Every action that survives the physics lock is sent to R1-14B for verification before commit. R1-14B is queried with: (1) the action, (2) the world lore, (3) the scene state. R1 returns `pass` / `fail` with reasoning. Fail-closed: if R1 times out (10s), the action is rejected.
+
+### 3.4 Turn System with Soul Transfer
+- **Files:** `backend/turn_system.py`, `backend/soul_transfer.py`
+- **Mode:** Async queue
+- **Key methods:** `TurnQueue.enqueue()`, `SoulTransfer.transfer(soul_id, new_vessel)`
+- **Test count:** 7 (concurrency) + 7 (soul transfer)
+- **Soul transfer rules (anti-exploit):**
+  - A soul can only transfer to a vessel in the same scene
+  - A soul cannot transfer to a vessel that already has an active soul
+  - Transfer takes one full turn (no instant transfer exploit)
+  - If the new vessel dies within 3 turns, the soul is destroyed (no infinite suicide-and-revive loop)
+- **Design rationale:** The soul is the player. The vessel is a body. This is the narrative twist that makes the framework more than a chat bot — the player has identity that persists across containers.
+
+### 3.5 Memory Palace
+- **Files:**
+  - `backend/memory_palace.py` (841L, Phase A, SQLite-only)
+  - `backend/memory_palace_integration.py` (552L, Phase C2, Postgres + Vector)
+- **Mode:** Async, persistent
+- **Embedding model:** sentence-transformers/all-MiniLM-L6-v2 (384-dim)
+- **Storage:** LanceDB for vectors, Postgres (or SQLite) for structured payload
+- **Test count:** 30 (Phase A) + 12 unit + 6 endpoint (Phase C2) = 48
+- **Two-module coexistence:** The integration module was forced to use a different name (`MemoryPalaceIntegration`) to avoid clobbering the pre-existing 841L module. Phase D1 will decide whether to merge or keep both.
+
+#### 3.5.1 Embedding Pipeline
 ```
-世界觀 = 永恆層 + 參數層 + 玩家影響層
-
-永恆層（5 萬 token，預載，永不改）
-├─ 物理規則
-├─ 種族 / 文化
-└─ 地圖 / 曆法
-
-世界參數層（即時狀態，動態調整）
-├─ 勇者之力（5 級 semantic gradient）
-├─ 龍之威脅（5 級）
-├─ 物價指數（5 級）
-└─ ...（每個世界參數 5 級）
-
-玩家影響層（累積效果，多輪後見效）
-├─ 角色狀態
-├─ NPC 好感度
-└─ Quest 進度
-```
-
-## 5. Agent 矩陣
-
-### 上帝 Agent (God Agent)
-- **觸發**：每日 00:00 ETL
-- **職責**：宏觀劇情、世界參數守門 (±15%)、Quest 管理、矛盾仲裁
-- **LLM**：雲端 M3 或本地 Qwen
-- **參考**：`docs/PROMPTS/god_agent_prompt.md`
-
-### 場景 Agent (Scene Agent)
-- **觸發**：每輪玩家提交後
-- **職責**：即時敘事 + 4 選項生成 + 態度選項
-- **LLM**：雲端 M3
-- **參考**：`docs/PROMPTS/scene_agent_prompt.md`
-
-### 副 Agent (Sub Agent)
-- **觸發**：每輪 + 場景 Agent 並行
-- **職責**：細微事件 + 狀態計算 + 物理邏輯執行
-- **LLM**：本地 Qwen
-- **參考**：`docs/PROMPTS/sub_agent_prompt.md`
-
-### 死亡 Narrator
-- **觸發**：玩家角色死亡時
-- **職責**：死亡場景 + 奪舍流程 + 異常快照
-- **參考**：`docs/PROMPTS/death_narrator_prompt.md`
-
-## 6. 玩家互動流程
-
-```
-[T+0:00]  玩家收到場景 + 4 選項
-   ↓
-[T+0:00 ~ 15:00]  玩家自由配置（態度、裝備、道具）
-   ↓
-[T+15:00]  玩家提交選擇
-   ↓
-[後端]  驗證選擇 → 物理邏輯鎖
-   ↓
-[場景 Agent]  生成新敘事 + 4 新選項
-   ↓
-[副 Agent]  計算狀態變化 + 細微事件
-   ↓
-[前端]  顯示新場景 + 新 4 選項
-   ↓
-[T+15:01]  下一輪開始
+content (str) -> sentence-transformers encode -> [384 floats]
+                                              |
+                                              v
+                                   VectorStore.add(memory_id, embedding, metadata)
+                                              |
+                                              v
+                                   Postgres.save(memory_id, content, metadata)
 ```
 
-## 7. 語意狀態系統
-
-### 角色狀態（Semantic Buckets）
-
-| 維度 | 5 個 Bucket |
-|------|------------|
-| 體力 (stamina) | fresh → slight_breath → muscle_ache → exhausted → collapse |
-| 健康 (health) | healthy → wounded → severely_wounded → dying → dead |
-| 情緒 (morale) | elated → calm → neutral → anxious → despair |
-
-**升降級規則：**
-- ✅ 允許：±1 級平移
-- ❌ 禁止：跳級
-- 🔒 鎖死：collapse 不可逆
-- ✅ 例外：安全環境 + 完整休息 → -2 級
-
-## 8. 物理邏輯鎖 v2.0
-
-**核心原則：唔 disable 玩家，保留意圖，演繹殘疾。**
-
-當玩家狀態 vs 動作衝突時：
-- ❌ 唔好改寫玩家選擇
-- ✅ 將「物理限制」傳畀 LLM
-- ✅ LLM 自由演繹「想做但做唔到」
-
-**範例：**
+#### 3.5.2 Recall Pipeline
 ```
-玩家：[雙臂骨折]
-意圖：「溫柔擁抱對方」
-LLM：「你舉起雙手，劇痛令你停喺半空。眼淚無聲咁流落嚟。」
+query (str) -> encode -> query_embedding
+                          |
+                          v
+              VectorStore.search(query_embedding, k=25)  # over-fetch
+                          |
+                          v
+              filter: metadata.character_id == target
+              filter: memory_type in (episodic, semantic, procedural)
+              filter: salience >= threshold
+                          |
+                          v
+              truncate to top-k
+                          |
+                          v
+              for each: Postgres.load(memory_id) -> rehydrate content
+                          |
+                          v
+              return [{memory_id, content, similarity, memory_type, salience, metadata}]
 ```
 
-## 9. 死亡 + 奪舍機制
+The over-fetch (k=25 vs returned k=5) is deliberate. Vector similarity is cheap; rehydration is the bottleneck. We want to surface the best 5 from a wider pool, not be limited by the initial k.
+
+---
+
+## 4. Subsystem Integration
 
 ```
-玩家 HP → collapse
-   ↓
-[God Agent] 確認死亡
-   ↓
-[Death Narrator] 生成死亡場景（200-500 字）
-   ↓
-[玩家選擇] 放棄 / 奪舍
-   ↓
-[奪舍] 70% 記憶保留 + 異常快照生成
-   ↓
-[新角色] 寫入 Profile
-   ↓
-[World Lore DB] 更新
++------------+      +-----------------+      +----------------+
+| Player     | ---> | FastAPI Action  | ---> | State Machine  |
+| (action)   |      | Endpoint        |      | (rule gate)    |
++------------+      +--------+--------+      +----------------+
+                              |
+                              v
+                     +----------------+
+                     | Physics Lock   |
+                     | (concurrency)  |
+                     +--------+-------+
+                              |
+                              v
+                     +----------------+      +----------------+
+                     | LLM Narrator   | ---> | R1-14B Audit   |
+                     | (mock / cloud) |      | (fail-closed)  |
+                     +--------+-------+      +--------+-------+
+                              |                        |
+                              v                        v
+                     +----------------+      +----------------+
+                     | Memory Palace  | <--> | World Lore DB  |
+                     | (PG + Vector)  |      | (YAML loaded)  |
+                     +----------------+      +----------------+
 ```
 
-## 10. MVP 範圍
+R1-14B audit is a **sidecar**, not in the critical path of the loop diagram above, but it sits between the LLM output and any commit. Fail-closed semantics: if R1 returns `fail` or times out, the action is rejected, the scene state is not updated, the player is told "the action could not be resolved."
 
-**MVP-B：單玩家 1 小時自由探索**
+ETL Service is invoked by the daily cron (`sentinel_daily`, 09:00 SGT). It walks the session log, extracts structured events (NPC interactions, quest completions, scene transitions), and proposes lore updates. Lore updates go through the same R1 audit path before commit.
 
-成功標準：
-- 玩家可以喺 1 個場景自由探索 1 小時
-- 每 15 分鐘有 1 個選擇
-- 4 個中性選項（無明顯利益/風險詞彙）
-- 1-2 個態度組合
-- 語意狀態正確更新
-- 物理邏輯鎖正確觸發
+---
 
-## 11. 開發 Waves
+## 5. Scheduler Wiring
 
-| Wave | 名稱 | 預計時間 |
-|------|------|---------|
-| 1 | 核心引擎 | Month 1-3 |
-| 2 | 世界觀載入 | Month 4-5 |
-| 3 | LLM 內容生成 | Month 6-7 |
-| 4 | 多人 + 異步 | Month 8-9 |
-| 5 | 死亡 + 奪舍 | Month 10-12 |
+```python
+# backend/scheduler.py (excerpt)
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 
-## 12. 參考文檔
+def build_scheduler() -> AsyncIOScheduler:
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(
+        job_sentinel_daily,
+        CronTrigger(hour=9, minute=0, timezone="Asia/Shanghai"),
+        id="sentinel_daily",
+    )
+    scheduler.add_job(
+        job_dashboard_refresh,
+        CronTrigger.from_crontab("0 */4 * * *"),
+        id="dashboard_refresh",
+    )
+    scheduler.add_job(
+        job_heartbeat,
+        CronTrigger.from_crontab("*/10 * * * *"),
+        id="heartbeat",
+    )
+    return scheduler
 
-- [Schema 套件](SCHEMAS/)
-- [Prompt 模板](PROMPTS/)
-- [API 規格](API.md)
-- [開發指南](DEVELOPMENT.md)
-- [變更日誌](CHANGELOG.md)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    scheduler = build_scheduler()
+    scheduler.start()
+    try:
+        yield
+    finally:
+        scheduler.shutdown()
+```
+
+`app_with_memory.py` is the actual entry point. It imports `main.py`'s `app` and includes the memory router, then mounts the scheduler via the lifespan context manager. `main.py` is never modified.
+
+---
+
+## 6. Lifecycle Sequence
+
+```
+Player        Frontend      FastAPI       StateMach     PhysicsLk     LLM        R1-Audit    MemoryPalace
+  |              |             |              |             |          |            |              |
+  |--click------>|             |              |             |          |            |              |
+  |              |--POST------>|             |             |          |            |              |
+  |              |  /action    |              |             |          |            |              |
+  |              |             |--validate--->|             |          |            |              |
+  |              |             |  (rule gate) |             |          |            |              |
+  |              |             |<-ok----------|             |          |            |              |
+  |              |             |--check-------------------->|          |            |              |
+  |              |             |  (concurrency)             |          |            |              |
+  |              |             |<-ok------------------------|          |            |              |
+  |              |             |--generate---------------------------->|            |              |
+  |              |             |  (narrative)                         |            |              |
+  |              |             |<-text--------------------------------|            |              |
+  |              |             |--audit------------------------------------------->|              |
+  |              |             |  (lore + physics check)                            |              |
+  |              |             |<-pass----------------------------------------------|              |
+  |              |             |--remember------------------------------------------------------->|
+  |              |             |  (embed + PG + Vector)                                          |
+  |              |             |<-ok----------------------------------------------------------------|
+  |              |             |--WS broadcast--->|             |          |            |              |
+  |              |<-scene_upd--|                 |             |          |            |              |
+  |<render-------|             |                 |             |          |            |              |
+```
+
+The full round-trip is typically 1-3 seconds (dominated by the LLM call). R1 audit adds ~200-500ms when running on local GPU. The Memory Palace `remember` adds ~50ms (embed + 2 DB writes).
+
+---
+
+## 7. OpenClaw Workspace Context
+
+This project lives at `~/.openclaw/workspace/sandbox-rpg-tmp/`. The parent OpenClaw workspace contains 12+ skills:
+
+| Skill | Relevance |
+|-------|-----------|
+| `migm` (港股估值) | Anti-hallucination rules informed the audit client design |
+| `mtool` (translation) | Phase 0-4 pipeline inspired ETL service structure |
+| `autoresearch` | Multi-source search pattern applies to lore enrichment |
+| `audit-hook` | DeepSeek-R1-14B local verifier — same model used by the audit client |
+| `scanbot` | HK stock scanner — unrelated to RPG, but shares persistence patterns |
+| `bear` | HSI bear CBBC — financial skills, not relevant to game |
+
+The framework is **independent** of OpenClaw at the binary level (own git repo, own venv, own tests) but borrows design patterns from the parent workspace's skills.
+
+---
+
+## 8. Extension Points
+
+A new contributor could add features at any of these seams:
+
+1. **New memory type** — extend the `memory_type` enum in `memory_palace_integration.py` (currently `episodic | semantic | procedural`). Add a filter, add a rehydration strategy, ship a test. ~30 min.
+
+2. **New cron job** — add a new function + `scheduler.add_job(...)` in `backend/scheduler.py`. The `build_scheduler()` factory is the only thing that needs to know. ~10 min.
+
+3. **New world lore source** — implement a loader for a new YAML schema or a remote source (e.g. a wiki API). The interface is `WorldLoreLoader.load(source_path) -> dict`. ~1 hr.
+
+4. **New LLM provider** — implement the `LLMClient` interface. The framework currently has a mock; swap in MiniMax-M3 cloud, GPT-4, or any local model. ~1 hr.
+
+5. **New endpoint under `/memory/*`** — add a route in `memory_palace_integration_endpoint.py`. The router is already mounted; just add the function and a test. ~15 min.

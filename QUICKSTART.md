@@ -241,3 +241,87 @@ docker-compose --version
 - [RAG Chunking Strategy](docs/RAG_CHUNKING_STRATEGY.md) — LanceDB 設定
 - [Cloudflare 部署](deploy/cloudflare/DEPLOY.md) — 上線
 - [Scene Agent Prompt](docs/PROMPTS/scene_agent_prompt.md) — LLM prompt 設計
+
+---
+
+# 🌐 English Quick Start (5-minute end-to-end demo)
+
+> For English-speaking contributors. The Chinese sections above cover the same flow in more detail.
+
+## Prerequisites
+- Python 3.11+
+- 500 MB free disk
+- No Docker, no Postgres, no LLM API key required (Phase B ships with aiosqlite + pure-Python vector fallback)
+
+## Steps
+
+### 1. Clone and set up the venv
+```bash
+git clone https://github.com/kitapoe-ops/openclaw-sandbox-rpg.git
+cd openclaw-sandbox-rpg
+python -m venv .venv
+.venv/Scripts/python.exe -m pip install -r backend/requirements.txt
+```
+
+### 2. Run the full test suite (expect 161 passed in ~5 seconds)
+```bash
+.venv/Scripts/python.exe -m pytest backend/tests/ -q
+```
+
+### 3. Start the app (uses in-memory persistence + pure-Python vector store)
+```bash
+.venv/Scripts/python.exe -m uvicorn backend.app_with_memory:app --reload --port 8000
+```
+
+### 4. Verify health
+```bash
+curl http://localhost:8000/memory/health
+# Expected: {"postgres": true, "vector_store": true}
+```
+
+### 5. Try a remember / recall round-trip
+```bash
+# Remember a memory (embedding is a 384-dim vector; use any 384 floats)
+curl -X POST http://localhost:8000/memory/remember \
+  -H "Content-Type: application/json" \
+  -d '{
+    "character_id": "char_demo",
+    "content": "Met the blacksmith, asked about iron swords",
+    "embedding": [0.0, 0.1, 0.2, ...]'"'"', /* 384 total */,
+    "memory_type": "episodic",
+    "salience": 0.7
+  }'
+
+# Recall similar memories
+curl -X POST http://localhost:8000/memory/recall \
+  -H "Content-Type: application/json" \
+  -d '{
+    "character_id": "char_demo",
+    "query_embedding": [0.0, 0.1, 0.2, ...],
+    "k": 5
+  }'
+```
+
+### 6. Open the demo frontend
+Open `demo.html` in a browser. The page will use the same API on port 8000.
+
+### 7. (Optional) Run the demo cron
+The `memory_health_minute` job hits `/memory/health` every minute. Watch the backend logs to see the cron firing.
+
+## What you should see
+- **Step 2:** `161 passed in 5.27s` — no failures, 0 new warnings
+- **Step 3:** Uvicorn banner on `http://0.0.0.0:8000`
+- **Step 4:** JSON with both backends healthy
+- **Step 5:** A memory_id (uuid4) on remember, an array of `{memory_id, content, similarity, ...}` on recall
+- **Step 6:** Character list and scene map render in browser
+
+## Troubleshooting
+- **`pytest` complains about missing modules** — re-run `pip install -r backend/requirements.txt`; Phase B2 added `apscheduler>=3.10,<4.0`
+- **Port 8000 in use** — change to `--port 8001` and update the `curl` URLs
+- **Import errors on uvicorn** — make sure you activated the venv (`.venv/Scripts/Activate.ps1` on Windows)
+- **Tests pass but `/memory/health` returns false** — check the backend log; aiosqlite should always report `postgres: true` since it uses the same SQLAlchemy engine
+
+## Next steps
+- Read [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for the full system design
+- Check [docs/PHASE_ROADMAP.md](./docs/PHASE_ROADMAP.md) for what's shipped and what's planned
+- Try Phase D1 (merge two memory_palace modules) or D4 (frontend full E2E) as a first contribution
