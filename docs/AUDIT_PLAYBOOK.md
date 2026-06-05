@@ -330,3 +330,41 @@ audit infra needs to grow.
 _Style: technical, dry, like the other docs in `docs/`. Maintained by
 the parent agent. Subagents: read §2 + §4 before starting Phase D work,
 read §6 after getting a result._
+
+---
+
+## 10. Subagent Finalization Hand-off (M2 Standard)
+
+OpenClaw subagents spawned with `mode="run"` have a **15-minute hard cap**. If a subagent spends most of its budget on code generation, the final regression + summary doc steps can push it over the cap. The subagent's status will be marked `timed out` but **disk work is 100% preserved**.
+
+**The M2 standard** (since 2026-06-05):
+
+| Step | Subagent | Main agent |
+|------|----------|------------|
+| Implement code per hard constraints | yes | — |
+| Write unit tests for new code | yes | — |
+| Run **isolated** new test file | yes | — |
+| Run **full** regression suite (185 tests) | no | yes |
+| Write `PHASE_XXX_SUMMARY.md` | no | yes |
+| Git commit + push | no | yes |
+
+**Template (append to every subagent task brief):**
+
+> This subagent should NOT do the following (main agent will do them):
+> - Do NOT run the full regression suite (`pytest backend/tests/ -q`)
+> - Do NOT write the `PHASE_XXX_SUMMARY.md`
+> - Do NOT commit or push to git
+>
+> This subagent SHOULD do the following (stop here, return control):
+> - Implement the code changes per the hard constraints
+> - Write the unit tests for the new code
+> - Run ONLY the new test file in isolation to confirm green
+> - Report 4 fields: (1) files, (2) test count, (3) deviations, (4) summary
+>
+> Why: OpenClaw subagents have a 15-minute hard cap on `mode="run"`. The full regression suite (185 tests) takes 25-30 seconds; the summary doc is ~150 lines of writing. Both can push a subagent over the cap. Hand off finalization to main agent for 100% completion rate.
+
+**Postmortem (Phase D2 + D4, 2026-06-05):** Two subagents timed out at 15 min cap. Both had 100% disk work preserved. Main agent did finalization: (a) ran full regression (185/185 PASS), (b) wrote 1 missing summary doc, (c) fixed 1 test assertion bug subagent had introduced. Net result: zero quality loss, subagent wall time within cap, M2 standard adopted for future work.
+
+---
+
+_Last updated: 2026-06-05_
