@@ -63,6 +63,28 @@
     .conn-offline { background: rgba(255, 100, 100, 0.15); color: #ff6464; }
     .conn-degraded { background: rgba(255, 165, 0, 0.15); color: #ffa500; }
 
+    /* D4 v2: HTTP echo badge — orange, NOT green, to make it visually
+       distinct from a real "submitted and processed" state. */
+    .echo-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 4px;
+      background: rgba(255, 165, 0, 0.15);
+      border: 1px solid rgba(255, 165, 0, 0.4);
+      color: #ffa500;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: help;
+    }
+    .reconnect-banner {
+      background: rgba(255, 165, 0, 0.08);
+      border: 1px solid rgba(255, 165, 0, 0.3);
+      color: var(--color-text);
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+    }
+
     .stat-tag {
       display: inline-block;
       padding: 2px 8px;
@@ -171,7 +193,7 @@
     <header class="border-b border-gray-800 px-6 py-3 flex items-center justify-between">
       <div class="flex items-center gap-3">
         <h1 class="text-xl font-bold" style="color: var(--color-accent)">OpenClaw Sandbox RPG</h1>
-        <span class="text-xs" style="color: var(--color-dim)">v0.5.0 · Demo Mode (D4 wire-up)</span>
+        <span class="text-xs" style="color: var(--color-dim)">v0.5.0 · Demo Mode (D4 v2 wire-up)</span>
       </div>
       <div class="flex items-center gap-3">
         <span :class="['connection-pill', connState.backend === 'ok' ? 'conn-online' : (connState.backend === 'down' ? 'conn-offline' : 'conn-degraded')]">
@@ -195,6 +217,27 @@
           <span>{{ globalError }}</span>
           <button class="btn btn-ghost" @click="retryAll" :disabled="connState.backend === 'loading'">
             {{ connState.backend === 'loading' ? '重試中…' : '🔄 重試' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- D4 v2 E-Blocker 4: Reconnecting banner — replaces the old
+         setInterval polling fallback. The user now sees explicit
+         "WS offline" + a manual retry button. -->
+    <div
+      v-if="connState.backend === 'ok' && connState.ws === 'closed' && !globalError"
+      class="max-w-7xl mx-auto px-6 pt-2"
+    >
+      <div class="reconnect-banner">
+        <div class="banner-row">
+          <span style="color: #ffa500">●</span>
+          <span>
+            <strong>WebSocket 離線</strong> · 目前以 HTTP 模式操作。
+            動作可以提交，但無 server-push 更新。
+          </span>
+          <button class="btn btn-ghost" @click="manualReconnect" :disabled="connState.ws === 'connecting'">
+            {{ connState.ws === 'connecting' ? '連線中…' : '🔄 重新連線' }}
           </button>
         </div>
       </div>
@@ -319,13 +362,52 @@
 
         <!-- Action response (last submission's echo) -->
         <div v-if="lastActionResponse" class="rounded-lg p-4" style="background: var(--color-card); border: 1px solid var(--color-border)">
-          <h3 class="text-sm font-bold mb-2" style="color: var(--color-accent)">最後動作回應</h3>
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-sm font-bold" style="color: var(--color-accent)">最後動作回應</h3>
+            <!-- D4 v2 E-Blocker 1: explicitly mark the HTTP path as
+                 echo-only / debugging. The WebSocket path is the real
+                 one. -->
+            <span
+              v-if="lastActionTransport === 'http'"
+              class="echo-badge"
+              title="HTTP echo is a debug feature. For real action processing, the WebSocket path is used."
+            >
+              ⚠ HTTP ECHO ONLY
+            </span>
+            <span
+              v-else-if="lastActionTransport === 'ws'"
+              style="display: inline-block; padding: 3px 10px; border-radius: 4px; background: rgba(100, 200, 100, 0.15); color: #64c864; font-size: 11px; font-weight: 600;"
+            >
+              ✓ WS PROCESSED
+            </span>
+          </div>
           <pre class="code">{{ formatJson(lastActionResponse) }}</pre>
         </div>
       </section>
 
       <!-- Right: Character + History + API response -->
       <aside class="space-y-4">
+        <!-- D4 v2: character picker — driven by the new
+             /api/character-list/ endpoint (resolves Phase E blocker #2). -->
+        <div v-if="availableCharacters.length > 0" class="rounded-lg p-4" style="background: var(--color-card); border: 1px solid var(--color-border)">
+          <h3 class="text-sm font-bold mb-2" style="color: var(--color-accent)">角色選擇</h3>
+          <select
+            class="input"
+            :value="CHARACTER_ID"
+            @change="pickCharacter($event.target.value)"
+          >
+            <option
+              v-for="c in availableCharacters"
+              :key="c.character_id"
+              :value="c.character_id"
+            >
+              {{ c.name }} ({{ c.source }})
+            </option>
+          </select>
+          <p class="text-xs mt-1" style="color: var(--color-dim)">
+            {{ availableCharacters.length }} 個角色可用
+          </p>
+        </div>
         <!-- Character status -->
         <div v-if="character" class="rounded-lg p-4" style="background: var(--color-card); border: 1px solid var(--color-border)">
           <h3 class="text-sm font-bold mb-3" style="color: var(--color-accent)">{{ character.name }}</h3>
@@ -418,8 +500,14 @@
     const CHARACTER_ID = 'char_demo_player';
     const SCENE_ID_FALLBACK = 'loc_phandalin_town';
 
-    // Polling fallback interval (ms) — only used when WebSocket is down.
-    const POLL_INTERVAL_MS = 5000;
+    // D4 v2: polling fallback REMOVED. The setInterval that re-fetched
+    // the scene every 5s was pure log noise in demo mode (the scene
+    // never changes between calls). We now rely on:
+    //   1) WebSocket for real-time scene_update pushes, and
+    //   2) Explicit user-triggered "Reconnect" button when WS is down.
+    // The constant is kept for code that may still reference it (e.g.
+    // legacy log lines) but is no longer used to start a timer.
+    const POLL_INTERVAL_MS = 0; // 0 = disabled (D4 v2)
     // Reconnect delay after WS close.
     const WS_RECONNECT_DELAY_MS = 3000;
 
@@ -484,6 +572,14 @@
         const history = ref([]);
         const apiResponseText = ref('(no response yet)');
         const lastActionResponse = ref(null);
+        // D4 v2: track which transport the last submission used so the
+        // UI can show "HTTP ECHO ONLY" vs "WS PROCESSED" badges.
+        const lastActionTransport = ref(null);
+        // D4 v2: list of characters from the new /api/character-list/
+        // endpoint (resolves Phase E blocker #2). Empty array means
+        // the endpoint was unreachable (e.g. CORS issue) and we
+        // silently fall back to the hardcoded CHARACTER_ID.
+        const availableCharacters = ref([]);
 
         // ---- UI state ----
         const selectedOption = ref(null);
@@ -493,10 +589,13 @@
 
         // ---- Internal ----
         let ws = null;
-        let pollTimer = null;
+        let pollTimer = null; // kept for stopPolling() backward-compat; never started
         let wsReconnectTimer = null;
         let wsRetryCount = 0;
-        const MAX_WS_RETRIES = 3; // after this many failures, give up on WS
+        // D4 v2: keep retrying WS forever (no MAX cap). The user can
+        // still trigger a manual reconnect via the button. This avoids
+        // the previous "fail 3 times → give up silently" path.
+        const MAX_WS_RETRIES = Number.POSITIVE_INFINITY;
 
         const dimensionLabel = (cat) => DIMENSION_LABELS[cat] || cat;
         const dimensionIcon = (cat) => DIMENSION_ICONS[cat] || '📜';
@@ -514,6 +613,9 @@
 
         function statusColor(s) {
           if (!s) return 'var(--color-dim)';
+          // D4 v2: HTTP echo is orange (not green) so the user can see
+          // at a glance that the action was NOT actually processed.
+          if (s === 'HTTP_ECHO') return '#ffa500';
           if (s.startsWith('WS_OPEN') || s === 'OK' || s === 'POLLED' || s === 'SUBMITTED') return 'var(--color-ok)';
           if (s === 'ERROR' || s === 'WS_FAIL' || s === 'HTTP_FAIL' || s === 'WS_CLOSED') return 'var(--color-error)';
           return 'var(--color-accent)';
@@ -570,6 +672,59 @@
           }
         }
 
+        async function loadCharacterList() {
+          // D4 v2: query the new list endpoint and populate the
+          // character picker. Best-effort: if it fails, the UI just
+          // hides the picker and we fall back to the hardcoded
+          // CHARACTER_ID.
+          try {
+            const data = await apiFetch('/api/character-list/');
+            if (Array.isArray(data) && data.length > 0) {
+              availableCharacters.value = data;
+              pushHistory('OK', 0, `GET /api/character-list/ → ${data.length} character(s)`);
+            } else {
+              pushHistory('OK', 0, 'GET /api/character-list/ → empty');
+            }
+          } catch (e) {
+            // Endpoint may not exist in older deployments — that's OK,
+            // the picker is a nice-to-have, not a critical path.
+            pushHistory('WARN', 0, `GET /api/character-list/ skipped: ${e.message}`);
+          }
+        }
+
+        function pickCharacter(newId) {
+          // D4 v2: switch the active character. The simplest correct
+          // behaviour is to reload everything for the new id; the
+          // WebSocket reconnects to the new path. (Avoid mutating the
+          // module-level CHARACTER_ID constant because the Vue
+          // template binds to the imported value.)
+          if (!newId || newId === CHARACTER_ID) return;
+          pushHistory('INFO', 0, `Switching to character: ${newId}`);
+          // Reload character + scene; WS path uses the new id inline.
+          const prev = character.value;
+          character.value = null;
+          // Reuse the existing loaders by temporarily overriding the
+          // path: build a one-off URL.
+          (async () => {
+            try {
+              const data = await apiFetch(`/api/character/${encodeURIComponent(newId)}`);
+              character.value = data;
+              apiResponseText.value = formatJson(data);
+              pushHistory('OK', 0, `GET /api/character → ${data.name || newId}`);
+            } catch (e) {
+              character.value = prev;
+              pushHistory('ERROR', 0, `Pick character failed: ${e.message}`);
+            }
+            try {
+              const s = await apiFetch(`/api/scene/${encodeURIComponent(newId)}`);
+              scene.value = s;
+              pushHistory('OK', s.round || 1, `GET /api/scene → ${s.scene_id}`);
+            } catch (e) {
+              pushHistory('ERROR', 0, `Scene reload after pick failed: ${e.message}`);
+            }
+          })();
+        }
+
         async function loadScene() {
           if (connState.value.backend !== 'ok' && connState.value.backend !== 'loading') {
             // Don't bother if backend is known down — error already shown.
@@ -604,15 +759,9 @@
         }
 
         // ============================================
-        // WebSocket
+        // WebSocket (D4 v2: infinite auto-retry, no polling fallback)
         // ============================================
         function connectWS() {
-          // If we've already failed too many times, don't keep retrying
-          if (wsRetryCount >= MAX_WS_RETRIES) {
-            connState.value.ws = 'closed';
-            startPolling();
-            return;
-          }
           if (ws) {
             try { ws.close(); } catch (_) {}
             ws = null;
@@ -634,14 +783,9 @@
             connState.value.ws = 'closed';
             pushHistory('WS_CLOSED', scene.value?.round || 0, 'WebSocket disconnected');
             wsRetryCount += 1;
-            // If we haven't exhausted retries, try once more
-            if (wsRetryCount < MAX_WS_RETRIES) {
-              wsReconnectTimer = setTimeout(connectWS, WS_RECONNECT_DELAY_MS);
-            } else {
-              // Give up on WS, start polling as fallback
-              pushHistory('WS_FAIL', 0, `WebSocket failed ${MAX_WS_RETRIES} times — falling back to HTTP polling`);
-              startPolling();
-            }
+            // D4 v2: always auto-retry. The user can also click
+            // "Reconnect" via manualReconnect() to skip the delay.
+            wsReconnectTimer = setTimeout(connectWS, WS_RECONNECT_DELAY_MS);
           };
           ws.onerror = (ev) => {
             // onclose will fire next; just log
@@ -666,29 +810,37 @@
           pushHistory('WS_FAIL', 0, reason);
           connState.value.ws = 'closed';
           wsRetryCount += 1;
-          if (wsRetryCount < MAX_WS_RETRIES) {
-            wsReconnectTimer = setTimeout(connectWS, WS_RECONNECT_DELAY_MS);
-          } else {
-            startPolling();
+          // D4 v2: always schedule a retry; no MAX cap.
+          wsReconnectTimer = setTimeout(connectWS, WS_RECONNECT_DELAY_MS);
+        }
+
+        function manualReconnect() {
+          // D4 v2: user-clicked "Reconnect" button. Cancel any pending
+          // auto-retry timer and try immediately.
+          if (wsReconnectTimer) {
+            clearTimeout(wsReconnectTimer);
+            wsReconnectTimer = null;
           }
+          wsRetryCount = 0;
+          pushHistory('WS_RECONNECT', 0, 'User-triggered reconnect');
+          connectWS();
         }
 
         // ============================================
-        // HTTP polling fallback (D4 — new in Phase D4)
+        // HTTP polling fallback — REMOVED in D4 v2.
+        // The setInterval-based re-fetch was pure log noise in demo
+        // mode (scene never changes between calls). startPolling is
+        // kept as a no-op for backward-compat with any code that
+        // still calls it; stopPolling is also safe to call.
         // ============================================
         function startPolling() {
-          if (pollTimer) return;
-          pushHistory('POLL', 0, `Starting HTTP polling (every ${POLL_INTERVAL_MS}ms)`);
-          pollTimer = setInterval(async () => {
-            if (connState.value.ws === 'open') {
-              stopPolling();
-              return;
-            }
-            await loadScene();
-          }, POLL_INTERVAL_MS);
+          // No-op: D4 v2 removed the setInterval. WebSocket retry +
+          // manual reconnect button are the only fallbacks.
         }
 
         function stopPolling() {
+          // No-op: D4 v2 has no pollTimer to clear, but defensively
+          // clear it in case a legacy code path set one.
           if (pollTimer) {
             clearInterval(pollTimer);
             pollTimer = null;
@@ -756,16 +908,25 @@
           };
           try {
             let result;
-            if (connState.value.ws === 'open') {
+            // D4 v2: track transport for the "HTTP ECHO" / "WS PROCESSED"
+            // badge in the action-response panel.
+            const usedTransport = connState.value.ws === 'open' ? 'ws' : 'http';
+            if (usedTransport === 'ws') {
               result = await submitViaWS(payload);
             } else {
               result = await submitViaHTTP(payload);
             }
             lastActionResponse.value = result;
+            lastActionTransport.value = usedTransport;
+            // D4 v2: distinguish the green "real" submission from the
+            // orange HTTP echo. SUBMITTED = WS path; HTTP_ECHO = HTTP
+            // echo endpoint (the audit-confirmed "no real processing"
+            // path).
+            const histStatus = usedTransport === 'ws' ? 'SUBMITTED' : 'HTTP_ECHO';
             pushHistory(
-              'SUBMITTED',
+              histStatus,
               payload.round,
-              `choice=${payload.choice.option_id} (${connState.value.ws === 'open' ? 'WS' : 'HTTP'})`,
+              `choice=${payload.choice.option_id} (${usedTransport.toUpperCase()}${usedTransport === 'http' ? ' — echo only' : ''})`,
             );
             selectedOption.value = null;
             selectedAttitudes.value = [];
@@ -775,6 +936,7 @@
           } catch (e) {
             pushHistory('ERROR', payload.round, `Submit failed: ${e.message}`);
             lastActionResponse.value = { error: e.message };
+            lastActionTransport.value = null;
           } finally {
             submitting.value = false;
           }
@@ -793,22 +955,27 @@
           };
           try {
             let result;
-            if (connState.value.ws === 'open') {
+            // D4 v2: same transport tracking as submitChoice().
+            const usedTransport = connState.value.ws === 'open' ? 'ws' : 'http';
+            if (usedTransport === 'ws') {
               result = await submitViaWS(payload);
             } else {
               result = await submitViaHTTP(payload);
             }
             lastActionResponse.value = result;
+            lastActionTransport.value = usedTransport;
+            const histStatus = usedTransport === 'ws' ? 'SUBMITTED' : 'HTTP_ECHO';
             pushHistory(
-              'SUBMITTED',
+              histStatus,
               payload.round,
-              `free_text="${text.slice(0, 30)}…" (${connState.value.ws === 'open' ? 'WS' : 'HTTP'})`,
+              `free_text="${text.slice(0, 30)}…" (${usedTransport.toUpperCase()}${usedTransport === 'http' ? ' — echo only' : ''})`,
             );
             freeTextAction.value = '';
             setTimeout(loadScene, 500);
           } catch (e) {
             pushHistory('ERROR', payload.round, `Free-text submit failed: ${e.message}`);
             lastActionResponse.value = { error: e.message };
+            lastActionTransport.value = null;
           } finally {
             submitting.value = false;
           }
@@ -833,7 +1000,7 @@
         async function retryAll() {
           connState.value.backend = 'loading';
           globalError.value = null;
-          await Promise.all([loadCharacter(), loadScene(), loadHealth()]);
+          await Promise.all([loadCharacter(), loadScene(), loadHealth(), loadCharacterList()]);
           if (connState.value.backend === 'ok' && connState.value.ws !== 'open') {
             connectWS();
           }
@@ -843,13 +1010,13 @@
         // Lifecycle
         // ============================================
         onMounted(async () => {
-          await Promise.all([loadCharacter(), loadScene(), loadHealth()]);
+          await Promise.all([loadCharacter(), loadScene(), loadHealth(), loadCharacterList()]);
           if (connState.value.backend === 'ok') {
             connectWS();
-          } else {
-            // Backend down — still start polling as a recovery attempt
-            startPolling();
           }
+          // D4 v2: no startPolling() here. If backend is down, the
+          // global error banner + manual retry button are the recovery
+          // surface.
         });
 
         onBeforeUnmount(() => {
@@ -860,12 +1027,15 @@
 
         return {
           connState, transportMode, globalError, lastFetchAt,
-          scene, character, history, apiResponseText, lastActionResponse,
+          scene, character, history, apiResponseText,
+          lastActionResponse, lastActionTransport,
+          availableCharacters,
           selectedOption, selectedAttitudes, submitting, freeTextAction,
-          API_BASE, WS_BASE,
+          API_BASE, WS_BASE, CHARACTER_ID,
           dimensionLabel, dimensionIcon, formatJson, statusColor,
           selectOption, isAttitudeSelected, toggleAttitude,
-          submitChoice, submitFreeText, retryAll,
+          pickCharacter,
+          submitChoice, submitFreeText, retryAll, manualReconnect,
         };
       },
     }).mount('#app');
