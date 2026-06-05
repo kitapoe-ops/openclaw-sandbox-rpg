@@ -1,0 +1,65 @@
+VERDICT: PASS
+
+FINDINGS (5):
+  [HIGH] Cache Invalidation Risk in demo_mode.py
+    evidence: backend/demo_mode.py:30-45 (cache used importlib.reload hack to invalidate)
+    rec: The new API `reset_demo_mode_cache()` properly invalidates the cache and is covered by tests. No further action needed.
+  [MEDIUM] Insufficient Test Coverage for Cache Invalidation API
+    evidence: backend/tests/test_demo_mode_e5.py (missing some edge cases)
+    rec: Enhance tests to cover concurrent resets and other edge cases, though not critical in current setup.
+  [LOW] Potential Race Condition in Cache Access
+    evidence: backend/demo_mode.py (module-level cache)
+    rec: No action needed; API is thread-safe and GIL-protected.
+  [INFO] Regression Check for D2 Tests
+    evidence: backend/tests/test_demo_mode_phase_d2.py (original tests)
+    rec: Tests still pass; no issues detected.
+  [INFO] Observability of Cache Status
+    evidence: backend/demo_mode.py:cache_status()
+    rec: Maintain current implementation for strong observability.
+
+RAW:
+
+
+```json
+{
+  "verdict": "PASS",
+  "reasoning_summary": "The new public API `reset_demo_mode_cache()` effectively replaces the importlib.reload hack by clearing the cache and updating a timestamp. Tests cover idempotency, observability, and functionality without introducing regressions or warnings. Observability is strong with `cache_status()`. Minor test coverage gaps exist but do not compromise safety.",
+  "findings": [
+    {
+      "severity": "HIGH",
+      "concern_index": 1,
+      "issue": "Cache Invalidation Risk in demo_mode.py",
+      "evidence": "backend/demo_mode.py:30-45 (cache used importlib.reload hack to invalidate)",
+      "recommendation": "The new API `reset_demo_mode_cache()` properly invalidates the cache and is covered by tests. No further action needed."
+    },
+    {
+      "severity": "MEDIUM",
+      "concern_index": 2,
+      "issue": "Insufficient Test Coverage for Cache Invalidation API",
+      "evidence": "backend/tests/test_demo_mode_e5.py (missing some edge cases)",
+      "recommendation": "Enhance tests to cover concurrent resets and other edge cases, though not critical in current setup."
+    },
+    {
+      "severity": "LOW",
+      "concern_index": 3,
+      "issue": "Potential Race Condition in Cache Access",
+      "evidence": "backend/demo_mode.py (module-level cache)",
+      "recommendation": "No action needed; API is thread-safe and GIL-protected."
+    },
+    {
+      "severity": "INFO",
+      "concern_index": 4,
+      "issue": "Regression Check for D2 Tests",
+      "evidence": "backend/tests/test_demo_mode_phase_d2.py (original tests)",
+      "recommendation": "Tests still pass; no issues detected."
+    },
+    {
+      "severity": "INFO",
+      "concern_index": 5,
+      "issue": "Observability of Cache Status",
+      "evidence": "backend/demo_mode.py:cache_status()",
+      "recommendation": "Maintain current implementation for strong observability."
+    }
+  ]
+}
+```
