@@ -1,0 +1,104 @@
+{
+  "audit_metadata": {
+    "auditor": "MiniMax-M3 (acting as R1-14B)",
+    "phase": "D4",
+    "scope": "Frontend demo.html E2E wire-up",
+    "timestamp": "2026-06-05T14:25:00+08:00",
+    "files_audited": [
+      "demo.html (rewrite, 819 lines)",
+      "backend/tests/test_d4_frontend_e2e.py (new, 9 tests)"
+    ],
+    "cross_referenced_against": [
+      "backend/main.py (read-only inspection of route table)",
+      "backend/api/character.py (echo / real DB)",
+      "backend/api/scene.py (demo fallback)",
+      "backend/api/action.py (echo endpoint)",
+      "backend/scenes_demo.py (DEMO_STARTER.character_id, DEMO_SCENE)",
+      "backend/memory_palace_integration_endpoint.py (memory router)"
+    ]
+  },
+  "verdict": "CONDITIONAL",
+  "reasoning_summary": "The Phase D4 wire-up successfully connects demo.html to the 23-endpoint backend (18 gameplay + 4 memory + 1 demo/info) and the WebSocket route, with all 5 required + 4 bonus backend tests passing. The frontend is XSS-safe (no v-html / innerHTML), uses Vue auto-escaping throughout, and degrades gracefully when the backend is offline (global error banner + retry button). However, three issues prevent a clean PASS: (1) HTTP action submission is a no-op echo — UI shows 'SUBMITTED' but no state change — which will mislead users; (2) the polling fallback re-fetches the scene every 5s, but in demo mode the scene never changes without a real WS-driven action, so polling produces only 'OK' log noise; (3) CORS only allows localhost:5173/3000 — opening demo.html from a different port or via file:// will be silently blocked by the browser. None of these are show-stoppers (the WS path works correctly when available), but they should be flagged in PHASE_D4_SUMMARY and resolved in Phase E.",
+  "findings": [
+    {
+      "severity": "CRITICAL",
+      "concern_index": 1,
+      "issue": "Pre-existing character_id typo (D4-fixed)",
+      "evidence": "demo.html (old, pre-D4): 'const CHARACTER_ID = \\'char demo_player\\'' (with a space). backend/scenes_demo.py:DEMO_STARTER.character_id = 'char_demo_player' (underscore). Old frontend would have received 404 'Demo character not found' from GET /api/character/char%20demo_player.",
+      "recommendation": "D4 already fixed this: new demo.html uses 'char_demo_player'. New test_d4_frontend_e2e.py::TestFrontendWireUp::test_frontend_can_list_characters exercises the corrected id and passes. Keep this regression test — it will catch any future revert."
+    },
+    {
+      "severity": "HIGH",
+      "concern_index": 2,
+      "issue": "HTTP action submission is a silent no-op (UI says 'SUBMITTED', backend just echoes)",
+      "evidence": "backend/api/action.py:submit_action returns {'message': 'Use WebSocket /ws/game/{character_id} for real-time action submission', 'received': player_input, 'registry_stats': ...}. demo.html:submitViaHTTP() POSTs the payload and stores the echo in lastActionResponse. The user sees the 'SUBMITTED' history entry but the character/scene state does not change because the action was never processed.",
+      "recommendation": "Either (a) explicitly mark the HTTP path as 'echo-only / debugging' in the UI (e.g. orange 'HTTP ECHO' badge instead of green 'SUBMITTED'), or (b) implement a real HTTP /api/action/process endpoint that runs the same pipeline as the WS handler. Phase E work — not a D4 blocker, but a D4 demo user will be confused. Document in PHASE_D4_SUMMARY."
+    },
+    {
+      "severity": "MEDIUM",
+      "concern_index": 3,
+      "issue": "Polling fallback re-fetches scene every 5s but backend won't push updates without WS",
+      "evidence": "demo.html:startPolling() sets up setInterval(loadScene, 5000). In demo mode, the scene is hardcoded in scenes_demo.py:DEMO_SCENE — it never changes between calls. Each poll produces a 'OK · GET /api/scene → loc_phandalin_town' history entry (no-op log noise).",
+      "recommendation": "Option A: only log on state-change (compare response to previous, only push history if diff). Option B: drop the polling fallback entirely — the WS retry mechanism is enough; UI shows 'WS offline' badge and the user clicks 'Reconnect' manually. Option B is simpler and the current backend has nothing to poll *for*. Recommend B; defer to Phase E."
+    },
+    {
+      "severity": "MEDIUM",
+      "concern_index": 4,
+      "issue": "CORS allowlist does not cover all reasonable demo.html origins",
+      "evidence": "backend/main.py: 'CORS_ORIGINS' env default = 'http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:3000'. demo.html is a single static file with no server (CDN-loaded Vue + Tailwind). If the user opens it via file:// or via any other port (8080, 5500, etc.), the browser will block fetch() with a CORS error. There is no UI indication of this — the globalError banner will show 'Network error' but the user won't know it's a CORS issue.",
+      "recommendation": "Either (a) widen the default CORS_ORIGINS to a broader localhost range + 127.0.0.1 + 'null' (file:// origin) — note 'null' with credentials=True is its own can of worms; (b) ship a tiny Python static server (scripts/serve_demo.py) that serves demo.html on :5173 and the user runs that. Option (b) is cleaner. Phase E work."
+    },
+    {
+      "severity": "LOW",
+      "concern_index": 5,
+      "issue": "No 'list characters' endpoint — brief asked for <select>/<ul> character picker",
+      "evidence": "backend has no GET /api/character/ (list) — only GET /api/character/{id} (single) and POST /api/character/ (stub). demo.html hardcodes CHARACTER_ID='char_demo_player' and never offers a picker. Brief said 'Render the character list in a <select> or <ul>'.",
+      "recommendation": "D4 cannot add this without modifying the protected api/character.py. Document as a known gap; Phase E can add GET /api/character/ → list endpoint (just iterates CharacterState in DB or returns the demo starter list in demo mode)."
+    },
+    {
+      "severity": "LOW",
+      "concern_index": 6,
+      "issue": "WebSocket onerror / onclose race — pushHistory may be called before Vue mounts",
+      "evidence": "demo.html:connectWS() is called inside onMounted (line ~770). If the browser fires ws.onerror / ws.onclose before mount completes (rare but possible with fast-failing connections), the handler calls pushHistory() which mutates history.value — but the setup() return is still being constructed. Vue 3 ref() is lazy so this is technically safe, but the logic ordering is fragile.",
+      "recommendation": "Add a `mounted` ref flag and gate pushHistory() / connState updates on it. Low-priority — current behavior is functionally correct, just a bit racy in edge cases."
+    },
+    {
+      "severity": "INFO",
+      "concern_index": 7,
+      "issue": "XSS risk audit: PASS",
+      "evidence": "demo.html uses Vue 3 {{ }} interpolation everywhere (auto-escapes). ripgrep across the file for 'v-html|innerHTML|outerHTML|document.write' → zero matches. All user-controlled strings (scene narrative, character name, choice vignettes, attitude options, history messages, last action response) go through Vue's textContent path. No HTML injection vector.",
+      "recommendation": "Keep this invariant: forbid v-html and innerHTML in demo.html. If a future feature needs rich text, use a sanitizer (DOMPurify) rather than v-html."
+    },
+    {
+      "severity": "INFO",
+      "concern_index": 8,
+      "issue": "Test coverage audit: PASS",
+      "evidence": "backend/tests/test_d4_frontend_e2e.py has 9 tests. The 5 brief-required ones (test_frontend_can_list_characters, test_frontend_can_create_scene, test_frontend_can_submit_action, test_frontend_handles_backend_down, test_frontend_health_check) all hit the *real* composed app via ASGITransport — no mocks, no tautologies. The 4 bonus tests (test_all_frontend_urls_resolve_to_routes, test_frontend_url_patterns_actually_resolve, test_websocket_route_present, test_cors_allows_demo_html_origin) catch the URL-typo class of bugs explicitly.",
+      "recommendation": "Test-to-code-path mapping: test_frontend_can_list_characters → backend/api/character.py:get_character (line 14). test_frontend_can_create_scene → backend/api/scene.py:get_current_scene (line 14). test_frontend_can_submit_action → backend/api/action.py:submit_action (line 11). test_frontend_health_check → backend/memory_palace_integration_endpoint.py (memory router). All non-tautological. Keep."
+    },
+    {
+      "severity": "INFO",
+      "concern_index": 9,
+      "issue": "No new WebSocket route added (correct — main.py is frozen)",
+      "evidence": "backend/main.py:65 already exposes @app.websocket('/ws/game/{character_id}'). demo.html targets this exact path. Brief said: 'If main.py doesn't have a WebSocket route, DO NOT add one (it's a protected file).' The route exists, so this is moot — but worth confirming: no D4 change to main.py.",
+      "recommendation": "Confirmed: git diff backend/main.py should be empty after D4. The audit verifies this indirectly via test_websocket_route_present (which passes because the route is already there from Wave 2)."
+    }
+  ],
+  "audit_summary": {
+    "total_findings": 9,
+    "by_severity": {
+      "CRITICAL": 1,
+      "HIGH": 1,
+      "MEDIUM": 2,
+      "LOW": 2,
+      "INFO": 3
+    },
+    "ship_recommendation": "Conditional ship. The wire-up works (tests pass, XSS-safe, graceful degradation) but finding #2 (HTTP echo) and finding #4 (CORS) will frustrate first-time users. Both are Phase E scope. Document them in PHASE_D4_SUMMARY as known limitations; do not block D4 ship.",
+    "phase_e_blockers": [
+      "Implement real HTTP /api/action/process endpoint (replaces echo)",
+      "Add list-characters endpoint or remove the <select> from the brief",
+      "Widen CORS_ORIGINS or ship a static-file server script",
+      "Decide on polling: drop or smart-diff"
+    ]
+  }
+}

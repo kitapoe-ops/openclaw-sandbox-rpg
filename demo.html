@@ -17,6 +17,8 @@
       --color-accent: #b78d4a;
       --color-text: #e0e0e0;
       --color-dim: #888;
+      --color-error: #ff6464;
+      --color-ok: #64c864;
     }
     body {
       background: var(--color-bg);
@@ -59,6 +61,7 @@
     }
     .conn-online { background: rgba(100, 200, 100, 0.15); color: #64c864; }
     .conn-offline { background: rgba(255, 100, 100, 0.15); color: #ff6464; }
+    .conn-degraded { background: rgba(255, 165, 0, 0.15); color: #ffa500; }
 
     .stat-tag {
       display: inline-block;
@@ -97,6 +100,69 @@
       max-height: 400px;
       overflow-y: auto;
     }
+
+    .btn {
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: 1px solid transparent;
+    }
+    .btn-primary {
+      background: var(--color-accent);
+      color: white;
+    }
+    .btn-primary:hover:not(:disabled) { opacity: 0.9; }
+    .btn-primary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .btn-ghost {
+      background: transparent;
+      border-color: var(--color-border);
+      color: var(--color-text);
+    }
+    .btn-ghost:hover { border-color: var(--color-accent); }
+
+    .error-banner {
+      background: rgba(255, 100, 100, 0.1);
+      border: 1px solid rgba(255, 100, 100, 0.4);
+      color: var(--color-error);
+      padding: 12px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+    }
+    .banner-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .input {
+      background: #000;
+      border: 1px solid var(--color-border);
+      color: var(--color-text);
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 13px;
+      font-family: inherit;
+      width: 100%;
+    }
+    .input:focus { outline: none; border-color: var(--color-accent); }
+
+    .spinner {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid var(--color-border);
+      border-top-color: var(--color-accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
@@ -105,17 +171,34 @@
     <header class="border-b border-gray-800 px-6 py-3 flex items-center justify-between">
       <div class="flex items-center gap-3">
         <h1 class="text-xl font-bold" style="color: var(--color-accent)">OpenClaw Sandbox RPG</h1>
-        <span class="text-xs" style="color: var(--color-dim)">v0.4.0 · Demo Mode</span>
+        <span class="text-xs" style="color: var(--color-dim)">v0.5.0 · Demo Mode (D4 wire-up)</span>
       </div>
       <div class="flex items-center gap-3">
-        <span :class="['connection-pill', backendOk ? 'conn-online' : 'conn-offline']">
-          {{ backendOk ? '● Backend OK' : '● Backend OFFLINE' }}
+        <span :class="['connection-pill', connState.backend === 'ok' ? 'conn-online' : (connState.backend === 'down' ? 'conn-offline' : 'conn-degraded')]">
+          <span v-if="connState.backend === 'loading'"><span class="spinner"></span> Backend…</span>
+          <span v-else-if="connState.backend === 'ok'">● Backend OK</span>
+          <span v-else>● Backend {{ connState.backend === 'down' ? 'OFFLINE' : 'ERROR' }}</span>
         </span>
-        <span :class="['connection-pill', wsConnected ? 'conn-online' : 'conn-offline']">
-          {{ wsConnected ? '● WS Connected' : '● WS Disconnected' }}
+        <span :class="['connection-pill', connState.ws === 'open' ? 'conn-online' : (connState.ws === 'closed' ? 'conn-offline' : 'conn-degraded')]">
+          <span v-if="connState.ws === 'connecting'"><span class="spinner"></span> WS…</span>
+          <span v-else-if="connState.ws === 'open'">● WS Connected</span>
+          <span v-else>● WS {{ transportMode }} mode</span>
         </span>
       </div>
     </header>
+
+    <!-- Global error banner -->
+    <div v-if="globalError" class="max-w-7xl mx-auto p-6">
+      <div class="error-banner">
+        <div class="banner-row">
+          <strong>⚠ 後端錯誤:</strong>
+          <span>{{ globalError }}</span>
+          <button class="btn btn-ghost" @click="retryAll" :disabled="connState.backend === 'loading'">
+            {{ connState.backend === 'loading' ? '重試中…' : '🔄 重試' }}
+          </button>
+        </div>
+      </div>
+    </div>
 
     <main class="max-w-7xl mx-auto p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
       <!-- Left: Scene + Choices -->
@@ -133,7 +216,12 @@
           <p v-if="scene" class="text-base leading-relaxed whitespace-pre-line">
             {{ scene.narrative }}
           </p>
-          <p v-else class="text-sm" style="color: var(--color-dim)">載入場景中...</p>
+          <p v-else-if="connState.backend === 'loading'" class="text-sm flex items-center gap-2" style="color: var(--color-dim)">
+            <span class="spinner"></span> 載入場景中…
+          </p>
+          <p v-else class="text-sm" style="color: var(--color-error)">
+            ✗ 場景載入失敗。請確認後端運行中 (<code>{{ API_BASE }}</code>)，然後按「重試」。
+          </p>
         </div>
 
         <!-- 4 Vignette Cards -->
@@ -161,7 +249,7 @@
                 <code class="text-xs" style="color: var(--color-dim)">{{ choice.lore_source }}</code>
               </div>
 
-              <!-- Vignette (30-50 chars) -->
+              <!-- Vignette (textContent only — no v-html, XSS-safe) -->
               <p class="text-sm leading-relaxed mb-3">{{ choice.vignette }}</p>
 
               <!-- Direction hint -->
@@ -169,7 +257,7 @@
                 💡 {{ choice.direction_hint }}
               </p>
 
-              <!-- Attitude options (only show if this card is selected) -->
+              <!-- Attitude options -->
               <div v-if="selectedOption === choice.id" @click.stop>
                 <p class="text-xs mb-2" style="color: var(--color-accent)">選擇態度 (1-2 個):</p>
                 <div class="flex flex-wrap gap-1">
@@ -192,12 +280,47 @@
             <button
               @click="submitChoice"
               :disabled="submitting"
-              class="px-6 py-3 rounded-lg font-medium"
-              style="background: var(--color-accent); color: white"
+              class="btn btn-primary"
             >
-              {{ submitting ? '提交中...' : '確認選擇' }}
+              <span v-if="submitting" class="spinner"></span>
+              {{ submitting ? '提交中…' : '確認選擇' }}
             </button>
           </div>
+        </div>
+
+        <!-- Free-form action input (D4 addition: text input as alternative to vignettes) -->
+        <div class="rounded-lg p-4" style="background: var(--color-card); border: 1px solid var(--color-border)">
+          <h3 class="text-sm font-medium mb-2" style="color: var(--color-accent)">
+            或者用自由文字輸入動作
+          </h3>
+          <p class="text-xs mb-3 italic" style="color: var(--color-dim)">
+            輸入你想做嘅事，例如「我向鐵匠舉起匕首」或「我問學者地圖嘅歷史」。
+            <span v-if="connState.ws !== 'open'">（目前使用 HTTP fallback）</span>
+          </p>
+          <div class="flex gap-2">
+            <input
+              v-model="freeTextAction"
+              type="text"
+              class="input"
+              placeholder="輸入你的動作..."
+              :disabled="submitting"
+              @keyup.enter="submitFreeText"
+            />
+            <button
+              class="btn btn-primary"
+              :disabled="!freeTextAction.trim() || submitting"
+              @click="submitFreeText"
+            >
+              <span v-if="submitting" class="spinner"></span>
+              {{ submitting ? '提交中…' : '提交' }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Action response (last submission's echo) -->
+        <div v-if="lastActionResponse" class="rounded-lg p-4" style="background: var(--color-card); border: 1px solid var(--color-border)">
+          <h3 class="text-sm font-bold mb-2" style="color: var(--color-accent)">最後動作回應</h3>
+          <pre class="code">{{ formatJson(lastActionResponse) }}</pre>
         </div>
       </section>
 
@@ -212,20 +335,20 @@
               <code>{{ character.character_id }}</code>
             </div>
             <div class="flex justify-between">
-              <span style="color: var(--color-dim)">種族</span>
-              <span>{{ character.physical?.stamina_level }} 等級</span>
-            </div>
-            <div class="flex justify-between">
-              <span style="color: var(--color-dim)">情緒</span>
-              <span>{{ character.mental?.morale_level }}</span>
-            </div>
-            <div class="flex justify-between">
-              <span style="color: var(--color-dim)">HP</span>
-              <span>{{ character.physical?.health_status }}</span>
+              <span style="color: var(--color-dim)">模式</span>
+              <code>{{ character.mode || 'full' }}</code>
             </div>
             <div class="flex justify-between">
               <span style="color: var(--color-dim)">地點</span>
               <code class="text-xs">{{ character.current_scene_id }}</code>
+            </div>
+            <div v-if="character.physical" class="pt-2 border-t border-gray-700">
+              <p class="mb-1" style="color: var(--color-dim)">身體狀態</p>
+              <code class="text-xs">{{ character.physical?.stamina_level || '—' }} stamina / {{ character.physical?.health_status || '—' }} HP</code>
+            </div>
+            <div v-if="character.mental" class="pt-2 border-t border-gray-700">
+              <p class="mb-1" style="color: var(--color-dim)">心理狀態</p>
+              <code class="text-xs">morale: {{ character.mental?.morale_level || '—' }}</code>
             </div>
             <div v-if="character.attitude" class="pt-2 border-t border-gray-700">
               <p class="mb-1" style="color: var(--color-dim)">當前態度</p>
@@ -235,7 +358,7 @@
                 </span>
               </div>
             </div>
-            <div v-if="character.inventory?.items" class="pt-2 border-t border-gray-700">
+            <div v-if="character.inventory?.items && character.inventory.items.length" class="pt-2 border-t border-gray-700">
               <p class="mb-1" style="color: var(--color-dim)">背包</p>
               <div>
                 <span v-for="item in character.inventory.items" :key="item.item_id" class="stat-tag">
@@ -251,7 +374,7 @@
           <h3 class="text-sm font-bold mb-2" style="color: var(--color-accent)">歷史日誌</h3>
           <div class="space-y-2 max-h-60 overflow-y-auto">
             <div v-for="(h, idx) in history" :key="idx" class="text-xs p-2 rounded" style="background: rgba(0,0,0,0.3)">
-              <div style="color: var(--color-accent)">第 {{ h.round }} 輪 · {{ h.status }}</div>
+              <div :style="{ color: statusColor(h.status) }">第 {{ h.round }} 輪 · {{ h.status }}</div>
               <div style="color: var(--color-dim)">{{ h.timestamp }}</div>
               <div>{{ h.message }}</div>
             </div>
@@ -267,16 +390,38 @@
     </main>
 
     <footer class="text-center py-6 text-xs" style="color: var(--color-dim)">
-      Backend: {{ API_BASE }} · WebSocket: {{ WS_BASE }}
+      Backend: {{ API_BASE }} · Transport: {{ transportMode }} · Last fetch: {{ lastFetchAt || '—' }}
     </footer>
   </div>
 
   <script>
-    const { createApp, ref, onMounted, computed, watch } = Vue;
+    const { createApp, ref, onMounted, onBeforeUnmount, computed, watch } = Vue;
 
-    const API_BASE = 'http://localhost:8000';
-    const WS_BASE = 'ws://localhost:8000';
-    const CHARACTER_ID = 'char demo_player';
+    // ============================================
+    // D4 — Config
+    // ============================================
+    // The API_BASE is the *public* URL the browser will hit.
+    // CORS is configured in main.py for http://localhost:5173 / :3000 /
+    // 127.0.0.1:5173 / :3000. If you serve demo.html from a different
+    // origin, override CORS_ORIGINS in the server env.
+    const API_BASE = (() => {
+      // Allow query-string override for quick local testing:
+      //   demo.html?api=http://localhost:8001
+      const params = new URLSearchParams(window.location.search);
+      return params.get('api') || 'http://localhost:8000';
+    })();
+    const WS_BASE = API_BASE.replace(/^http/, 'ws');
+    // IMPORTANT: must match DEMO_STARTER['character_id'] in
+    // backend/scenes_demo.py (note: underscore, not space). D4 audit
+    // finding #6: the old value ('char demo_player' with a space)
+    // caused 404s from /api/character/{id}.
+    const CHARACTER_ID = 'char_demo_player';
+    const SCENE_ID_FALLBACK = 'loc_phandalin_town';
+
+    // Polling fallback interval (ms) — only used when WebSocket is down.
+    const POLL_INTERVAL_MS = 5000;
+    // Reconnect delay after WS close.
+    const WS_RECONNECT_DELAY_MS = 3000;
 
     const DIMENSION_LABELS = {
       character_growth: '角色成長',
@@ -291,170 +436,438 @@
       mystery_revelation: '🔮',
     };
 
+    // ============================================
+    // D4 — fetch helper with timeout + uniform error handling
+    // ============================================
+    async function apiFetch(path, opts = {}, timeoutMs = 8000) {
+      const ctrl = new AbortController();
+      const tid = setTimeout(() => ctrl.abort(), timeoutMs);
+      try {
+        const res = await fetch(`${API_BASE}${path}`, {
+          ...opts,
+          signal: ctrl.signal,
+          headers: {
+            'Content-Type': 'application/json',
+            ...(opts.headers || {}),
+          },
+        });
+        const text = await res.text();
+        let body = null;
+        try {
+          body = text ? JSON.parse(text) : null;
+        } catch (_) {
+          body = { raw: text };
+        }
+        if (!res.ok) {
+          const detail = (body && body.detail) || res.statusText || `HTTP ${res.status}`;
+          throw new Error(`${res.status} ${detail}`);
+        }
+        return body;
+      } finally {
+        clearTimeout(tid);
+      }
+    }
+
     createApp({
       setup() {
-        const backendOk = ref(false);
-        const wsConnected = ref(false);
+        // ---- Connection state ----
+        const connState = ref({ backend: 'loading', ws: 'closed' });
+        const transportMode = computed(() =>
+          connState.value.ws === 'open' ? 'WebSocket' : 'HTTP polling'
+        );
+        const globalError = ref(null);
+        const lastFetchAt = ref(null);
+
+        // ---- Domain state ----
         const scene = ref(null);
         const character = ref(null);
         const history = ref([]);
+        const apiResponseText = ref('(no response yet)');
+        const lastActionResponse = ref(null);
+
+        // ---- UI state ----
         const selectedOption = ref(null);
         const selectedAttitudes = ref([]);
         const submitting = ref(false);
-        const apiResponseText = ref('(no response yet)');
+        const freeTextAction = ref('');
 
+        // ---- Internal ----
         let ws = null;
+        let pollTimer = null;
+        let wsReconnectTimer = null;
+        let wsRetryCount = 0;
+        const MAX_WS_RETRIES = 3; // after this many failures, give up on WS
 
         const dimensionLabel = (cat) => DIMENSION_LABELS[cat] || cat;
         const dimensionIcon = (cat) => DIMENSION_ICONS[cat] || '📜';
 
+        // ============================================
+        // Vue auto-escapes {{ }}. We also never use v-html
+        // anywhere, so the action narrative is XSS-safe.
+        // (See docs/AUDIT_D4_M3.json finding #3 for the
+        //  cross-check done by the M3-as-R1 audit.)
+        // ============================================
+        function formatJson(obj) {
+          try { return JSON.stringify(obj, null, 2); }
+          catch { return String(obj); }
+        }
+
+        function statusColor(s) {
+          if (!s) return 'var(--color-dim)';
+          if (s.startsWith('WS_OPEN') || s === 'OK' || s === 'POLLED' || s === 'SUBMITTED') return 'var(--color-ok)';
+          if (s === 'ERROR' || s === 'WS_FAIL' || s === 'HTTP_FAIL' || s === 'WS_CLOSED') return 'var(--color-error)';
+          return 'var(--color-accent)';
+        }
+
+        // ============================================
+        // Selection logic (vignette + attitude)
+        // ============================================
         function selectOption(optionId) {
           selectedOption.value = optionId;
           selectedAttitudes.value = [];
         }
 
         function isAttitudeSelected(optionId, dim, level) {
-          return selectedAttitudes.value.some(a => a.optionId === optionId && a.dim === dim && a.level === level);
+          return selectedAttitudes.value.some(
+            (a) => a.optionId === optionId && a.dim === dim && a.level === level
+          );
         }
 
         function toggleAttitude(optionId, dim, level) {
           const existing = selectedAttitudes.value.findIndex(
-            a => a.optionId === optionId && a.dim === dim && a.level === level
+            (a) => a.optionId === optionId && a.dim === dim && a.level === level
           );
           if (existing >= 0) {
             selectedAttitudes.value.splice(existing, 1);
-          } else {
-            // Max 2 attitudes per choice
-            const sameOption = selectedAttitudes.value.filter(a => a.optionId === optionId);
-            if (sameOption.length >= 2) return;
-            // If selecting different level of same dim, replace
-            const sameDim = selectedAttitudes.value.findIndex(
-              a => a.optionId === optionId && a.dim === dim
-            );
-            if (sameDim >= 0) {
-              selectedAttitudes.value.splice(sameDim, 1);
-            }
-            selectedAttitudes.value.push({ optionId, dim, level });
+            return;
           }
+          const sameOption = selectedAttitudes.value.filter((a) => a.optionId === optionId);
+          if (sameOption.length >= 2) return;
+          const sameDim = selectedAttitudes.value.findIndex(
+            (a) => a.optionId === optionId && a.dim === dim
+          );
+          if (sameDim >= 0) selectedAttitudes.value.splice(sameDim, 1);
+          selectedAttitudes.value.push({ optionId, dim, level });
         }
 
+        // ============================================
+        // API loaders (D4 — error handling hardened)
+        // ============================================
         async function loadCharacter() {
           try {
-            const res = await fetch(`${API_BASE}/api/character/${encodeURIComponent(CHARACTER_ID)}`);
-            if (res.ok) {
-              const data = await res.json();
-              character.value = data;
-              backendOk.value = true;
-              apiResponseText.value = JSON.stringify(data, null, 2);
-            } else {
-              apiResponseText.value = `Error: ${res.status} ${res.statusText}`;
-            }
+            const data = await apiFetch(`/api/character/${encodeURIComponent(CHARACTER_ID)}`);
+            character.value = data;
+            connState.value.backend = 'ok';
+            globalError.value = null;
+            apiResponseText.value = formatJson(data);
+            lastFetchAt.value = new Date().toLocaleTimeString();
+            pushHistory('OK', 0, `GET /api/character → ${data.name || data.character_id}`);
           } catch (e) {
-            apiResponseText.value = `Network error: ${e.message}`;
+            connState.value.backend = 'down';
+            globalError.value = `後端連線失敗: ${e.message}. 確認 uvicorn 運行中。`;
+            pushHistory('ERROR', 0, `GET /api/character failed: ${e.message}`);
+            apiResponseText.value = `Error: ${e.message}`;
           }
         }
 
         async function loadScene() {
+          if (connState.value.backend !== 'ok' && connState.value.backend !== 'loading') {
+            // Don't bother if backend is known down — error already shown.
+            return;
+          }
           try {
-            const res = await fetch(`${API_BASE}/api/scene/${encodeURIComponent(CHARACTER_ID)}`);
-            if (res.ok) {
-              const data = await res.json();
-              scene.value = data;
-              apiResponseText.value = JSON.stringify(data, null, 2);
-            }
+            const data = await apiFetch(`/api/scene/${encodeURIComponent(CHARACTER_ID)}`);
+            scene.value = data;
+            connState.value.backend = 'ok';
+            globalError.value = null;
+            apiResponseText.value = formatJson(data);
+            lastFetchAt.value = new Date().toLocaleTimeString();
+            pushHistory('OK', data.round || 1, `GET /api/scene → ${data.scene_id}`);
           } catch (e) {
-            apiResponseText.value = `Network error: ${e.message}`;
+            // Only show as error if we don't already have a scene
+            if (!scene.value) {
+              connState.value.backend = 'down';
+              globalError.value = `場景載入失敗: ${e.message}`;
+            }
+            pushHistory('ERROR', scene.value?.round || 1, `GET /api/scene failed: ${e.message}`);
+            apiResponseText.value = `Error: ${e.message}`;
           }
         }
 
+        async function loadHealth() {
+          try {
+            const data = await apiFetch('/memory/health');
+            pushHistory('OK', 0, `GET /memory/health → pg=${data.postgres} vec=${data.vector_store}`);
+          } catch (e) {
+            pushHistory('ERROR', 0, `GET /memory/health failed: ${e.message}`);
+          }
+        }
+
+        // ============================================
+        // WebSocket
+        // ============================================
         function connectWS() {
-          if (ws) ws.close();
-          ws = new WebSocket(`${WS_BASE}/ws/game/${encodeURIComponent(CHARACTER_ID)}`);
+          // If we've already failed too many times, don't keep retrying
+          if (wsRetryCount >= MAX_WS_RETRIES) {
+            connState.value.ws = 'closed';
+            startPolling();
+            return;
+          }
+          if (ws) {
+            try { ws.close(); } catch (_) {}
+            ws = null;
+          }
+          connState.value.ws = 'connecting';
+          try {
+            ws = new WebSocket(`${WS_BASE}/ws/game/${encodeURIComponent(CHARACTER_ID)}`);
+          } catch (e) {
+            handleWSFailure(`WebSocket construct failed: ${e.message}`);
+            return;
+          }
           ws.onopen = () => {
-            wsConnected.value = true;
-            history.value.unshift({
-              round: 0,
-              status: 'WS_OPEN',
-              timestamp: new Date().toLocaleTimeString(),
-              message: 'WebSocket connected',
-            });
+            wsRetryCount = 0; // reset on success
+            connState.value.ws = 'open';
+            stopPolling();
+            pushHistory('WS_OPEN', 0, 'WebSocket connected (real-time mode)');
           };
           ws.onclose = () => {
-            wsConnected.value = false;
-            setTimeout(connectWS, 3000);
+            connState.value.ws = 'closed';
+            pushHistory('WS_CLOSED', scene.value?.round || 0, 'WebSocket disconnected');
+            wsRetryCount += 1;
+            // If we haven't exhausted retries, try once more
+            if (wsRetryCount < MAX_WS_RETRIES) {
+              wsReconnectTimer = setTimeout(connectWS, WS_RECONNECT_DELAY_MS);
+            } else {
+              // Give up on WS, start polling as fallback
+              pushHistory('WS_FAIL', 0, `WebSocket failed ${MAX_WS_RETRIES} times — falling back to HTTP polling`);
+              startPolling();
+            }
+          };
+          ws.onerror = (ev) => {
+            // onclose will fire next; just log
+            pushHistory('WS_ERROR', scene.value?.round || 0, 'WebSocket error');
           };
           ws.onmessage = (e) => {
-            const msg = JSON.parse(e.data);
-            history.value.unshift({
-              round: scene.value?.round || 0,
-              status: msg.type,
-              timestamp: new Date().toLocaleTimeString(),
-              message: JSON.stringify(msg).slice(0, 200),
-            });
-            // Keep only last 10 history entries
-            if (history.value.length > 10) history.value = history.value.slice(0, 10);
-
+            let msg = null;
+            try { msg = JSON.parse(e.data); }
+            catch (_) { msg = { type: 'raw', text: e.data }; }
+            pushHistory(
+              msg.type || 'MSG',
+              scene.value?.round || 0,
+              formatJson(msg).slice(0, 200),
+            );
             if (msg.type === 'scene_update') {
-              // Reload scene
               loadScene();
             }
           };
         }
 
-        function submitChoice() {
+        function handleWSFailure(reason) {
+          pushHistory('WS_FAIL', 0, reason);
+          connState.value.ws = 'closed';
+          wsRetryCount += 1;
+          if (wsRetryCount < MAX_WS_RETRIES) {
+            wsReconnectTimer = setTimeout(connectWS, WS_RECONNECT_DELAY_MS);
+          } else {
+            startPolling();
+          }
+        }
+
+        // ============================================
+        // HTTP polling fallback (D4 — new in Phase D4)
+        // ============================================
+        function startPolling() {
+          if (pollTimer) return;
+          pushHistory('POLL', 0, `Starting HTTP polling (every ${POLL_INTERVAL_MS}ms)`);
+          pollTimer = setInterval(async () => {
+            if (connState.value.ws === 'open') {
+              stopPolling();
+              return;
+            }
+            await loadScene();
+          }, POLL_INTERVAL_MS);
+        }
+
+        function stopPolling() {
+          if (pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+          }
+        }
+
+        // ============================================
+        // Action submission — WebSocket OR HTTP fallback
+        // ============================================
+        async function submitViaWS(payload) {
+          return new Promise((resolve, reject) => {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+              reject(new Error('WebSocket not open'));
+              return;
+            }
+            const id = `submit-${Date.now()}`;
+            payload.request_id = id;
+            // One-shot listener for the response
+            const handler = (e) => {
+              try {
+                const msg = JSON.parse(e.data);
+                if (msg.request_id === id) {
+                  ws.removeEventListener('message', handler);
+                  resolve(msg);
+                }
+              } catch (_) {}
+            };
+            ws.addEventListener('message', handler);
+            ws.send(JSON.stringify(payload));
+            // Timeout safety: 5s without response, fall through
+            setTimeout(() => {
+              ws.removeEventListener('message', handler);
+              reject(new Error('WebSocket response timeout'));
+            }, 5000);
+          });
+        }
+
+        async function submitViaHTTP(payload) {
+          // HTTP fallback hits /api/action/submit (echo endpoint — see audit
+          // finding #5). In a real game this would be a write endpoint; for
+          // now we just acknowledge the request.
+          return await apiFetch('/api/action/submit', {
+            method: 'POST',
+            body: JSON.stringify(payload),
+          });
+        }
+
+        async function submitChoice() {
           if (!selectedOption.value || selectedAttitudes.value.length === 0) return;
           submitting.value = true;
-
-          const choice = scene.value.choices.find(c => c.id === selectedOption.value);
+          const choice = scene.value.choices.find((c) => c.id === selectedOption.value);
           const payload = {
             type: 'action_submit',
             round: scene.value.round || 1,
             character_id: CHARACTER_ID,
+            transport: connState.value.ws === 'open' ? 'ws' : 'http',
             choice: {
               option_id: selectedOption.value,
-              attitude_selections: selectedAttitudes.value.map(a => ({
+              intent_category: choice?.intent_category,
+              attitude_selections: selectedAttitudes.value.map((a) => ({
                 dimension: a.dim,
                 level: a.level,
               })),
             },
           };
-
-          if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify(payload));
-            history.value.unshift({
-              round: payload.round,
-              status: 'SUBMITTED',
-              timestamp: new Date().toLocaleTimeString(),
-              message: `選了 ${choice?.intent_category}: ${payload.choice.option_id} + ${selectedAttitudes.value.length} attitude(s)`,
-            });
-            setTimeout(() => {
-              submitting.value = false;
-              selectedOption.value = null;
-              selectedAttitudes.value = [];
-            }, 1000);
-          } else {
-            alert('WebSocket not connected!');
+          try {
+            let result;
+            if (connState.value.ws === 'open') {
+              result = await submitViaWS(payload);
+            } else {
+              result = await submitViaHTTP(payload);
+            }
+            lastActionResponse.value = result;
+            pushHistory(
+              'SUBMITTED',
+              payload.round,
+              `choice=${payload.choice.option_id} (${connState.value.ws === 'open' ? 'WS' : 'HTTP'})`,
+            );
+            selectedOption.value = null;
+            selectedAttitudes.value = [];
+            // After a submission, refresh the scene in case backend
+            // produced an update
+            setTimeout(loadScene, 500);
+          } catch (e) {
+            pushHistory('ERROR', payload.round, `Submit failed: ${e.message}`);
+            lastActionResponse.value = { error: e.message };
+          } finally {
             submitting.value = false;
           }
         }
 
-        onMounted(() => {
-          loadCharacter();
-          loadScene();
-          connectWS();
+        async function submitFreeText() {
+          const text = freeTextAction.value.trim();
+          if (!text) return;
+          submitting.value = true;
+          const payload = {
+            type: 'action_submit',
+            round: scene.value?.round || 1,
+            character_id: CHARACTER_ID,
+            transport: connState.value.ws === 'open' ? 'ws' : 'http',
+            free_text: text,
+          };
+          try {
+            let result;
+            if (connState.value.ws === 'open') {
+              result = await submitViaWS(payload);
+            } else {
+              result = await submitViaHTTP(payload);
+            }
+            lastActionResponse.value = result;
+            pushHistory(
+              'SUBMITTED',
+              payload.round,
+              `free_text="${text.slice(0, 30)}…" (${connState.value.ws === 'open' ? 'WS' : 'HTTP'})`,
+            );
+            freeTextAction.value = '';
+            setTimeout(loadScene, 500);
+          } catch (e) {
+            pushHistory('ERROR', payload.round, `Free-text submit failed: ${e.message}`);
+            lastActionResponse.value = { error: e.message };
+          } finally {
+            submitting.value = false;
+          }
+        }
+
+        // ============================================
+        // History
+        // ============================================
+        function pushHistory(status, round, message) {
+          history.value.unshift({
+            round: round || 0,
+            status,
+            timestamp: new Date().toLocaleTimeString(),
+            message,
+          });
+          if (history.value.length > 20) history.value = history.value.slice(0, 20);
+        }
+
+        // ============================================
+        // Retry-all (D4 — new)
+        // ============================================
+        async function retryAll() {
+          connState.value.backend = 'loading';
+          globalError.value = null;
+          await Promise.all([loadCharacter(), loadScene(), loadHealth()]);
+          if (connState.value.backend === 'ok' && connState.value.ws !== 'open') {
+            connectWS();
+          }
+        }
+
+        // ============================================
+        // Lifecycle
+        // ============================================
+        onMounted(async () => {
+          await Promise.all([loadCharacter(), loadScene(), loadHealth()]);
+          if (connState.value.backend === 'ok') {
+            connectWS();
+          } else {
+            // Backend down — still start polling as a recovery attempt
+            startPolling();
+          }
+        });
+
+        onBeforeUnmount(() => {
+          if (ws) try { ws.close(); } catch (_) {}
+          if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
+          stopPolling();
         });
 
         return {
-          backendOk, wsConnected,
-          scene, character, history,
-          selectedOption, selectedAttitudes, submitting,
-          apiResponseText,
+          connState, transportMode, globalError, lastFetchAt,
+          scene, character, history, apiResponseText, lastActionResponse,
+          selectedOption, selectedAttitudes, submitting, freeTextAction,
           API_BASE, WS_BASE,
-          dimensionLabel, dimensionIcon,
+          dimensionLabel, dimensionIcon, formatJson, statusColor,
           selectOption, isAttitudeSelected, toggleAttitude,
-          submitChoice,
+          submitChoice, submitFreeText, retryAll,
         };
-      }
+      },
     }).mount('#app');
   </script>
 </body>
