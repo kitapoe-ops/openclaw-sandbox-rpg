@@ -242,6 +242,14 @@ terminates TLS and proxies HTTP/WS. BAZOOKA remains the source of truth.
 **URL was issued successfully** (invalidated when tunnel exits; new URL
 on each restart).
 
+**Re-launch log (2026-06-06 01:13 HKT, deployment-relaunch subagent):**
+- New URL: `https://farmer-oecd-drilling-phil.trycloudflare.com`
+- Cloudflare edge: `hkg12` (QUIC, conn `9aef875a-...`)
+- `GET /memory/health` -> 200 `{"postgres":true,"vector_store":true}`
+- `GET /health` -> 200 demo mode
+- WSS `/ws/multiplayer/test/p1` -> 101 Switching Protocols, server-push
+  `{"event":"connected","scene_id":"test","player_id":"p1",...}`
+
 ---
 
 ## Appendix B — Quick reference card
@@ -252,4 +260,163 @@ on each restart).
 
 ---
 
-*Last updated: 2026-06-06 (verified by deployment-verify subagent)*
+## 11. Tunnel went down? Here's how to bring it back
+
+If your public URL returns **Cloudflare error 1033**, the `cloudflared`
+daemon has exited (most common: laptop sleep, terminal closed, host
+rebooted). The previous URL is **dead** — Quick Tunnels cannot be
+resumed. You must issue a new one.
+
+**Re-launch in 60 seconds (Windows / PowerShell):**
+
+```powershell
+# Terminal 1 — backend (only if it's not already running)
+cd C:\Users\kitap\.openclaw\workspace\sandbox-rpg-tmp
+.\.venv\Scripts\python.exe -m uvicorn backend.app_with_memory:app --host 0.0.0.0 --port 8000
+
+# Terminal 2 — tunnel
+& "$env:USERPROFILE\cloudflared.exe" tunnel --url http://localhost:8000 --no-autoupdate
+```
+
+Look for the box:
+```
++--------------------------------------------------------------------------------------------+
+|  https://<new-random-subdomain>.trycloudflare.com                                          |
++--------------------------------------------------------------------------------------------+
+```
+
+**Then update Vercel** (project → Settings → Environment Variables):
+| Variable | New value |
+|---|---|
+| `VITE_API_BASE_URL` | `https://<new-url>` |
+| `VITE_WS_BASE_URL` | `wss://<new-url>` |
+
+Then `vercel --prod` (or `vercel deploy` for a preview).
+
+> **Tip:** If you run the included `scripts\start_demo_public.bat`
+> (see § 12, Option C), it parses the new URL from `cloudflared.log`
+> and prints it for you.
+
+---
+
+## 12. Keep the tunnel alive (long-term options)
+
+The Quick Tunnel is designed for **short-lived demos**, not always-on
+service. Pick one of these three options based on your needs.
+
+### Option A — Linux `systemd` user service (recommended for Linux hosts)
+
+If you ever move the backend to a Linux box (VPS, Pi, etc.), run
+`cloudflared` as a user-level systemd service so it auto-restarts on
+failure and survives reboots.
+
+**File:** `~/.config/systemd/user/cloudflared.service`
+```ini
+[Unit]
+Description=Cloudflare Quick Tunnel -> sandbox-rpg backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/cloudflared tunnel --url http://localhost:8000 --no-autoupdate
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/var/log/cloudflared.log
+StandardError=append:/var/log/cloudflared.log
+
+[Install]
+WantedBy=default.target
+```
+
+```bash
+# Enable and start
+systemctl --user daemon-reload
+systemctl --user enable --now cloudflared.service
+
+# Check status
+systemctl --user status cloudflared.service
+
+# Tail logs
+journalctl --user -u cloudflared.service -f
+```
+
+> **Caveat:** Quick Tunnel URL still changes on every daemon restart.
+> For a *truly* stable URL on Linux, also do the named-tunnel upgrade
+> (§ 8). systemd only solves the "auto-restart" problem, not the
+> "stable URL" problem.
+
+### Option B — Windows NSSM (Non-Sucking Service Manager)
+
+For Windows hosts that need to survive reboots/sleep and run the
+tunnel unattended.
+
+**Install NSSM** (no admin needed if you use a per-user copy):
+```powershell
+Invoke-WebRequest -Uri "https://nssm.cc/release/nssm-2.24.zip" -OutFile "$env:TEMP\nssm.zip"
+Expand-Archive "$env:TEMP\nssm.zip" -DestinationPath "$env:USERPROFILE\nssm" -Force
+```
+
+**Register cloudflared as a service:**
+```powershell
+$nssm = "$env:USERPROFILE\nssm\nssm-2.24\win64\nssm.exe"
+& $nssm install CloudflaredSandboxRPG "C:\Users\kitap\cloudflared.exe" "tunnel --url http://localhost:8000 --no-autoupdate"
+& $nssm set CloudflaredSandboxRPG AppDirectory "C:\Users\kitap\.openclaw\workspace\sandbox-rpg-tmp"
+& $nssm set CloudflaredSandboxRPG AppStdout "C:\Users\kitap\.openclaw\workspace\sandbox-rpg-tmp\cloudflared.log"
+& $nssm set CloudflaredSandboxRPG AppStderr "C:\Users\kitap\.openclaw\workspace\sandbox-rpg-tmp\cloudflared.log"
+& $nssm set CloudflaredSandboxRPG AppRotateFiles 1
+& $nssm set CloudflaredSandboxRPG AppRotateBytes 1048576
+& $nssm set CloudflaredSandboxRPG Start SERVICE_AUTO_START
+& $nssm set CloudflaredSandboxRPG AppExit Default Restart
+& $nssm set CloudflaredSandboxRPG AppRestartDelay 5000
+```
+
+**Control the service:**
+```powershell
+nssm start CloudflaredSandboxRPG
+nssm status CloudflaredSandboxRPG
+nssm stop CloudflaredSandboxRPG
+nssm restart CloudflaredSandboxRPG
+nssm remove CloudflaredSandboxRPG confirm   # uninstall
+```
+
+**Caveat:** the Quick Tunnel URL still changes on every `nssm start`.
+For a stable URL, the service needs to also call a small script that
+parses the new URL out of `cloudflared.log` and updates Vercel via
+the Vercel API. That's outside the scope of this doc — see § 8 for
+the named-tunnel upgrade.
+
+### Option C — Keep Quick Tunnel, accept the restart dance (1 script)
+
+If you only need the tunnel for an evening of testing and don't want
+to install NSSM or move to Linux, use the included one-shot script:
+
+- **Windows:** `scripts\start_demo_public.bat`
+- **Unix:**   `scripts/start_demo_public.sh`
+
+Both scripts:
+1. Kill any stale `uvicorn` / `cloudflared` processes from previous runs
+2. Start the backend in a new window (`.bat`) or background (`.sh`)
+3. Start `cloudflared` and tail its log until the URL appears
+4. Print the new URL plus the Vercel env commands you need to run
+
+**Usage (Windows):**
+```powershell
+cd C:\Users\kitap\.openclaw\workspace\sandbox-rpg-tmp
+.\scripts\start_demo_public.bat
+```
+
+**Usage (Unix / Git Bash):**
+```bash
+cd /c/Users/kitap/.openclaw/workspace/sandbox-rpg-tmp
+./scripts/start_demo_public.sh
+```
+
+You still need to update the Vercel env vars after each run, but the
+script collapses the manual "open 2 terminals + copy URL" sequence
+into a single command. See `scripts/start_demo_public.{bat,sh}` for
+the exact implementation.
+
+---
+
+*Last updated: 2026-06-06 (Sections 11+12 added by deployment-relaunch subagent)*
