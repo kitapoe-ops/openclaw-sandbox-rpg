@@ -126,4 +126,18 @@ The Memory Palace is the keystone. Everything else (state machine, physics lock,
 
 **Deployment scope: LOCAL-ONLY.** The framework is designed for local development (single-machine venv + LM Studio for R1-14B). Production / Pi5 / cloud deploy is explicitly out of scope — see removed Phase D5.
 
-Beyond Phase D, the next major axis is **multiplayer** — currently the framework assumes a single player per scene. The async turn system was designed with multiplayer in mind, but the scenes are not shared between concurrent players. This is a Phase E+ scope.
+**Game scope (1-4 players + 100 NPCs, set 2026-06-05):**
+
+- **Players:** 1-4 concurrent human players per scene
+- **NPCs:** Up to 100 per scene, all with full character parameters + Memory Palace support
+- **Per-NPC overhead:** 384-dim embedding (~200KB) + state machine state (~5KB) + Memory Palace memories (variable, ~1MB/100 memories)
+- **Total scene budget:** 100 NPCs × 1.2MB ≈ 120MB RAM, plus 4 players × ~50MB ≈ 200MB — well under 8GB local dev host
+- **Turn system:** Per-character queue with DB row lock already designed for this scale (see `backend/turn_system.py` line 4: "multi-player RPG")
+- **Audit scale:** R1-14B must audit 100 NPC + 4 player turns = ~104 actions/turn cycle. Target: 200-500ms R1 latency budget per action; total ~50s/turn cycle worst case. May need async audit queue (Phase D3+)
+
+**Scope hard caps (do not exceed without explicit user approval):**
+- Player count > 4: REJECT (UI/UX not designed for 5+; turn queue contention)
+- NPC count > 100: REJECT (Memory Palace index size; R1 audit throughput)
+- Local-only deploy: REJECT cloud/Pi5 (see removed Phase D5)
+
+Beyond Phase D, the next major axis is **multiplayer polish** — the infrastructure supports it, but the UX (shared scenes, real-time WebSocket fan-out, NPC dialogue arbitration) is a Phase E+ scope.

@@ -13,7 +13,11 @@
 
 OpenClaw Sandbox RPG is a backend-first framework for building AI-driven narrative games. Unlike a chatbot that forgets between turns, this framework treats the world, its characters, and their memories as first-class persistent state. A local language model (DeepSeek-R1-14B via LM Studio) audits every LLM-generated action before it commits, providing a fail-closed hallucination guard. A relational + vector persistence layer (PostgreSQL + LanceDB) stores the world canon, character state, and a per-character Memory Palace that supports semantic recall across sessions.
 
-The design goal is simple: build a sandbox where a player can spend 50 turns exploring, then close the laptop, come back two weeks later, and the blacksmith still remembers what sword they tried to buy.
+The design goal is simple: build a sandbox where **1-4 players** can spend 50 turns exploring a world populated by **up to 100 NPCs** (each with full character parameters and memory), then close the laptop, come back two weeks later, and the blacksmith still remembers what sword they tried to buy.
+
+**Game scope (hard caps, do not exceed):**
+- 1-4 concurrent human players per scene
+- Up to 100 NPCs per scene, all with Memory Palace + character parameters
 
 ---
 
