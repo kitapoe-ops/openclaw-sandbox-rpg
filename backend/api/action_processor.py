@@ -1,6 +1,6 @@
 """
-Action Processor v1.0 — Real HTTP /api/action/process pipeline (Phase E1)
-=======================================================================
+Action Processor v2.0 — Real HTTP /api/action/process pipeline (Phase E1 + F3)
+================================================================================
 
 This module is the *real* action processor that backs the
 ``POST /api/action/process`` HTTP route. It is the HTTP analogue of
@@ -9,11 +9,38 @@ the WebSocket ``/ws/game/{character_id}`` handler in
 
   1. **Validate** the verb against a whitelist (state-machine rule gate).
   2. **Serialize** per-scene physics lock (concurrency gate).
-  3. **Generate narrative** via the injected ``LLMClient``
-     (D6 ``MockLLMClient`` by default — hermetic in tests).
-  4. **Persist** to Memory Palace (fire-and-forget; no-op if no palace).
-  5. **Update** the turn system (submit + complete a turn).
-  6. **Return** ``{status, action_id, narrative, side_effects}``.
+  3. **Phase F3:** Pull the character's current semantic state from
+     the injected :class:`backend.state_machine.SemanticStateMachine`.
+  4. **Phase F3:** Build the system prompt with
+     :class:`backend.prompt_builder.PromptBuilder` so the LLM sees
+     the current state at the top (F4 invariant).
+  5. **Phase F3:** Call the LLM via
+     :meth:`backend.llm_client.LLMClient.generate_with_state_contract`
+     so the response is validated against the F1 ``StateMutation``
+     schema. Bad mutations are dropped (F3 defense D2).
+  6. **Phase F3:** Apply the validated mutation to the state machine
+     and feed Memory Palace with the state-anchored summary (F1
+     defense D3).
+  7. **Update** the turn system (submit + complete a turn).
+  8. **Return** ``{status, action_id, narrative, side_effects,
+     mutation, mutation_error}``.
+
+Phase F3 wiring
+---------------
+This module was UNFROZEN in Phase F3 to integrate:
+
+  * ``PromptBuilder`` (F4) — system prompt is built with the
+    current state at the top.
+  * ``SemanticStateMachine`` (F1) — current state is read, and
+    validated mutations are applied.
+  * ``LLMClient.generate_with_state_contract`` (F3) — the
+    ``StateMutation`` JSON contract is enforced on the LLM output.
+
+The new constructor args (``state_machine``, ``prompt_builder``) are
+optional for backward compatibility. If absent, the processor falls
+back to the F1 minimum-viable path (no state, no prompt builder, no
+state-contract LLM call) — this keeps the existing E1 tests green
+without rewiring every fixture.
 
 Why a new module (and not edit ``api/action.py``)
 -------------------------------------------------
@@ -52,10 +79,7 @@ Note: the actual ``SceneLockManager`` (per-scene locks) lives in
 new HTTP endpoint is per-character, not per-scene, and we don't
 want a cycle through ``backend.ws``.
 
-R1 audit (Phase E1 pre-flight)
-------------------------------
-Findings addressed in this module:
-
+R1 audit (Phase E1 pre-flight) — findings still addressed:
   * **CRITICAL #1** — verb validation via explicit whitelist, raises
     ``HTTPException(400)`` on unknown verbs.
   * **HIGH #2** — UUID4 ``action_id`` returned to client; Pydantic
@@ -68,6 +92,14 @@ Findings addressed in this module:
     test ``test_process_concurrent_actions_serialized`` enforces it.
   * **INFO #5** — no ``/api/action/submit`` echo is touched; the
     legacy endpoint is preserved bit-for-bit.
+
+Phase F3 added defenses (carried from F1):
+  * **D2** — strict ``StateMutation`` validation. Bad LLM output
+    (invalid JSON, extra fields, oversized tags, non-CJK chars) is
+    dropped, but the narrative is still returned. No partial
+    mutations.
+  * **D3** — Memory Palace is fed with the state-anchored summary,
+    not the raw narrative, to prevent vector pollution.
 """
 from __future__ import annotations
 
@@ -133,7 +165,20 @@ class ProcessActionRequest(BaseModel):
 
 
 class ProcessActionResponse(BaseModel):
-    """POST /api/action/process response body."""
+    """POST /api/action/process response body.
+
+    Phase F3 adds two new fields:
+
+      * ``mutation`` — the validated ``StateMutation`` (as a dict)
+        that was applied to the character's state, or ``None`` if
+        the LLM did not emit a valid one for this turn.
+      * ``mutation_error`` — a short string describing why the
+        mutation was rejected, or ``None`` if it was applied.
+
+    The legacy fields (``status``, ``action_id``, ``narrative``,
+    ``side_effects``, ``received``) are preserved bit-for-bit for
+    backward compatibility with the E1 frozen response shape.
+    """
 
     status: str = "processed"
     action_id: str
@@ -141,6 +186,11 @@ class ProcessActionResponse(BaseModel):
     side_effects: List[Dict[str, Any]] = Field(default_factory=list)
     # Debug-friendly echoes (kept stable for the frontend picker).
     received: Dict[str, Any] = Field(default_factory=dict)
+    # Phase F3: state mutation contract result. ``mutation`` is a
+    # dict-shaped StateMutation; ``mutation_error`` is a short reason
+    # if the mutation was rejected.
+    mutation: Optional[Dict[str, Any]] = None
+    mutation_error: Optional[str] = None
 
 
 # ============================================
@@ -211,6 +261,19 @@ class ActionProcessor:
     mocks (LLMClient, MemoryPalaceIntegration) without monkey-patching
     module globals. ``build_default_processor()`` constructs the
     production instance from env / lazy globals.
+
+    Phase F3 added two optional constructor args:
+
+      * ``state_machine`` — a :class:`backend.state_machine.
+        SemanticStateMachine` instance (or a duck-typed equivalent).
+        The processor reads the current state from this machine and
+        applies validated ``StateMutation`` instances to it. If
+        ``None``, the F3 integration is disabled (legacy E1 path).
+      * ``prompt_builder`` — a :class:`backend.prompt_builder.
+        PromptBuilder` instance. The processor delegates system
+        prompt construction to it. If ``None``, a default builder is
+        used (which renders the F4 template with a stub memory
+        palace).
     """
 
     def __init__(
@@ -220,6 +283,8 @@ class ActionProcessor:
         turn_system: Any = None,
         scene_context_fn: Optional[Callable[[str], Awaitable[Dict[str, Any]]]] = None,
         allowed_verbs: Optional[frozenset[str]] = None,
+        state_machine: Any = None,
+        prompt_builder: Any = None,
     ) -> None:
         self.llm_client = llm_client
         self.memory_palace = memory_palace
@@ -229,6 +294,17 @@ class ActionProcessor:
         # Per-character concurrency gate (physics lock surrogate).
         self._character_locks: Dict[str, asyncio.Lock] = {}
         self._locks_meta_lock = asyncio.Lock()
+        # Phase F3: state machine + prompt builder.
+        self._state_machine = state_machine
+        self._prompt_builder = prompt_builder
+        # Cache the LLM-contract capability check. If the LLM client
+        # does NOT support ``generate_with_state_contract`` (e.g. a
+        # test double that only implements the old interface), we
+        # fall back to the legacy E1 ``generate()`` call. This keeps
+        # the new constructor backward compatible.
+        self._llm_supports_state_contract = hasattr(
+            llm_client, "generate_with_state_contract"
+        )
 
     # ---------------------- public API ----------------------
 
@@ -294,6 +370,8 @@ class ActionProcessor:
             )
 
         side_effects: List[Dict[str, Any]] = []
+        mutation_dict: Optional[Dict[str, Any]] = None
+        mutation_error: Optional[str] = None
         try:
             # 4) Resolve scene context (if a hook is wired).
             scene_ctx: Dict[str, Any] = {}
@@ -306,7 +384,10 @@ class ActionProcessor:
                         character_id, exc,
                     )
 
-            # 5) Build the prompt.
+            # 5) Build the user-message prompt (legacy E1 template).
+            # The system prompt is now built by PromptBuilder (F3
+            # step 6), but we still render the user-message in the
+            # E1 shape so the LLM has a clean "Player action" line.
             args_str = ""
             if args:
                 # Keep it human-readable; never include raw user
@@ -317,7 +398,7 @@ class ActionProcessor:
                     )
                 except Exception:
                     args_str = ""
-            prompt = NARRATIVE_PROMPT_TEMPLATE.format(
+            user_message = NARRATIVE_PROMPT_TEMPLATE.format(
                 verb=verb,
                 target=(target or "(nothing)"),
                 args_str=args_str,
@@ -325,38 +406,117 @@ class ActionProcessor:
                 scene_context=scene_ctx.get("summary", "(no context)"),
             )
 
-            # 6) Generate narrative via LLM.
+            # 6) Phase F3: read current state from the state machine.
+            # If no state machine is wired, fall back to an empty
+            # tag list — the F4 prompt builder will show
+            # "(無當前狀態 — 健康)" so the LLM still has the section.
+            current_state = self._get_current_state(character_id)
+
+            # 7) Phase F3: build the system prompt via PromptBuilder.
+            # This is where the F4 invariant lives: the current
+            # state is ALWAYS at the top of the system prompt,
+            # regardless of Memory Palace retrieval results.
+            system_prompt = await self._build_system_prompt(
+                character_id=character_id,
+                current_state=current_state,
+                verb=verb,
+                target=target,
+                args=args,
+            )
+
+            # 8) Phase F3: call the LLM with the StateMutation
+            # contract. If the LLM does not support the new method
+            # (e.g. a custom test double), fall back to the legacy
+            # ``generate()`` path.
             t0 = time.monotonic()
-            try:
-                raw = await self.llm_client.generate(
-                    system_prompt=(
-                        "You are the narrator of a D&D-style sandbox "
-                        "RPG. Respond in second person. Be vivid, "
-                        "concise (1-3 sentences), and end with one or "
-                        "two possible follow-up actions."
-                    ),
-                    user_message=prompt,
+            narrative, mutation, mutation_error, llm_elapsed_ms = (
+                await self._call_llm_with_state_contract(
+                    system_prompt=system_prompt,
+                    user_message=user_message,
+                    current_state=current_state,
                 )
-            except Exception as exc:  # noqa: BLE001
-                logger.exception(
-                    "LLM generate() failed for character=%s verb=%s",
-                    character_id, verb,
-                )
-                raise LLMUnavailableError(
-                    f"LLM unavailable: {type(exc).__name__}: {exc}"
-                ) from exc
-
-            narrative = (raw or "").strip() or (
-                f"You {verb} {(target or 'around')}, but nothing "
-                f"particular happens."
             )
-            elapsed_ms = int((time.monotonic() - t0) * 1000)
             side_effects.append(
-                {"type": "llm_call", "elapsed_ms": elapsed_ms, "verb": verb}
+                {
+                    "type": "llm_call",
+                    "elapsed_ms": llm_elapsed_ms,
+                    "verb": verb,
+                    "state_contract": self._llm_supports_state_contract,
+                }
             )
 
-            # 7) Fire-and-forget persist to Memory Palace.
-            if self.memory_palace is not None:
+            # 9) Phase F3: apply the validated mutation (if any).
+            # ``apply_mutations`` is atomic per-mutation: a bad
+            # mutation in a list is dropped without affecting the
+            # others. We pass a single-item list here.
+            if mutation is not None and self._state_machine is not None:
+                try:
+                    apply_report = self._state_machine.apply_mutations(
+                        [mutation]
+                    )
+                    side_effects.append(
+                        {
+                            "type": "state_mutation_applied",
+                            "character_id": character_id,
+                            "applied_count": len(apply_report.get("applied", [])),
+                        }
+                    )
+                except Exception as exc:  # noqa: BLE001 — defensive
+                    logger.warning(
+                        "apply_mutations failed (non-fatal) for "
+                        "character=%s action=%s: %s",
+                        character_id, action_id, exc,
+                    )
+                    side_effects.append(
+                        {
+                            "type": "state_mutation_apply_failed",
+                            "error": str(exc)[:200],
+                        }
+                    )
+
+            # 10) Phase F3: feed Memory Palace with the state-
+            # anchored summary. This is the F1 defense D3 path:
+            # the feed uses ``state=<tags>;narrative=<truncated>``
+            # with a 127-char cap, so the vector store is not
+            # polluted with raw narrative.
+            if self._state_machine is not None:
+                try:
+                    # Refresh current_state to capture any applied
+                    # mutation (so the feed reflects the post-mutation
+                    # state, not the pre-mutation one).
+                    post_state = self._get_current_state(character_id)
+                    feed_id = await self._state_machine.feed_memory_palace(
+                        character_id=character_id,
+                        narrative=narrative,
+                        current_state=post_state,
+                    )
+                    if feed_id is not None:
+                        side_effects.append(
+                            {"type": "memory_fed", "feed_id": feed_id}
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "feed_memory_palace failed (non-fatal) for "
+                        "character=%s action=%s: %s",
+                        character_id, action_id, exc,
+                    )
+                    side_effects.append(
+                        {
+                            "type": "memory_feed_failed",
+                            "error": str(exc)[:200],
+                        }
+                    )
+
+            # 11) Legacy E1 path: also persist via the memory
+            # palace's ``remember()`` if it is wired and not
+            # already covered by the F3 feed above. This is a
+            # no-op when the F3 path already produced a feed_id.
+            if (
+                self.memory_palace is not None
+                and not any(
+                    s.get("type") == "memory_fed" for s in side_effects
+                )
+            ):
                 try:
                     # We don't await with strict ordering — a failed
                     # persist must not block the HTTP response. The
@@ -384,7 +544,22 @@ class ActionProcessor:
                          "error": str(exc)[:200]}
                     )
 
-            # 8) Build the response.
+            # 12) Build the response.
+            if mutation is not None:
+                # Pydantic models support ``model_dump()``; if the
+                # mutation is already a dict (older callers), use
+                # it as-is.
+                if hasattr(mutation, "model_dump"):
+                    mutation_dict = mutation.model_dump()
+                elif isinstance(mutation, dict):
+                    mutation_dict = mutation
+                else:
+                    mutation_dict = {
+                        "character_id": getattr(mutation, "character_id", ""),
+                        "add_state": getattr(mutation, "add_state", []),
+                        "remove_state": getattr(mutation, "remove_state", []),
+                        "reason": getattr(mutation, "reason", ""),
+                    }
             return {
                 "status": "processed",
                 "action_id": action_id,
@@ -396,9 +571,11 @@ class ActionProcessor:
                     "target": target,
                     "args": args or {},
                 },
+                "mutation": mutation_dict,
+                "mutation_error": mutation_error,
             }
         finally:
-            # 9) Always release the turn slot.
+            # 13) Always release the turn slot.
             await self.turn_system.end(character_id, action_id)
 
     async def _get_character_lock(self, character_id: str) -> asyncio.Lock:
@@ -409,6 +586,166 @@ class ActionProcessor:
                 lock = asyncio.Lock()
                 self._character_locks[character_id] = lock
             return lock
+
+    # ---------------------- Phase F3 helpers ----------------------
+
+    def _get_current_state(self, character_id: str) -> Any:
+        """Read the character's current semantic state.
+
+        Returns a :class:`backend.state_machine.SemanticState` (or a
+        duck-typed equivalent) from the wired state machine. If no
+        state machine is wired, returns a freshly-constructed empty
+        ``SemanticState`` so the F4 prompt builder's "empty state"
+        code path runs.
+
+        This is a **synchronous** read (the state machine is in-memory
+        in the test path; the production wire-up is also synchronous
+        via the in-process dict).
+        """
+        if self._state_machine is None:
+            # Lazy import to avoid pulling the state machine at
+            # module-load time (it would create an import cycle for
+            # the legacy E1 callers that don't need it).
+            from backend.state_machine import SemanticState
+            return SemanticState(character_id=character_id)
+        # The state machine exposes a get_or_create helper.
+        get = getattr(self._state_machine, "get_or_create", None)
+        if callable(get):
+            return get(character_id)
+        get2 = getattr(self._state_machine, "get", None)
+        if callable(get2):
+            existing = get2(character_id)
+            if existing is not None:
+                return existing
+        # Fallback: a fresh empty state.
+        from backend.state_machine import SemanticState
+        return SemanticState(character_id=character_id)
+
+    async def _build_system_prompt(
+        self,
+        character_id: str,
+        current_state: Any,
+        verb: str,
+        target: Optional[str],
+        args: Optional[Dict[str, Any]],
+    ) -> str:
+        """Build the system prompt via PromptBuilder (F4).
+
+        Falls back to a small inline template if no prompt builder is
+        wired. The fallback preserves the F4 invariant: the state
+        section is at the top of the data, even when the builder is
+        absent.
+        """
+        action_context: Dict[str, Any] = {
+            "verb": verb,
+            "target": target or "(nothing)",
+            "args": args or {},
+        }
+        if self._prompt_builder is not None:
+            try:
+                return await self._prompt_builder.build(
+                    character_id=character_id,
+                    current_state=current_state,
+                    action_context=action_context,
+                )
+            except Exception as exc:  # noqa: BLE001 — defensive
+                logger.warning(
+                    "PromptBuilder.build() failed (non-fatal) for "
+                    "character=%s: %s; using fallback prompt",
+                    character_id, exc,
+                )
+        # Fallback: a minimal system prompt with the state at the
+        # top. Preserves the F4 "state is always at the top" rule.
+        tags = getattr(current_state, "tags", []) or []
+        if tags:
+            state_str = " | ".join(f"「{t}」" for t in tags)
+        else:
+            state_str = "(無當前狀態 — 健康)"
+        return (
+            "你是一個文字冒險遊戲的 AI 主持人。\n\n"
+            "# 角色當前狀態\n"
+            f"{state_str}\n\n"
+            "# 輸出格式要求\n"
+            "- 輸出 JSON：{\"narrative\": \"<narrative>\", "
+            "\"state_mutations\": <object> | null}\n"
+        )
+
+    async def _call_llm_with_state_contract(
+        self,
+        system_prompt: str,
+        user_message: str,
+        current_state: Any,
+    ) -> tuple:
+        """Call the LLM with the F3 state contract.
+
+        Returns a 4-tuple ``(narrative, mutation, mutation_error,
+        elapsed_ms)``:
+
+          * ``narrative`` — the LLM's narrative (always populated;
+            falls back to a default string if the LLM returns an
+            empty one).
+          * ``mutation`` — the validated ``StateMutation`` instance
+            (or ``None``).
+          * ``mutation_error`` — short string if the mutation was
+            rejected (or ``None``).
+          * ``elapsed_ms`` — wall-clock time of the LLM call.
+
+        If the LLM does not implement ``generate_with_state_contract``
+        (legacy test double), falls back to the E1 ``generate()``
+        path: returns ``(narrative, None, "state_contract_not_supported",
+        elapsed_ms)``.
+        """
+        t0 = time.monotonic()
+        if not self._llm_supports_state_contract:
+            # Legacy path: call ``generate()`` and return a narrative
+            # without a mutation. The processor still completes the
+            # turn, but the state is not updated.
+            try:
+                raw = await self.llm_client.generate(
+                    system_prompt=system_prompt,
+                    user_message=user_message,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.exception(
+                    "LLM generate() failed (legacy path) for system=%r",
+                    system_prompt[:60],
+                )
+                raise LLMUnavailableError(
+                    f"LLM unavailable: {type(exc).__name__}: {exc}"
+                ) from exc
+            narrative = (raw or "").strip() or (
+                "你環顧四周，但沒有發生什麼特別的事。"
+            )
+            elapsed_ms = int((time.monotonic() - t0) * 1000)
+            return narrative, None, "state_contract_not_supported", elapsed_ms
+
+        # F3 path: call the state-contract method on the LLM.
+        tags = list(getattr(current_state, "tags", []) or [])
+        try:
+            result = await self.llm_client.generate_with_state_contract(
+                system_prompt=system_prompt,
+                user_message=user_message,
+                current_state=tags,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception(
+                "LLM generate_with_state_contract() failed for system=%r",
+                system_prompt[:60],
+            )
+            raise LLMUnavailableError(
+                f"LLM unavailable: {type(exc).__name__}: {exc}"
+            ) from exc
+
+        narrative = (result.get("narrative") or "").strip() or (
+            "你環顧四周，但沒有發生什麼特別的事。"
+        )
+        elapsed_ms = int((time.monotonic() - t0) * 1000)
+        return (
+            narrative,
+            result.get("mutation"),
+            result.get("error"),
+            elapsed_ms,
+        )
 
     async def _persist_memory(
         self,
@@ -469,14 +806,24 @@ def build_default_processor() -> ActionProcessor:
     Memory Palace integration is wired *lazily* by the FastAPI
     dependency on the memory-router endpoint; we pass ``None`` here
     so this module stays free of Postgres imports.
+
+    Phase F3 also wires a fresh ``SemanticStateMachine`` and
+    ``PromptBuilder`` (no memory palace yet — the builder falls
+    back to its placeholder string). This makes the F3 contract
+    live in production; the legacy E1 path is still selectable by
+    passing ``state_machine=None`` and ``prompt_builder=None``.
     """
     # Local import keeps this module cheap to import in tests.
     from backend.llm_client import get_llm_client
+    from backend.prompt_builder import PromptBuilder
+    from backend.state_machine import SemanticStateMachine
 
     return ActionProcessor(
         llm_client=get_llm_client(),
         memory_palace=None,
         turn_system=InMemoryTurnSystem(),
+        state_machine=SemanticStateMachine(),
+        prompt_builder=PromptBuilder(memory_palace=None),
     )
 
 

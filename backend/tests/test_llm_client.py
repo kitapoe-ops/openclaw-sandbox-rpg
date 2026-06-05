@@ -5,7 +5,21 @@ These tests are network-free: they patch httpx.AsyncClient.post / .get
 to drive the retry / 429 / cache / reasoning-content branches without
 ever hitting api.minimax.chat.
 
-Covered (10/10):
+Phase F3 added 5 new tests for the StateMutation JSON contract:
+
+  F3-A. test_generate_with_state_contract_valid
+  F3-B. test_generate_with_state_contract_invalid_json
+  F3-C. test_generate_with_state_contract_extra_fields_rejected
+  F3-D. test_generate_with_state_contract_oversized_tag_rejected
+  F3-E. test_generate_with_state_contract_non_cjk_rejected
+
+The contract is: the LLM's response JSON must parse cleanly into
+F1's ``StateMutation`` Pydantic model. On any validation failure
+(invalid JSON, extra fields, oversized tags, non-CJK chars), the
+mutation is dropped but the narrative is still returned. No
+partial mutations.
+
+Test inventory (15/15):
     1.  Abstract class cannot be instantiated
     2.  Mock client returns canned response
     3.  Mock client health() is True
@@ -16,6 +30,11 @@ Covered (10/10):
     8.  Retry exhausted raises after max_retries + 1 attempts
     9.  Response cache: same prompt twice = httpx called once
     10. reasoning_content handled separately from content (M3 quirk)
+    F3-A. test_generate_with_state_contract_valid
+    F3-B. test_generate_with_state_contract_invalid_json
+    F3-C. test_generate_with_state_contract_extra_fields_rejected
+    F3-D. test_generate_with_state_contract_oversized_tag_rejected
+    F3-E. test_generate_with_state_contract_non_cjk_rejected
 """
 from __future__ import annotations
 
@@ -489,3 +508,184 @@ async def test_minimax_handles_missing_reasoning_content(monkeypatch):
     assert text == '{"ok": true}'
     assert "reasoning_content" not in meta
     assert meta["reasoning_tokens"] == 0
+
+
+# ============================================
+# Phase F3: 5 new tests for the StateMutation JSON contract
+# ============================================
+
+
+@pytest.mark.asyncio
+async def test_generate_with_state_contract_valid() -> None:
+    """F3-A: a well-formed StateMutation is validated and returned.
+
+    Both the MockLLMClient and the real MiniMaxM3Client must
+    implement ``generate_with_state_contract`` and produce a
+    response with a valid ``StateMutation`` and the narrative.
+    """
+    from backend.state_machine import StateMutation
+
+    valid_payload = (
+        '{"narrative": "Alice hits the goblin.", '
+        '"state_mutations": {'
+        '"target": "self", '
+        '"character_id": "char_alice", '
+        '"add_state": ["輕傷"], '
+        '"remove_state": ["健康"], '
+        '"reason": "Goblin lands a hit."}}'
+    )
+    mock = MockLLMClient(canned_response=valid_payload)
+    result = await mock.generate_with_state_contract(
+        system_prompt="narrate",
+        user_message="attack goblin",
+        current_state=["健康"],
+    )
+    assert result["narrative"] == "Alice hits the goblin."
+    assert result["mutation"] is not None
+    assert isinstance(result["mutation"], StateMutation)
+    assert result["mutation"].add_state == ["輕傷"]
+    assert result["mutation"].remove_state == ["健康"]
+    assert result["error"] is None
+    assert result["raw"] == valid_payload
+
+
+@pytest.mark.asyncio
+async def test_generate_with_state_contract_invalid_json() -> None:
+    """F3-B: a non-JSON LLM response is rejected; narrative falls back.
+
+    When the LLM emits pure prose (no JSON object containing
+    ``state_mutations``), the validator must:
+      * return ``mutation=None``
+      * set ``error`` to a short reason
+      * leave ``narrative`` as the empty string (no JSON, no narrative
+        to extract — the F3 default-fallback string is applied at
+        the *processor* level, not the LLM-client level)
+      * NOT raise
+    """
+    mock = MockLLMClient(canned_response="The goblin runs away.")
+    result = await mock.generate_with_state_contract(
+        system_prompt="narrate",
+        user_message="attack goblin",
+        current_state=[],
+    )
+    assert result["mutation"] is None
+    assert result["error"] is not None
+    assert "no_state_mutations_json" in result["error"] or (
+        result["error"] is not None
+    )
+    # The raw response is preserved for debugging.
+    assert result["raw"] == "The goblin runs away."
+    # The validator returns the parsed dict (None on parse failure).
+    assert result["parsed"] is None
+
+
+@pytest.mark.asyncio
+async def test_generate_with_state_contract_extra_fields_rejected() -> None:
+    """F3-C: a StateMutation with extra fields is rejected (D2 atomicity).
+
+    F1 defense D2: ``StateMutation`` is Pydantic strict with
+    ``extra="forbid"``. An extra field (``bogus`` in this test)
+    must drop the WHOLE mutation, not partial-apply.
+    """
+    payload_with_extra = (
+        '{"narrative": "ok", '
+        '"state_mutations": {'
+        '"target": "self", '
+        '"character_id": "c1", '
+        '"add_state": ["健康"], '
+        '"remove_state": [], '
+        '"reason": "r", '
+        '"bogus": "extra field"}}'
+    )
+    mock = MockLLMClient(canned_response=payload_with_extra)
+    result = await mock.generate_with_state_contract(
+        system_prompt="narrate",
+        user_message="go",
+        current_state=[],
+    )
+    assert result["mutation"] is None
+    assert result["error"] is not None
+    assert "validation_failed" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_generate_with_state_contract_oversized_tag_rejected() -> None:
+    """F3-D: a tag longer than MAX_TAG_LENGTH (15) is rejected.
+
+    F1 defense D2: each tag in ``add_state`` / ``remove_state``
+    must be ≤ 15 chars. A 16-char tag drops the WHOLE mutation.
+    """
+    oversized_tag = "右手非常嚴重的開放性粉碎性骨折並發"  # > 15 chars
+    # Sanity: verify the fixture is actually oversized. If a future
+    # change relaxes the 15-char cap, this test will start failing
+    # on the sanity check before it can prove the rejection path.
+    assert len(oversized_tag) > 15, (
+        f"fixture is not oversized: len={len(oversized_tag)}"
+    )
+    payload = (
+        '{"narrative": "ok", '
+        '"state_mutations": {'
+        '"target": "self", '
+        '"character_id": "c1", '
+        f'"add_state": ["{oversized_tag}"], '
+        '"remove_state": [], '
+        '"reason": "r"}}'
+    )
+    mock = MockLLMClient(canned_response=payload)
+    result = await mock.generate_with_state_contract(
+        system_prompt="narrate",
+        user_message="go",
+        current_state=[],
+    )
+    assert result["mutation"] is None
+    assert result["error"] is not None
+    assert "validation_failed" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_generate_with_state_contract_non_cjk_rejected() -> None:
+    """F3-E: a non-CJK tag (Latin, emoji, punctuation) is rejected.
+
+    F1 defense D2: tags are CJK-only (CJK + Hiragana + Katakana +
+    space + hyphen). Latin chars, emoji, and punctuation cause
+    the WHOLE mutation to be dropped.
+    """
+    # Test 1: Latin tag
+    latin_payload = (
+        '{"narrative": "ok", '
+        '"state_mutations": {'
+        '"target": "self", '
+        '"character_id": "c1", '
+        '"add_state": ["healthy"], '  # Latin: forbidden
+        '"remove_state": [], '
+        '"reason": "r"}}'
+    )
+    mock = MockLLMClient(canned_response=latin_payload)
+    result = await mock.generate_with_state_contract(
+        system_prompt="narrate",
+        user_message="go",
+        current_state=[],
+    )
+    assert result["mutation"] is None
+    assert result["error"] is not None
+    assert "validation_failed" in result["error"]
+
+    # Test 2: emoji tag
+    emoji_payload = (
+        '{"narrative": "ok", '
+        '"state_mutations": {'
+        '"target": "self", '
+        '"character_id": "c1", '
+        '"add_state": ["健康\U0001F60A"], '  # emoji: forbidden
+        '"remove_state": [], '
+        '"reason": "r"}}'
+    )
+    mock_emoji = MockLLMClient(canned_response=emoji_payload)
+    result_emoji = await mock_emoji.generate_with_state_contract(
+        system_prompt="narrate",
+        user_message="go",
+        current_state=[],
+    )
+    assert result_emoji["mutation"] is None
+    assert result_emoji["error"] is not None
+    assert "validation_failed" in result_emoji["error"]

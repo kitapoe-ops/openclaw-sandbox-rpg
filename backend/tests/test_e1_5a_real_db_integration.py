@@ -175,8 +175,16 @@ async def test_action_processor_full_pipeline_with_real_db(
     t_start = time.monotonic()
 
     # ---- 1) Build the processor with a REAL palace. ----
+    # Phase F3: canned response is a JSON object matching the
+    # ``{"narrative": str, "state_mutations": {...} | null}`` shape
+    # that the LLM state contract expects. The processor extracts
+    # the ``narrative`` field from the parsed JSON.
     canned_narrative = "你大步向北走去，腳下的碎石沙沙作響，遠處的城牆漸漸清晰。"
-    llm_client = MockLLMClient(canned_response=canned_narrative)
+    canned_response = (
+        '{"narrative": "' + canned_narrative + '", '
+        '"state_mutations": null}'
+    )
+    llm_client = MockLLMClient(canned_response=canned_response)
 
     processor = ActionProcessor(
         llm_client=llm_client,

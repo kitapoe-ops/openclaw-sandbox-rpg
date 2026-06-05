@@ -47,6 +47,13 @@ from collections import OrderedDict
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
+from pydantic import ValidationError
+
+from backend.state_machine import (
+    MAX_TAGS_PER_MUTATION,
+    MAX_TAG_LENGTH,
+    StateMutation,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +146,54 @@ class LLMClient(ABC):
         """
         raise NotImplementedError
 
+    @abstractmethod
+    async def generate_with_state_contract(
+        self,
+        system_prompt: str,
+        user_message: str,
+        current_state: List[str],
+    ) -> Dict[str, Any]:
+        """Generate a response and enforce the F3 StateMutation contract.
+
+        Phase F3, Requirement 1: the LLM's response JSON must parse
+        cleanly into :class:`backend.state_machine.StateMutation`. On
+        any validation failure (invalid JSON, extra fields,
+        oversized tags, non-CJK chars), the mutation is dropped but
+        the narrative is still returned.
+
+        The implementation is expected to:
+
+          1. Call the LLM with a system prompt that includes the
+             ``state_mutations`` schema (F1 Pydantic strict). The
+             current state is included in the system prompt, so the
+             LLM can ground its tag choices.
+          2. Parse the response as a JSON object with shape
+             ``{"narrative": str, "state_mutations": {...} | null}``.
+          3. Validate the ``state_mutations`` field via
+             :func:`state_mutations_validator` (F1 defense D2).
+          4. Return a dict with the contract::
+
+                {
+                  "narrative": str,            # always present
+                  "mutation": StateMutation | None,  # None if rejected
+                  "parsed": dict | None,       # the raw JSON object
+                  "raw": str,                  # the LLM's raw text
+                  "error": str | None,         # validation error, if any
+                }
+
+             On a hard LLM failure (e.g. network error), the dict
+             should still be returned with ``narrative=""`` and
+             ``error="llm_call_failed: <reason>"``.
+
+        ``current_state`` is passed in so the LLM has the "absolute
+        current reality" at the top of the prompt (F4 invariant).
+        The system_prompt already includes the state via
+        :class:`backend.prompt_builder.PromptBuilder`; this argument
+        is for the LLM to make a self-check before emitting
+        ``state_mutations``.
+        """
+        raise NotImplementedError
+
 
 # ============================================
 # Helpers
@@ -202,6 +257,153 @@ def _parse_json_response(content: str) -> Dict[str, Any]:
             pass
 
     raise ValueError(f"Could not parse JSON from LLM response: {content[:500]}")
+
+
+# ============================================
+# State-mutation JSON contract (Phase F3)
+# ============================================
+
+
+def _extract_state_mutations_dict(content: str) -> Optional[Dict[str, Any]]:
+    """Find the JSON object that contains a `state_mutations` field.
+
+    Phase F3 contract: the LLM's response is expected to be a JSON
+    object with shape ``{"narrative": str, "state_mutations": {...} | null}``.
+    The narrative may be wrapped in prose / markdown fences, so we
+    do a tolerant extraction:
+
+      1. Try the whole string as JSON.
+      2. Try a markdown-fenced ```json ... ``` block.
+      3. Try a regex over the first brace-delimited JSON object that
+         contains a ``"state_mutations"`` key (nested-brace safe
+         enough for our payload — F1's StateMutation is shallow).
+
+    Returns the parsed dict on success; ``None`` if no JSON object
+    with a ``state_mutations`` key is found. This is the
+    "rejection is fine, but the error must be informative" path.
+    """
+    # 1. Whole-string JSON.
+    try:
+        parsed = json.loads(content)
+        if isinstance(parsed, dict) and "state_mutations" in parsed:
+            return parsed
+    except json.JSONDecodeError:
+        pass
+
+    # 2. Markdown fence.
+    md_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL)
+    if md_match:
+        try:
+            parsed = json.loads(md_match.group(1))
+            if isinstance(parsed, dict) and "state_mutations" in parsed:
+                return parsed
+        except json.JSONDecodeError:
+            pass
+
+    # 3. First brace-delimited object containing state_mutations.
+    # We walk the string looking for a `{` whose matching `}`
+    # contains "state_mutations". A simple balanced-brace walk
+    # is good enough for the F1 StateMutation shape (no nested
+    # braces inside string values in practice).
+    for start in range(len(content)):
+        if content[start] != "{":
+            continue
+        depth = 0
+        in_string = False
+        escape = False
+        for end in range(start, len(content)):
+            ch = content[end]
+            if escape:
+                escape = False
+                continue
+            if ch == "\\":
+                escape = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    candidate = content[start : end + 1]
+                    if "state_mutations" not in candidate:
+                        break  # wrong object; try next `{`
+                    try:
+                        parsed = json.loads(candidate)
+                        if isinstance(parsed, dict) and "state_mutations" in parsed:
+                            return parsed
+                    except json.JSONDecodeError:
+                        break
+                    break
+    return None
+
+
+def state_mutations_validator(
+    raw_response: str,
+) -> Tuple[Optional[StateMutation], Optional[str], Optional[Dict[str, Any]]]:
+    """Parse a raw LLM response and validate the `state_mutations` field.
+
+    Phase F3 defense D2: the LLM's `state_mutations` block must parse
+    cleanly into F1's `StateMutation` Pydantic model. Any violation
+    (invalid JSON, extra fields, oversized tags, non-CJK chars) →
+    the WHOLE mutation is dropped, but the narrative is still
+    returned if present.
+
+    Returns a 3-tuple ``(mutation, error, parsed_dict)``:
+
+      * ``mutation`` — the validated ``StateMutation`` instance, or
+        ``None`` if the field was missing / invalid / not a dict.
+      * ``error`` — a short string describing the failure (e.g.
+        ``"validation_failed: extra fields not permitted"``), or
+        ``None`` if validation passed.
+      * ``parsed_dict`` — the parsed JSON dict (so the caller can
+        pull the `narrative` field), or ``None`` if parsing failed.
+
+    Atomicity (per F1 audit defense D2): a single bad field drops
+    the WHOLE mutation. We never apply partial mutations.
+    """
+    parsed = _extract_state_mutations_dict(raw_response)
+    if parsed is None:
+        return None, "no_state_mutations_json", None
+    if "state_mutations" not in parsed:
+        return None, "missing_state_mutations_key", parsed
+
+    sm_value = parsed.get("state_mutations")
+    if sm_value is None:
+        # Explicit null: the LLM is signaling "no state change".
+        # Treat as valid (the narrative stands on its own).
+        return None, None, parsed
+    if not isinstance(sm_value, dict):
+        return None, f"state_mutations_not_object: {type(sm_value).__name__}", parsed
+
+    try:
+        mutation = StateMutation.model_validate(sm_value)
+    except ValidationError as exc:
+        # Compact, one-line reason. Pydantic gives us
+        # ``exc.errors()`` with field + msg per offender; we
+        # keep the first to keep the error short.
+        first = exc.errors()[0] if exc.errors() else {"msg": "unknown"}
+        loc = ".".join(str(p) for p in first.get("loc", []))
+        msg = first.get("msg", "validation failed")
+        reason = f"validation_failed: {loc}: {msg}" if loc else f"validation_failed: {msg}"
+        return None, reason[:300], parsed
+
+    return mutation, None, parsed
+
+
+# ============================================
+# State-contract extension to LLMClient
+# ============================================
+
+
+class StateContractError(Exception):
+    """Raised by ``generate_with_state_contract`` when validation
+    fails in a way the caller wants to handle as an exception. Most
+    callers should use the dict-returning form, which does not raise."""
 
 
 # ============================================
@@ -378,6 +580,85 @@ class MiniMaxM3Client(LLMClient):
         except Exception as e:  # noqa: BLE001 — health check, must not raise
             logger.warning("MiniMax-M3 health check failed: %s", e)
             return False
+
+    async def generate_with_state_contract(
+        self,
+        system_prompt: str,
+        user_message: str,
+        current_state: List[str],
+    ) -> Dict[str, Any]:
+        """Phase F3: enforce the StateMutation contract on LLM output.
+
+        Calls :meth:`generate` (which routes through the retry/cache
+        pipeline), then validates the response against F1's
+        ``StateMutation`` schema. On validation failure, the mutation
+        is dropped but the narrative is still surfaced.
+
+        The system prompt passed in is augmented with a short schema
+        reminder so the LLM knows the expected output shape. This
+        keeps the contract self-documenting at the call site; the
+        full F4 prompt builder also includes the schema in its
+        template.
+        """
+        # Augment the system prompt with a state-mutation schema reminder.
+        # We keep this lightweight — the real prompt comes from
+        # PromptBuilder (F4) which already includes the schema.
+        augmented_system_prompt = (
+            f"{system_prompt}\n\n"
+            "## State Mutation Schema (F1 contract)\n"
+            "When your response implies a state change, return a JSON "
+            "object of shape:\n"
+            "```\n"
+            "{\n"
+            '  "narrative": "<narrative text>",\n'
+            '  "state_mutations": {\n'
+            '    "target": "self" | "other",\n'
+            '    "character_id": "<id>",\n'
+            '    "add_state": ["<tag1>", ...],            // max 7 tags, '
+            'each CJK-only and <=15 chars\n'
+            '    "remove_state": ["<tag2>", ...],\n'
+            '    "stamina": "<descriptor>" | null,\n'
+            '    "health": "<descriptor>" | null,\n'
+            '    "morale": "<descriptor>" | null,\n'
+            '    "items_consumed": [{"item_id": "...", "quantity": 1}],\n'
+            '    "new_memories": ["<memory>"],\n'
+            '    "relationship_changes": [{"npc_id": "...", '
+            '"new_relationship": "..."}],\n'
+            '    "reason": "<narrative reason>"\n'
+            "  }\n"
+            "}\n"
+            "```\n"
+            "Current character state (for grounding): "
+            f"{current_state}\n"
+        )
+        try:
+            raw = await self.generate(
+                system_prompt=augmented_system_prompt,
+                user_message=user_message,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "generate_with_state_contract: LLM call failed: %s", exc,
+            )
+            return {
+                "narrative": "",
+                "mutation": None,
+                "parsed": None,
+                "raw": "",
+                "error": f"llm_call_failed: {type(exc).__name__}: {exc}"[:300],
+            }
+
+        mutation, error, parsed = state_mutations_validator(raw)
+        narrative = ""
+        if parsed is not None and isinstance(parsed.get("narrative"), str):
+            narrative = parsed["narrative"]
+        return {
+            "narrative": narrative,
+            "mutation": mutation,
+            "parsed": parsed,
+            "raw": raw,
+            "error": error,
+        }
 
     # ---------------------- internals ----------------------
 
@@ -578,6 +859,34 @@ class MockLLMClient(LLMClient):
     async def health(self) -> bool:
         return True
 
+    async def generate_with_state_contract(
+        self,
+        system_prompt: str,
+        user_message: str,
+        current_state: List[str],
+    ) -> Dict[str, Any]:
+        """Phase F3: validate the canned response against StateMutation.
+
+        Same shape as the real client's method, but uses
+        ``canned_response`` instead of a network call. Validation is
+        still enforced — the mock is faithful to the contract, it
+        just doesn't call a remote model. Tests can swap
+        ``canned_response`` to drive success / failure paths.
+        """
+        # Bump the call counter for observability.
+        self.calls += 1
+        mutation, error, parsed = state_mutations_validator(self.canned_response)
+        narrative = ""
+        if parsed is not None and isinstance(parsed.get("narrative"), str):
+            narrative = parsed["narrative"]
+        return {
+            "narrative": narrative,
+            "mutation": mutation,
+            "parsed": parsed,
+            "raw": self.canned_response,
+            "error": error,
+        }
+
 
 # ============================================
 # Factory
@@ -669,9 +978,11 @@ __all__ = [
     "LLMClient",
     "MiniMaxM3Client",
     "MockLLMClient",
+    "StateContractError",
     "get_llm_client",
     "generate_scene_response",
     "build_few_shots",
+    "state_mutations_validator",
     # Config exports
     "MINIMAX_BASE_URL",
     "MINIMAX_MODEL",
