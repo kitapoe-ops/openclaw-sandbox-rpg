@@ -73,6 +73,82 @@ _wave2_app.include_router(
 )
 
 # ============================================
+# E1: real /api/action/process endpoint (resolves D4 M3 finding #2)
+# ============================================
+# Per the M3-as-R1 audit (docs/AUDIT_D4_M3.json finding #2),
+# ``backend/api/action.py:submit_action`` is a documented echo —
+# the demo.html HTTP fallback posted to it and got back an echo,
+# leaving the user staring at a green "SUBMITTED" badge with no
+# actual state change. To resolve the only remaining E-blocker from
+# that audit, we ship a *second* action endpoint
+# ``POST /api/action/process`` backed by the new
+# :class:`backend.api.action_processor.ActionProcessor`. The legacy
+# ``/api/action/submit`` echo is preserved bit-for-bit (the file
+# is frozen).
+#
+# The router is intentionally on a different module so the wire-up
+# mirrors the D4 v2 ``/api/character-list/`` pattern: a *new*
+# router on this composed app, not a modification of a frozen one.
+
+from .api.action_processor import (  # noqa: E402
+    LLMUnavailableError,
+    ProcessActionRequest,
+    ProcessActionResponse,
+    build_default_processor,
+)
+
+_e1_router = APIRouter(prefix="/api", tags=["e1-action-processor"])
+
+
+# We build the processor once at import-time. It contains an
+# ``InMemoryTurnSystem`` and an LLMClient chosen by env (mock by
+# default). For tests that need hermetic behaviour, they construct
+# their own ``ActionProcessor`` instance and patch the dependency
+# — see :mod:`backend.tests.test_action_processor`.
+_e1_processor = build_default_processor()
+
+
+@_e1_router.post(
+    "/action/process",
+    response_model=ProcessActionResponse,
+    responses={
+        400: {"description": "Invalid verb (not in whitelist)"},
+        500: {"description": "LLM client failed"},
+    },
+)
+async def process_action_endpoint(
+    req: ProcessActionRequest,
+) -> ProcessActionResponse:
+    """Process a real player action via HTTP (E1).
+
+    This is the HTTP analogue of the WebSocket ``/ws/game/{id}``
+    handler. It runs the full pipeline (validate → physics lock →
+    LLM narrative → memory persist → turn update) and returns the
+    generated narrative + side-effects.
+
+    Replaces the demo.html "SUBMITTED" silent-echo path.
+    """
+    try:
+        result = await _e1_processor.process(
+            character_id=req.character_id,
+            verb=req.verb,
+            target=req.target,
+            args=req.args,
+        )
+    except LLMUnavailableError as exc:
+        # Translate the typed error into an HTTP 500 with a useful
+        # detail. FastAPI will JSON-serialize the detail.
+        raise HTTPException(
+            status_code=500,
+            detail=f"LLM unavailable: {exc}",
+        ) from exc
+    return ProcessActionResponse(**result)
+
+
+_wave2_app.include_router(_e1_router)
+
+
+# ============================================
 # D4 v2: list-characters endpoint (resolves Phase E blocker #2)
 # ============================================
 # Per the M3-as-R1 audit (docs/AUDIT_D4_M3.json finding #5), the
