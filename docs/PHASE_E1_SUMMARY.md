@@ -214,3 +214,23 @@ and no real LLM.
 * Does the Phase E scope include a corresponding
   `demo.html` client change (re-point the HTTP fallback to
   `/api/action/process`)? Not in the E1 brief.
+
+---
+
+## Known Limitations (E1 風險評估 by main agent 2026-06-05)
+
+### E1.5 Real-DB Integration Gap
+- **Status:** NOT covered in E1.
+- **Detail:** `ActionProcessor.__init__` has `memory_palace=None` default. 11/11 unit tests use `MockLLMClient` + skip real persistence, so the full E2E path (FastAPI → validate → physics-lock → LLM → memory_palace.remember → Postgres + LanceDB) has **zero E2E test coverage**.
+- **Failure modes that may surface when real DB is wired:**
+  1. **Async-to-sync bridge deadlock** — `embed()` blocking inside an async context
+  2. **Postgres connection pool exhaustion** — 11 concurrent POSTs all hit PG write
+  3. **LanceDB `add()` lock** — vector write contention
+  4. **Physics lock never releases** if `process()` raises mid-await (no `try/finally`)
+- **Mitigation plan:** Phase E1.5 (30 min, single E2E test with aiosqlite + pure-Python VectorStore) or Phase E1.5b (1 hr, 5-concurrent E2E test). Decision deferred to next session.
+
+### State Model Mismatch (separate issue, not E1-specific)
+- **Status:** **Known tech debt** (Phase F candidate, see `docs/PHASE_ROADMAP.md` §Phase F).
+- **Detail:** User explicit decision 2026-06-05 — state must be **pure-text semantic** (`"患了感冒"`, `"右手骨折"`), NOT numerical (`hp: 30/100`). Wave 2 `state_machine.py` / `soul_transfer.py` carry legacy numerical thinking.
+- **Impact on E1:** `ActionProcessor.validate()` currently has no real validation (only whitelist check on `verb`). When F1 ships, the validate step should call R1 audit to check action against semantic state.
+- **Defer to:** Phase F (post-E6).

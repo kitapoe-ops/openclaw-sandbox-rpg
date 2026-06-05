@@ -141,3 +141,44 @@ The Memory Palace is the keystone. Everything else (state machine, physics lock,
 - Local-only deploy: REJECT cloud/Pi5 (see removed Phase D5)
 
 Beyond Phase D, the next major axis is **multiplayer polish** — the infrastructure supports it, but the UX (shared scenes, real-time WebSocket fan-out, NPC dialogue arbitration) is a Phase E+ scope.
+
+---
+
+## Phase F Candidates (State Model Refactor)
+
+> **User explicit decision 2026-06-05:** State MUST be pure-text semantic (`"患了感冒"`, `"右手骨折"`), NOT numerical (`hp: 30/100`). Wave 2 implementations of `state_machine.py` / `soul_transfer.py` carry **legacy numerical thinking** that must be refactored.
+
+### Phase F1 — Pure-text state contract
+- **Scope:** Define `SemanticState` type (str or list[str] of tag-like strings), add validation, replace numerical fields
+- **Files:** `backend/state_machine.py` (frozen, must reopen), `backend/api/state_models.py` (NEW)
+- **Est:** ~2 hr
+- **Risk:** 🔴 HIGH — reopens frozen file, may break 19+ existing tests
+
+### Phase F2 — Semantic soul transfer
+- **Scope:** Replace `random.uniform(0.6, 0.9)` numerical degradation with `TierListMapping` (e.g. "健康" → "虚弱" → "瀕死") OR LLM-driven semantic downgrade
+- **Files:** `backend/soul_transfer.py` (frozen)
+- **Est:** ~1.5 hr
+- **Risk:** 🔴 HIGH — anti-exploit semantics change
+
+### Phase F3 — LLM state_mutations contract
+- **Scope:** Add `state_mutations: list[StateChange]` to LLM JSON schema; LLM must return `{target, add_state, remove_state}` for every action
+- **Files:** `backend/llm_client.py` (frozen), `backend/api/action_processor.py` (frozen)
+- **Est:** ~1.5 hr
+- **Risk:** 🔴 HIGH — breaks MockLLMClient contract, ~14 tests need updating
+
+### Phase F4 — Prompt builder with top-of-prompt current state
+- **Scope:** New `backend/prompt_builder.py` that prepends current semantic state to system prompt, regardless of Memory Palace retrieval
+- **Files:** `backend/prompt_builder.py` (NEW), `backend/api/action_processor.py` (frozen)
+- **Est:** ~1 hr
+- **Risk:** 🟡 MED — additive change, less likely to break existing tests
+
+### Phase F ordering
+1. F1 first (foundation — define the type)
+2. F2 next (soul transfer needs F1's type)
+3. F3 next (LLM contract change)
+4. F4 last (uses everything)
+
+**Total F estimate:** ~6 hr active coding + ~1 hr full regression + ~1 hr re-audit.
+
+> **Status (2026-06-05):** Tech debt **documented** but **NOT** to be addressed before Phase E6 completes. The user explicitly chose to ship E6 (multiplayer connection layer) first; state model refactor is a Phase F+ scope.
+> **Why this ordering:** E6a/b/c are decoupled from the state model — they ship the WebSocket fan-out, scene state, and frontend, none of which depend on how player/NPC state is represented. Refactoring state_model.py now would block multiplayer scope delivery without benefit.
