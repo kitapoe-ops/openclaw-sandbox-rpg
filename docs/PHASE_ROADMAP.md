@@ -182,3 +182,36 @@ Beyond Phase D, the next major axis is **multiplayer polish** — the infrastruc
 
 > **Status (2026-06-05):** Tech debt **documented** but **NOT** to be addressed before Phase E6 completes. The user explicitly chose to ship E6 (multiplayer connection layer) first; state model refactor is a Phase F+ scope.
 > **Why this ordering:** E6a/b/c are decoupled from the state model — they ship the WebSocket fan-out, scene state, and frontend, none of which depend on how player/NPC state is represented. Refactoring state_model.py now would block multiplayer scope delivery without benefit.
+
+---
+
+## Phase G Candidates (Post-Phase-F Reality Check, 2026-06-05)
+
+> **User explicit decision 2026-06-05:** After Phase F 100% completion, the user identified 3 architectural blind spots that contract-layer testing cannot catch. Two are **permanently SKIPPED** (per user); one is **documented for next session**.
+
+### Phase G1 — Ghost State Retry (LLM self-correction on dropped mutations)
+- **Scope:** When Pydantic validation drops a `StateMutation` (e.g. MiniMax-M3 produces a tag > 15 chars), the narrative still flows but state diverges from narrative ("ghost state"). Add a retry-with-feedback mechanism: if a mutation is dropped, the next LLM call receives a `previous_attempt_errors` field listing what went wrong, asking the LLM to re-emit a valid mutation.
+- **Files:** `backend/llm_client.py` (just unfrozen by F3), `backend/api/action_processor.py` (just unfrozen by F3)
+- **Est:** ~1.5 hr
+- **Risk:** 🟡 MED — may cause latency regression (2x LLM calls per action), may confuse LLM with feedback
+- **Status:** **Documented, NOT YET BUILT** (Phase F just shipped 2026-06-05 22:33)
+
+### Phase G2 — Real Docker E2E (BAZOOKA + asyncpg + LanceDB) **PERMANENTLY SKIPPED 2026-06-05**
+- **Why:** BAZOOKA is local-only dev host with no Docker. asyncpg / LanceDB are production-only. Framework scope is local venv + LM Studio.
+- **Replacement:** Phase E1.5a (single-thread real-DB E2E with aiosqlite + pure-Python VectorStore fallback) is the strongest production-path validation we'll get in this scope.
+- **Do not revive.**
+
+### Phase G3 — Context Pruning (Selective memory recall + token budget) **PERMANENTLY SKIPPED 2026-06-05**
+- **Why:** RX 6800 16GB VRAM + R1-14B Q4_K_M ~9GB. Real concurrent audit throughput unknown. User explicitly skipped this — framework is local-only, not production-scale.
+- **Replacement:** Phase E8 async audit queue (backpressure policies BLOCK/FAIL_FAST/DROP_OLDEST) is the strongest concurrency-throttling we'll get.
+- **Do not revive.**
+
+### Phase F completion summary
+- **F1-Audit** (15 semantic invariants) ✅
+- **F1-wide** (pure-text state refactor) ✅
+- **F2** (semantic soul transfer) ✅
+- **F3** (LLM state_mutations contract + wiring) ✅
+- **F4** (prompt builder with top-of-prompt current state) ✅
+- **Net test delta:** 296 → 322 (+26 淨)
+- **M2 subagent cumulative:** 17/17 within 15-min cap, 0 disk work lost
+- **Frozen files mutated beyond scope:** ZERO (only F1/F2/F3 unfroze their respective files)
