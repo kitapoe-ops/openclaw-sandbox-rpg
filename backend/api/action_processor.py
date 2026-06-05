@@ -314,6 +314,7 @@ class ActionProcessor:
         verb: str,
         target: Optional[str] = None,
         args: Optional[Dict[str, Any]] = None,
+        max_retries: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Run the full pipeline. Returns the response dict.
 
@@ -322,6 +323,12 @@ class ActionProcessor:
         ``LLMUnavailableError``). Raises ``HTTPException(409)`` if a
         previous action for this character is still in flight (the
         physics lock is held).
+
+        Phase G1: ``max_retries`` is passed through to
+        ``generate_with_state_contract`` so the LLM can self-correct
+        on a dropped mutation. Defaults to ``None``, which lets the
+        LLM client apply its own default (currently 2). Pass 0 to
+        disable retry entirely (F3 behaviour).
         """
         # 1) Validate the verb (state-machine rule gate).
         verb_norm = verb.strip().lower()
@@ -348,6 +355,7 @@ class ActionProcessor:
                 verb=verb_norm,
                 target=target,
                 args=args,
+                max_retries=max_retries,
             )
 
     # ---------------------- internals ----------------------
@@ -358,6 +366,7 @@ class ActionProcessor:
         verb: str,
         target: Optional[str],
         args: Optional[Dict[str, Any]],
+        max_retries: Optional[int] = None,
     ) -> Dict[str, Any]:
         # 3) Claim a turn in the turn system.
         action_id = await self.turn_system.begin(character_id)
@@ -424,18 +433,24 @@ class ActionProcessor:
                 args=args,
             )
 
-            # 8) Phase F3: call the LLM with the StateMutation
+            # 8) Phase F3 + G1: call the LLM with the StateMutation
             # contract. If the LLM does not support the new method
             # (e.g. a custom test double), fall back to the legacy
-            # ``generate()`` path.
+            # ``generate()`` path. ``max_retries`` is passed through
+            # so the LLM can self-correct on a dropped mutation.
             t0 = time.monotonic()
-            narrative, mutation, mutation_error, llm_elapsed_ms = (
-                await self._call_llm_with_state_contract(
-                    system_prompt=system_prompt,
-                    user_message=user_message,
-                    current_state=current_state,
-                )
+            llm_result = await self._call_llm_with_state_contract(
+                system_prompt=system_prompt,
+                user_message=user_message,
+                current_state=current_state,
+                max_retries=max_retries,
             )
+            # Unpack 4-tuple OR 5-tuple (backward-compat)
+            if len(llm_result) == 5:
+                narrative, mutation, mutation_error, llm_elapsed_ms, llm_meta = llm_result
+            else:
+                narrative, mutation, mutation_error, llm_elapsed_ms = llm_result
+                llm_meta = {}
             side_effects.append(
                 {
                     "type": "llm_call",
@@ -444,6 +459,31 @@ class ActionProcessor:
                     "state_contract": self._llm_supports_state_contract,
                 }
             )
+            # Phase G1: log ghost-state warnings so the ops side can
+            # see when the LLM failed to produce a valid mutation
+            # even after retries. The narrative is still returned
+            # (F3 atomicity), but the player's state has diverged
+            # from the narrative — observability is the only
+            # remediation we can apply in-band.
+            if llm_meta.get("ghost_state_warning"):
+                retries_used = llm_meta.get("retries_used", 0)
+                logger.warning(
+                    "GHOST STATE (character=%s verb=%s): LLM failed "
+                    "to produce a valid StateMutation after %d retries "
+                    "(%s); narrative still returned, state unchanged. "
+                    "last_error=%r",
+                    character_id, verb, retries_used,
+                    "max_retries exhausted" if max_retries is not None
+                    else "default retries exhausted",
+                    mutation_error,
+                )
+                side_effects.append(
+                    {
+                        "type": "ghost_state_warning",
+                        "retries_used": retries_used,
+                        "last_error": (mutation_error or "")[:200],
+                    }
+                )
 
             # 9) Phase F3: apply the validated mutation (if any).
             # ``apply_mutations`` is atomic per-mutation: a bad
@@ -675,6 +715,7 @@ class ActionProcessor:
         system_prompt: str,
         user_message: str,
         current_state: Any,
+        max_retries: Optional[int] = None,
     ) -> tuple:
         """Call the LLM with the F3 state contract.
 

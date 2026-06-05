@@ -152,6 +152,7 @@ class LLMClient(ABC):
         system_prompt: str,
         user_message: str,
         current_state: List[str],
+        max_retries: int = 2,
     ) -> Dict[str, Any]:
         """Generate a response and enforce the F3 StateMutation contract.
 
@@ -160,6 +161,12 @@ class LLMClient(ABC):
         any validation failure (invalid JSON, extra fields,
         oversized tags, non-CJK chars), the mutation is dropped but
         the narrative is still returned.
+
+        Phase G1 adds retry-with-feedback: when a mutation is
+        dropped, the next LLM call receives a ``[Previous attempt
+        errors]`` block appended to the user message asking the
+        LLM to re-emit a valid mutation. Capped by ``max_retries``
+        (default 2 — so 3 total LLM calls max per action).
 
         The implementation is expected to:
 
@@ -171,19 +178,27 @@ class LLMClient(ABC):
              ``{"narrative": str, "state_mutations": {...} | null}``.
           3. Validate the ``state_mutations`` field via
              :func:`state_mutations_validator` (F1 defense D2).
-          4. Return a dict with the contract::
+          4. If the validation fails AND we have retries left, append
+             the specific validation errors to the user message and
+             re-call the LLM.
+          5. Return a dict with the contract::
 
                 {
                   "narrative": str,            # always present
                   "mutation": StateMutation | None,  # None if rejected
                   "parsed": dict | None,       # the raw JSON object
-                  "raw": str,                  # the LLM's raw text
-                  "error": str | None,         # validation error, if any
+                  "raw": str,                  # the last LLM raw text
+                  "error": str | None,         # last validation error, if any
+                  "retries_used": int,         # 0..max_retries
+                  "ghost_state_warning": bool, # True if all retries failed
+                  "retries_exhausted": bool,   # True iff ghost_state_warning
                 }
 
              On a hard LLM failure (e.g. network error), the dict
              should still be returned with ``narrative=""`` and
-             ``error="llm_call_failed: <reason>"``.
+             ``error="llm_call_failed: <reason>"`` — this counts
+             as a failed attempt and is subject to retry just like
+             a validation failure.
 
         ``current_state`` is passed in so the LLM has the "absolute
         current reality" at the top of the prompt (F4 invariant).
@@ -191,6 +206,11 @@ class LLMClient(ABC):
         :class:`backend.prompt_builder.PromptBuilder`; this argument
         is for the LLM to make a self-check before emitting
         ``state_mutations``.
+
+        The F3 atomicity guarantee is preserved: if all retries are
+        exhausted, the narrative is still returned with
+        ``mutation=None`` and ``ghost_state_warning=True``. The
+        action processor can then log the warning.
         """
         raise NotImplementedError
 
@@ -342,6 +362,45 @@ def _extract_state_mutations_dict(content: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _format_validation_error(exc: ValidationError) -> str:
+    """Convert a Pydantic ValidationError into LLM-actionable feedback.
+
+    Phase G1 (Requirement 2): the LLM needs to know *what* was wrong
+    and *where* in its response, so it can re-emit a valid mutation
+    on the retry. We enumerate every error Pydantic reports and
+    format them as ``field '<path>': <message>`` strings joined by
+    ``"; "``.
+
+    Example output::
+
+        field 'add_state.0': tag too long: 18 > 15 chars;
+        field 'reason': string_too_short (min 1)
+
+    The string is truncated to 800 chars to fit inside the user
+    message even on extreme payloads. We keep the first ~5 errors
+    to avoid drowning the LLM in noise.
+    """
+    errors = exc.errors() or []
+    parts: List[str] = []
+    for err in errors[:5]:
+        loc = ".".join(str(p) for p in err.get("loc", ()) if p not in ("__root__",))
+        msg = err.get("msg", "validation failed")
+        ct = err.get("ctx") or {}
+        # Surface the most actionable bit of the ctx dict (Pydantic
+        # stuffs e.g. ``max_length=15`` here for some validators).
+        if isinstance(ct, dict):
+            for k, v in ct.items():
+                if k in ("max_length", "min_length", "max", "min", "expected"):
+                    msg = f"{msg} (got {v})" if v is not None else msg
+        if loc:
+            parts.append(f"field '{loc}': {msg}")
+        else:
+            parts.append(str(msg))
+    if not parts:
+        return "validation_failed: unknown pydantic error"
+    return "; ".join(parts)[:800]
+
+
 def state_mutations_validator(
     raw_response: str,
 ) -> Tuple[Optional[StateMutation], Optional[str], Optional[Dict[str, Any]]]:
@@ -383,14 +442,13 @@ def state_mutations_validator(
     try:
         mutation = StateMutation.model_validate(sm_value)
     except ValidationError as exc:
-        # Compact, one-line reason. Pydantic gives us
-        # ``exc.errors()`` with field + msg per offender; we
-        # keep the first to keep the error short.
-        first = exc.errors()[0] if exc.errors() else {"msg": "unknown"}
-        loc = ".".join(str(p) for p in first.get("loc", []))
-        msg = first.get("msg", "validation failed")
-        reason = f"validation_failed: {loc}: {msg}" if loc else f"validation_failed: {msg}"
-        return None, reason[:300], parsed
+        # Phase G1: use the multi-error formatter so the LLM can
+        # see *every* failing field on a retry (was single-error
+        # in F3; single-error is fine for the "this can't be
+        # salvaged" path, but on retry we want the LLM to fix
+        # them all in one pass).
+        reason = _format_validation_error(exc)
+        return None, f"validation_failed: {reason}", parsed
 
     return mutation, None, parsed
 
@@ -586,19 +644,22 @@ class MiniMaxM3Client(LLMClient):
         system_prompt: str,
         user_message: str,
         current_state: List[str],
+        max_retries: int = 2,
     ) -> Dict[str, Any]:
-        """Phase F3: enforce the StateMutation contract on LLM output.
+        """Phase F3 + G1: enforce the StateMutation contract on LLM output.
 
-        Calls :meth:`generate` (which routes through the retry/cache
-        pipeline), then validates the response against F1's
-        ``StateMutation`` schema. On validation failure, the mutation
-        is dropped but the narrative is still surfaced.
+        Phase F3 calls :meth:`generate` (which routes through the
+        retry/cache pipeline), then validates the response against
+        F1's ``StateMutation`` schema. On validation failure, the
+        mutation is dropped but the narrative is still surfaced.
 
-        The system prompt passed in is augmented with a short schema
-        reminder so the LLM knows the expected output shape. This
-        keeps the contract self-documenting at the call site; the
-        full F4 prompt builder also includes the schema in its
-        template.
+        Phase G1 adds a retry-with-feedback loop (capped by
+        ``max_retries``, default 2 — 3 total LLM calls max). On
+        failure we inject a ``[Previous attempt errors]`` block into
+        the user message so the LLM can self-correct. The system
+        prompt is augmented with a short schema reminder so the LLM
+        knows the expected output shape. The full F4 prompt builder
+        also includes the schema in its template.
         """
         # Augment the system prompt with a state-mutation schema reminder.
         # We keep this lightweight — the real prompt comes from
@@ -631,34 +692,124 @@ class MiniMaxM3Client(LLMClient):
             "Current character state (for grounding): "
             f"{current_state}\n"
         )
-        try:
-            raw = await self.generate(
-                system_prompt=augmented_system_prompt,
-                user_message=user_message,
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "generate_with_state_contract: LLM call failed: %s", exc,
-            )
-            return {
-                "narrative": "",
-                "mutation": None,
-                "parsed": None,
-                "raw": "",
-                "error": f"llm_call_failed: {type(exc).__name__}: {exc}"[:300],
-            }
 
-        mutation, error, parsed = state_mutations_validator(raw)
-        narrative = ""
-        if parsed is not None and isinstance(parsed.get("narrative"), str):
-            narrative = parsed["narrative"]
-        return {
-            "narrative": narrative,
-            "mutation": mutation,
-            "parsed": parsed,
-            "raw": raw,
-            "error": error,
+        # Phase G1: retry loop. We track every error so we can
+        # re-inject them on the next attempt. The last error wins
+        # in the final return; earlier errors are logged for
+        # observability.
+        last_result: Dict[str, Any] = {
+            "narrative": "",
+            "mutation": None,
+            "parsed": None,
+            "raw": "",
+            "error": None,
         }
+        last_error: Optional[str] = None
+        attempts_made = 0
+        retries_used = 0
+        # max_retries=2 → 3 total attempts (initial + 2 retries).
+        # max_retries=0 → 1 total attempt (F3 original behaviour).
+        total_attempts = max_retries + 1
+        for attempt_idx in range(total_attempts):
+            attempts_made += 1
+            if attempt_idx > 0:
+                retries_used = attempt_idx
+            # Inject previous errors into the user message so the
+            # LLM can self-correct.
+            augmented_message = user_message
+            if last_error is not None:
+                augmented_message = (
+                    f"{user_message}\n\n"
+                    "[Previous attempt errors (please fix on retry)]\n"
+                    f"- {last_error}"
+                )
+            try:
+                raw = await self.generate(
+                    system_prompt=augmented_system_prompt,
+                    user_message=augmented_message,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "generate_with_state_contract: LLM call failed "
+                    "(attempt %d/%d): %s",
+                    attempt_idx + 1, total_attempts, exc,
+                )
+                last_error = (
+                    f"llm_call_failed: {type(exc).__name__}: {exc}"
+                )[:300]
+                last_result = {
+                    "narrative": "",
+                    "mutation": None,
+                    "parsed": None,
+                    "raw": "",
+                    "error": last_error,
+                }
+                # If we have retries left, continue; otherwise fall
+                # through to the exhausted path.
+                if attempt_idx < total_attempts - 1:
+                    continue
+                else:
+                    break
+
+            mutation, error, parsed = state_mutations_validator(raw)
+            narrative = ""
+            if parsed is not None and isinstance(parsed.get("narrative"), str):
+                narrative = parsed["narrative"]
+            last_result = {
+                "narrative": narrative,
+                "mutation": mutation,
+                "parsed": parsed,
+                "raw": raw,
+                "error": error,
+            }
+            last_error = error
+            if mutation is not None or error is None:
+                # Success: validated mutation, OR explicit null
+                # (LLM signalled "no state change" — valid).
+                return {
+                    **last_result,
+                    "retries_used": retries_used,
+                    "ghost_state_warning": False,
+                    "retries_exhausted": False,
+                }
+            # Validation failed; log and continue if we have retries.
+            logger.info(
+                "generate_with_state_contract: validation failed on "
+                "attempt %d/%d: %s",
+                attempt_idx + 1, total_attempts, error,
+            )
+            # Loop continues → inject error on next attempt.
+
+        # All retries exhausted. Preserve the F3 atomicity contract:
+        # narrative (if any) is still returned, mutation is None,
+        # the caller logs ghost_state_warning.
+        return {
+            **last_result,
+            "retries_used": retries_used,
+            "ghost_state_warning": True,
+            "retries_exhausted": True,
+        }
+
+    # Phase G1: alias for the inner LLM call so tests / subclasses
+    # can patch the call without re-implementing the retry loop.
+    # Defaults to :meth:`generate` (the same call F3 made).
+    async def _call_llm_with_contract(
+        self,
+        system_prompt: str,
+        user_message: str,
+        current_state: List[str],
+    ) -> str:
+        """Single-attempt LLM call used by the G1 retry loop.
+
+        Returns the raw LLM text. The outer ``generate_with_state_contract``
+        handles the validation, retry, and feedback injection. This
+        method is the seam where subclasses (e.g. tests) can inject
+        canned responses.
+        """
+        return await self.generate(
+            system_prompt=system_prompt,
+            user_message=user_message,
+        )
 
     # ---------------------- internals ----------------------
 
@@ -864,27 +1015,88 @@ class MockLLMClient(LLMClient):
         system_prompt: str,
         user_message: str,
         current_state: List[str],
+        max_retries: int = 2,
     ) -> Dict[str, Any]:
-        """Phase F3: validate the canned response against StateMutation.
+        """Phase F3 + G1: validate the canned response against StateMutation.
 
         Same shape as the real client's method, but uses
-        ``canned_response`` instead of a network call. Validation is
-        still enforced — the mock is faithful to the contract, it
-        just doesn't call a remote model. Tests can swap
-        ``canned_response`` to drive success / failure paths.
+        ``canned_response`` (or a list of them) instead of a network
+        call. Validation is still enforced — the mock is faithful to
+        the contract, it just doesn't call a remote model. Tests can
+        swap ``canned_response`` to drive success / failure paths.
+
+        Phase G1: if ``canned_response`` is a list, each element is
+        popped and used as the response for one attempt. This lets
+        tests drive the "fail then pass" path without subclassing.
         """
-        # Bump the call counter for observability.
-        self.calls += 1
-        mutation, error, parsed = state_mutations_validator(self.canned_response)
+        del system_prompt  # unused in mock
+        del current_state  # unused in mock
+        del user_message   # unused in mock
+
+        # Phase G1: allow list-of-responses to drive multi-attempt
+        # scenarios. We pop the head of the list on each call so
+        # the test sees a different response on each attempt.
+        # (default behaviour: a single response used every time —
+        # this preserves the F3 mock contract.)
+        last_raw: str = ""
+        last_error: Optional[str] = None
+        last_mutation: Optional[StateMutation] = None
+        last_parsed: Optional[Dict[str, Any]] = None
+
+        # Resolve the per-attempt response sequence.
+        if isinstance(self.canned_response, list):
+            sequence: List[str] = list(self.canned_response)
+        else:
+            # F3 behaviour: a single canned response used on every
+            # attempt. This means the mock will fail-then-fail
+            # (always the same broken payload) by default — perfect
+            # for the "retries exhausted" test.
+            sequence = [str(self.canned_response)]
+
+        total_attempts = max_retries + 1
+        retries_used = 0
+        for attempt_idx in range(total_attempts):
+            if attempt_idx > 0:
+                retries_used = attempt_idx
+            # If the list is exhausted, reuse the last element.
+            raw = sequence[attempt_idx] if attempt_idx < len(sequence) else sequence[-1]
+            self.calls += 1
+            mutation, error, parsed = state_mutations_validator(raw)
+            last_raw = raw
+            last_error = error
+            last_mutation = mutation
+            last_parsed = parsed
+            if mutation is not None or error is None:
+                # Success path (valid mutation OR explicit null).
+                narrative = ""
+                if parsed is not None and isinstance(parsed.get("narrative"), str):
+                    narrative = parsed["narrative"]
+                return {
+                    "narrative": narrative,
+                    "mutation": mutation,
+                    "parsed": parsed,
+                    "raw": raw,
+                    "error": error,
+                    "retries_used": retries_used,
+                    "ghost_state_warning": False,
+                    "retries_exhausted": False,
+                }
+            # Validation failed; continue if we have retries left.
+            # (No logging — this is a mock.)
+
+        # All attempts exhausted.
         narrative = ""
-        if parsed is not None and isinstance(parsed.get("narrative"), str):
-            narrative = parsed["narrative"]
+        if last_parsed is not None and isinstance(last_parsed.get("narrative"), str):
+            narrative = last_parsed["narrative"]
         return {
             "narrative": narrative,
-            "mutation": mutation,
-            "parsed": parsed,
-            "raw": self.canned_response,
-            "error": error,
+            "mutation": last_mutation,
+            "parsed": last_parsed,
+            "raw": last_raw,
+            "error": last_error,
+            "retries_used": retries_used,
+            "ghost_state_warning": True,
+            "retries_exhausted": True,
         }
 
 
@@ -983,6 +1195,7 @@ __all__ = [
     "generate_scene_response",
     "build_few_shots",
     "state_mutations_validator",
+    "_format_validation_error",
     # Config exports
     "MINIMAX_BASE_URL",
     "MINIMAX_MODEL",
