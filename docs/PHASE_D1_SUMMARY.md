@@ -1,4 +1,6 @@
-# Phase D1 完工報告 (DRAFT — main agent finalizes)
+# Phase D1 完工報告 (FINALIZED 2026-06-05 by main agent)
+
+> **Main agent finalization note:** D1 subagent ship 嘅 disk work 同我嘅 194/194 regression gate 一致。R1 真 audit (FAIL → resolved) 喺 Phase D2 嘅後續 verification (2026-06-05 18:09) replay 過，verdict = PASS、4 INFO findings（之前 2 CRITICAL / 1 HIGH / 1 MEDIUM 全部 resolved）。D1 closed，**D2 HIGH finding 由 Phase E5 永久 close**。
 
 > **完成時間：** 2026-06-05 17:35 GMT+8
 > **狀態：** ✅ Merge 完成 (單 module + 雙 class + backward-compat shim)

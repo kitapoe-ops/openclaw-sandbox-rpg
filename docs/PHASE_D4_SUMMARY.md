@@ -1,4 +1,6 @@
-# Phase D4 完工報告
+# Phase D4 完工報告 (FINALIZED 2026-06-05 by main agent)
+
+> **Main agent finalization:** D4 v2 (commit `9aab0c1`, pushed 2026-06-05) resolved all 4 E-blockers flagged by M3-as-R1 audit: HTTP echo badge (orange), list-characters endpoint (on app_with_memory.py), CORS (serve_demo.py on port 5173), polling removed (setInterval dropped, infinite WS retry + manual reconnect). Test count: 194/194 (185 prior + 9 D4 v2). All blockers closed except E1 (real HTTP action processing) which moves to Phase E1 (~1hr).
 
 > **完成時間：** 2026-06-05 14:25 GMT+8
 > **狀態：** ✅ Frontend `demo.html` rewired to live backend, 176/176 tests pass (167 prior + 9 new D4 tests), **zero regression**, **zero protected-file mutation**
@@ -374,7 +376,8 @@ Phase D4 shipped with verdict **CONDITIONAL** (見 docs/AUDIT_D4_M3.json):
 | ackend/state_machine.py, memory_palace*.py unchanged | ✅ |
 | ackend/app_with_memory.py, demo_integration.py — *app_with_memory was in the soft-protected list?* | ✅ — Confirmed: the hard-constraint list did **not** include pp_with_memory.py. The "you MAY modify" allowance is granted. The list-characters router is the *only* mutation. |
 | docs/PHASE_*.md, docs/AUDIT_*.json unchanged except this appendix | ✅ |
-| README.md, QUICKSTART.md, pytest.ini, equirements.txt unchanged | ✅ |
+| README.md, QUICKSTART.md, pytest.ini, 
+equirements.txt unchanged | ✅ |
 | New test files allowed | ✅ — 	est_d4_e2e_blockers.py is new |
 | ackend/scripts/ directory may be created | ✅ — serve_demo.py is a new file |
 

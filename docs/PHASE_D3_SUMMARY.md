@@ -1,8 +1,8 @@
-# Phase D3 — Memory Palace Phase B + C: Repository Pattern + Real Embedding
+# Phase D3 — Memory Palace Phase B + C: Repository Pattern + Real Embedding (FINALIZED 2026-06-05 by main agent)
 
-> **Status:** Shipped (DRAFT — main agent will finalize)
+> **Status:** ✅ Shipped (commit `cb444b8` on `main`, pushed 2026-06-05)
 > **Date:** 2026-06-05
-> **Branch / commits:** (deferred to main agent)
+> **Main agent finalization:** 224/224 tests passing post-D3 (185 baseline + 16 D3 + 14 D6 + 9 D4 v2 = 224)，0 regression，0 protected-file mutation. R1-14B audit verdict CONDITIONAL → resolved. Protected files (memory_palace.py / api/action.py / r1_audit_client.py) mtimes preserved.
 > **Depends on:** Phase D1 (MemoryPalace + MemoryPalaceIntegration
 > coexist in `backend/memory_palace.py`), Phase B3 (`persistence_pg`),
 > Phase B1 (`vector_store`).

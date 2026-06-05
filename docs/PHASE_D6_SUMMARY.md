@@ -1,8 +1,9 @@
-# Phase D6 Summary — Real LLM Client (MiniMax-M3) + Decoupling via Interface
+# Phase D6 Summary — Real LLM Client (MiniMax-M3) + Decoupling via Interface (FINALIZED 2026-06-05 by main agent)
 
-> **Status:** DRAFT (subagent-hand-off, M2 standard)
+> **Status:** ✅ Shipped (commit `cb444b8` on `main`, pushed 2026-06-05)
 > **Date:** 2026-06-05
 > **Phase:** D6
+> **Main agent finalization:** 14/14 LLM client tests passing，retry/rate-limit/cache/reasoning_content/cache_control 全部 verified。R1-14B audit verdict FAIL (3 CRITICAL / 2 HIGH / 1 MEDIUM) → 全部 resolved via _post_with_retry, Retry-After honored, SHA-256 LRU cache, reasoning_content separation, cache_control ephemeral breakpoints. **Decoupling rule satisfied** — LLMClient ABC + MiniMaxM3Client + MockLLMClient + factory function, framework NOT tightly coupled to MiniMax-M3 runtime.
 > **Verdict:** Implementation complete. R1 pre-flight audit identified 6 findings (3 CRITICAL, 2 HIGH, 1 MEDIUM); all 6 are addressed in this PR. 14/14 new tests PASS. Awaiting main-agent finalization (full regression + git commit + push).
 
 ---
