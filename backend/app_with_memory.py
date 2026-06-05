@@ -279,6 +279,15 @@ from .ws.multiplayer_router import (  # noqa: E402
     get_multiplayer_manager,
     multiplayer_ws_endpoint,
 )
+from .scene_multiplayer import (  # noqa: E402
+    MultiplayerScene,
+    get_scene_registry,
+)
+from .memory_isolation import (  # noqa: E402
+    MemoryIsolationGuard,
+    MemoryIsolationError,
+    get_isolation_guard,
+)
 
 _e6a_router = APIRouter(prefix="/api", tags=["e6a-multiplayer"])
 
@@ -376,6 +385,273 @@ async def multiplayer_ws(
     pipeline + scene broadcast.
     """
     await multiplayer_ws_endpoint(websocket, scene_id, player_id)
+
+
+# ============================================
+# E6b: scene state management + memory isolation
+# ============================================
+# E6a shipped the connection layer (WebSocket fan-out). E6b
+# ships the *game-state* layer: a per-scene registry of
+# players + NPCs + a turn queue, and a per-scene memory
+# access guard that prevents cross-character leaks. Both
+# modules are additive and live in non-frozen files:
+#
+#   backend/scene_multiplayer.py     (MultiplayerScene, SceneRegistry)
+#   backend/memory_isolation.py      (MemoryIsolationGuard, _IsolatedMemoryPalace)
+#
+# Routes added on this composed app (none mutate frozen files):
+#
+#   POST /api/scene-multiplayer/{scene_id}/create
+#   POST /api/scene-multiplayer/{scene_id}/player/{player_id}/join
+#   POST /api/scene-multiplayer/{scene_id}/player/{player_id}/leave
+#   GET  /api/scene-multiplayer/{scene_id}/players
+#   GET  /api/scene-multiplayer/{scene_id}/npcs
+#   POST /api/scene-multiplayer/{scene_id}/turn/enqueue
+#   POST /api/scene-multiplayer/{scene_id}/turn/process
+#   GET  /api/scene-multiplayer/{scene_id}/turn/queue-size
+#   GET  /api/scene-multiplayer/{scene_id}/isolation/check
+#   GET  /api/scene-multiplayer/health
+#
+# The routes are intentionally on a *different* prefix
+# (``/api/scene-multiplayer/...``) from the E6a multiplayer
+# routes (``/api/multiplayer/...``) so the two layers stay
+# composable: E6b is *state*, E6a is *transport*.
+_e6b_router = APIRouter(prefix="/api/scene-multiplayer", tags=["e6b-scene-state"])
+
+
+@_e6b_router.post(
+    "/{scene_id}/create",
+    summary="Create a multiplayer scene (E6b)",
+    responses={200: {"description": "Scene ready (new or existing)"}},
+)
+async def http_create_scene(
+    scene_id: str,
+    max_players: int = 4,
+    max_npcs: int = 100,
+) -> Dict[str, Any]:
+    """Idempotent — returns the existing scene if present.
+
+    Hard caps: ``max_players`` defaults to 4, ``max_npcs`` to
+    100. The brief accepts an in-memory registry for E6b; a
+    Postgres-backed registry is a future refactor (the
+    ``SceneRegistry`` class is the seam).
+    """
+    if max_players < 1 or max_players > 16:
+        raise HTTPException(
+            status_code=400,
+            detail=f"max_players must be in [1, 16], got {max_players}",
+        )
+    if max_npcs < 1 or max_npcs > 1000:
+        raise HTTPException(
+            status_code=400,
+            detail=f"max_npcs must be in [1, 1000], got {max_npcs}",
+        )
+    registry = get_scene_registry()
+    scene = await registry.get_or_create(
+        scene_id, max_players=max_players, max_npcs=max_npcs
+    )
+    return scene.health()
+
+
+@_e6b_router.post(
+    "/{scene_id}/player/{player_id}/join",
+    summary="Add a player to a scene (E6b)",
+    responses={
+        200: {"description": "Player added"},
+        404: {"description": "Scene not found"},
+        409: {"description": "Scene full / duplicate / character taken"},
+    },
+)
+async def http_join_scene(
+    scene_id: str, player_id: str, character_id: str
+) -> Dict[str, Any]:
+    """Add a player. Returns 409 if the scene is full, the
+    player_id is already in the scene, or the character_id is
+    already controlled by another player in the scene.
+    """
+    registry = get_scene_registry()
+    scene = registry.get(scene_id)
+    if scene is None:
+        raise HTTPException(status_code=404, detail="scene_not_found")
+    ok = await scene.add_player(player_id, character_id)
+    if not ok:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "join_rejected: scene_full | duplicate_player | "
+                "character_taken"
+            ),
+        )
+    return scene.health()
+
+
+@_e6b_router.post(
+    "/{scene_id}/player/{player_id}/leave",
+    summary="Remove a player from a scene (E6b)",
+    responses={200: {"description": "Player removed (idempotent)"}},
+)
+async def http_leave_scene(scene_id: str, player_id: str) -> Dict[str, Any]:
+    """Idempotent — removing a non-existent player is a no-op."""
+    registry = get_scene_registry()
+    scene = registry.get(scene_id)
+    if scene is None:
+        return {"scene_id": scene_id, "player_id": player_id, "removed": False}
+    await scene.remove_player(player_id)
+    return {"scene_id": scene_id, "player_id": player_id, "removed": True}
+
+
+@_e6b_router.get(
+    "/{scene_id}/players",
+    summary="List players in a scene (E6b)",
+)
+async def http_list_scene_players(scene_id: str) -> Dict[str, Any]:
+    """Read-only player list. Returns 404 if the scene is unknown."""
+    registry = get_scene_registry()
+    scene = registry.get(scene_id)
+    if scene is None:
+        raise HTTPException(status_code=404, detail="scene_not_found")
+    return {
+        "scene_id": scene_id,
+        "players": [p.to_dict() for p in scene.get_players()],
+        "count": len(scene.get_players()),
+        "max_players": scene.max_players,
+    }
+
+
+@_e6b_router.get(
+    "/{scene_id}/npcs",
+    summary="List NPCs in a scene (E6b)",
+)
+async def http_list_scene_npcs(scene_id: str) -> Dict[str, Any]:
+    """Read-only NPC list (shared by all players in the scene)."""
+    registry = get_scene_registry()
+    scene = registry.get(scene_id)
+    if scene is None:
+        raise HTTPException(status_code=404, detail="scene_not_found")
+    return {
+        "scene_id": scene_id,
+        "npcs": [n.to_dict() for n in scene.get_npcs()],
+        "count": len(scene.get_npcs()),
+        "max_npcs": scene.max_npcs,
+    }
+
+
+@_e6b_router.post(
+    "/{scene_id}/turn/enqueue",
+    summary="Submit an action to the scene turn queue (E6b)",
+)
+async def http_enqueue_turn(
+    scene_id: str,
+    actor_id: str,
+    action: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Submit ``action`` to the scene's turn queue on behalf of
+    ``actor_id``. Returns the ``ticket_id`` (UUID4) for
+    correlation. The consumer of the queue (E1 action
+    processor in the next sub-phase) will ``process_next_turn``
+    and route the ticket into the action pipeline.
+    """
+    registry = get_scene_registry()
+    scene = registry.get(scene_id)
+    if scene is None:
+        raise HTTPException(status_code=404, detail="scene_not_found")
+    ticket_id = await scene.enqueue_action(actor_id, action)
+    return {
+        "scene_id": scene_id,
+        "ticket_id": ticket_id,
+        "queue_size": scene.get_turn_queue_size(),
+    }
+
+
+@_e6b_router.post(
+    "/{scene_id}/turn/process",
+    summary="Pop the next action from the scene turn queue (E6b)",
+)
+async def http_process_next_turn(scene_id: str) -> Dict[str, Any]:
+    """Pop and return the head ticket. Returns an empty result
+    if the queue is empty (no 404). The actual action
+    processing (LLM narrative + memory write + WebSocket
+    fan-out) is the consumer's responsibility; this endpoint
+    is the *drain* primitive that the action processor will
+    call from a periodic background task.
+    """
+    registry = get_scene_registry()
+    scene = registry.get(scene_id)
+    if scene is None:
+        raise HTTPException(status_code=404, detail="scene_not_found")
+    ticket = await scene.process_next_turn()
+    if ticket is None:
+        return {
+            "scene_id": scene_id,
+            "ticket": None,
+            "queue_size": 0,
+        }
+    return {
+        "scene_id": scene_id,
+        "ticket": ticket.to_dict(),
+        "queue_size": scene.get_turn_queue_size(),
+    }
+
+
+@_e6b_router.get(
+    "/{scene_id}/turn/queue-size",
+    summary="Read the turn-queue size (E6b)",
+)
+async def http_turn_queue_size(scene_id: str) -> Dict[str, Any]:
+    """Read-only inspection of the queue depth."""
+    registry = get_scene_registry()
+    scene = registry.get(scene_id)
+    if scene is None:
+        raise HTTPException(status_code=404, detail="scene_not_found")
+    return {
+        "scene_id": scene_id,
+        "queue_size": scene.get_turn_queue_size(),
+    }
+
+
+@_e6b_router.get(
+    "/{scene_id}/isolation/check",
+    summary="Check memory-isolation rule for a requester/target pair (E6b)",
+)
+async def http_isolation_check(
+    scene_id: str,
+    requester_id: str,
+    target_character_id: str,
+    op: str = "read",
+) -> Dict[str, Any]:
+    """Lightweight authorisation check. Useful for the
+    frontend to gate UI elements ("can this player see this
+    NPC's lore?") without round-tripping through the memory
+    palace.
+    """
+    if op not in {"read", "write"}:
+        raise HTTPException(
+            status_code=400,
+            detail=f"op must be 'read' or 'write', got {op!r}",
+        )
+    guard = get_isolation_guard()
+    allowed = guard.authorize(
+        requester_id, scene_id, target_character_id, op=op
+    )
+    return {
+        "scene_id": scene_id,
+        "requester_id": requester_id,
+        "target_character_id": target_character_id,
+        "op": op,
+        "allowed": allowed,
+    }
+
+
+@_e6b_router.get(
+    "/health",
+    summary="Scene registry health (E6b)",
+)
+async def http_scene_registry_health() -> Dict[str, Any]:
+    """Aggregate stats across all live scenes."""
+    return get_scene_registry().health()
+
+
+_wave2_app.include_router(_e6b_router)
 
 
 # Re-export under a friendly name so the lifespan / app-state /
