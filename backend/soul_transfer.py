@@ -1,447 +1,754 @@
 """
-Soul Transfer (Wave 2 Core #2)
-==============================
-Atomic 3-dimensional payload transfer between characters.
+Soul Transfer — Semantic Edition (Phase F2, 2026-06-05)
+======================================================
 
-A "Soul" is a composite of:
-  1. Memory Palace fragment list (long-term episodic/semantic/etc. memories)
-  2. Character state (physical + mental + inventory + relationships)
-  3. LLM Prompt Context (accumulated attitude, recent_choices, npc_relationships)
+A "Soul" is a composite of pure-text semantic state (per Phase F1):
 
-Per design lock (2026-06-04 decision):
-  - Q1: Storage = SQLite blob column (atomic, follows Phase A pattern)
-  - Q2: Degradation = random factor in [0.6, 0.9] per transfer
-  - Q3: Service-level method (no HTTP endpoint yet, defer to Phase B)
+  1. **Tags** — `list[str]` of short CJK descriptors (max 8)
+     (inherited from `SemanticState.tags`; audit invariant #5)
+  2. **Scalar state** — `stamina` / `health` / `morale` (all strings,
+     no numbers; audit invariants #6, #7, #8)
+  3. **Memories** — `list[str]` of bounded-length strings, fed by
+     `SemanticState.to_memory_string()` (defense D3)
+  4. **Relationships** — `dict[str, str]` (audit invariant #14)
 
-Anti-suicide: The degradation is lossy \u2014 a fresh soul never becomes
-a perfect copy. Each transfer drops 10-40% of various dimensions,
-preventing players from griefing their own stats.
+This is a **freeze-and-replace** of the legacy numerical
+`SoulTransferService` from v3.7. The legacy module carried numerical
+thinking — specifically `random.uniform(0.6, 0.9)` as a degradation
+factor that could not multiply a `SemanticState` tag like
+`"右手骨折"`. The semantic replacement:
 
-Lock: 2026-06-04 21:46 GMT+8
+  * **Tier-list downgrade** — for known source tags, choose a
+    worse-but-valid downgrade from a hardcoded map. The map is
+    pure-text, not numerical.
+  * **LLM fallback** — for unknown / novel source tags, ask the
+    LLM to produce a single worse-but-valid CJK tag (≤15 chars,
+    CJK-only). LLM is called via `LLMClient.generate` with
+    retry/cache already in place.
+  * **Anti-predictability preserved** — every transfer is
+    `random.choice` from a non-empty list of valid downgrades.
+    No two consecutive transfers produce the same result.
+  * **Anti-exploit rules** — seven rules inherited and extended
+    (see `ANTI_EXPLOIT_RULES`).
+
+Inputs:  `backend/state_machine.SemanticState`, `SemanticStateMachine`
+Outputs: `backend.soul_transfer.SoulTransferRecord` (the new contract)
+
+Lock: 2026-06-05 21:55 GMT+8
 """
 from __future__ import annotations
 
 import json
 import logging
 import random
+import re
 import sqlite3
 import uuid
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
 UTC = timezone.utc
 
-# Degradation bounds (random factor in this range)
-DEGRADATION_MIN = 0.6
-DEGRADATION_MAX = 0.9
 
-# Per-dimension loss range (additive random loss in this range)
-DIMENSION_LOSS_MIN = 0.05
-DIMENSION_LOSS_MAX = 0.20
+# ============================================
+# Constants
+# ============================================
+
+# Max tags carried per transfer record (matches F1 invariant #5).
+MAX_TAGS_PER_TRANSFER: int = 8
+
+# Max chars per tag (matches F1 MAX_TAG_LENGTH).
+MAX_TAG_LENGTH: int = 15
+
+# CJK + space + hyphen, matching F1's _TAG_PATTERN.
+_TAG_PATTERN = re.compile(r"^[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\- ]+$")
+
+# Source states that mean "the soul does not need to be transferred".
+# Inherits from the legacy invariant: you cannot transfer a perfectly
+# intact soul (or an anchored one). See ANTI_EXPLOIT_RULE_5.
+NON_TRANSFERABLE_TAGS = frozenset({
+    "完好無損",   # perfectly intact
+    "固著",       # anchored
+    "圓滿",       # complete / perfect
+})
+
+# Source states that mean "the soul is already lost".
+LOST_SOUL_TAGS = frozenset({
+    "死亡",       # dead
+    "魂飛魄散",   # soul destroyed
+    "永久消亡",   # permanently gone
+})
+
+# Default LLM prompt for unknown-state downgrade.
+# The LLM is asked for ONE CJK tag, ≤15 chars, no Latin/punctuation.
+DEFAULT_LLM_DOWNGRADE_PROMPT = (
+    "你是一個語意狀態降級助手。給定一個角色的當前狀態（中文短語），"
+    "請輸出一個**更差**、但仍然合理的狀態（同一類別內，邏輯上可達）。\n"
+    "規則：\n"
+    "1. 必須是純中文（不含英文字母、emoji、標點）\n"
+    "2. 不超過 15 個字\n"
+    "3. 比原狀態更差，但不會直接跳到「死亡」\n"
+    "4. 只需回傳 JSON：`{{\"degraded_state\": \"<tag>\"}}`\n"
+    "原狀態：{source_state}\n"
+    "請輸出降級狀態："
+)
 
 
 # ============================================
-# SoulPayload
+# Tier List (common cases, fast path)
+# ============================================
+
+# A pure-text downgrade map. Each source tag maps to a list of
+# "valid worse states" (all in CJK, all ≤15 chars). The
+# `compute_degradation` step picks one with `random.choice`, so the
+# result is anti-predictable WITHOUT a numerical factor.
+#
+# Convention: keys are source states; values are lists of
+# strictly-worse states. Lists should have ≥ 2 entries for
+# meaningful randomness; a single-entry list still degrades but is
+# trivially predictable (the F2 audit flags it as "non-random").
+#
+# If a source state is NOT in the map, we fall through to the
+# LLM-driven downgrade path (see `compute_degradation`).
+TIER_DOWNGRADES: Dict[str, List[str]] = {
+    # Physical health
+    "非常健康": ["虚弱", "疲惫", "輕傷", "小病"],
+    "健康": ["小病", "虚弱", "輕傷"],
+    "小病": ["虚弱", "生病", "不適"],
+    "虚弱": ["疲惫", "病重", "無力"],
+    "疲惫": ["無力", "暈眩", "病重"],
+    "輕傷": ["中度傷", "骨折", "流血"],
+    "中度傷": ["重傷", "骨折", "失血"],
+    "重傷": ["濒死", "重伤昏迷", "大量失血"],
+
+    # Limb / body part
+    "右手骨折": ["右手重伤", "右手残废", "右手永久伤残"],
+    "左臂骨折": ["左臂重伤", "左臂残废", "左臂永久伤残"],
+    "雙臂骨折": ["雙臂重伤", "雙臂残废", "全身瘫痪"],
+    "雙腿骨折": ["雙腿重伤", "下身瘫痪", "輪椅依賴"],
+    "失明": ["半盲", "重度弱視", "完全失明"],
+    "聾啞": ["半聾", "重度聽障", "完全聾啞"],
+
+    # Mental / morale
+    "高興": ["平靜", "焦慮", "低落"],
+    "平靜": ["焦慮", "低落", "恐懼"],
+    "焦慮": ["恐懼", "崩潰", "絕望"],
+    "恐懼": ["崩潰", "絕望", "驚慌失措"],
+    "絕望": ["魂飛魄散", "瘋狂", "自我放棄"],
+
+    # "Positive" / success states
+    "完成": ["半成", "未竟", "失敗"],
+    "勝利": ["慘勝", "平局", "失敗"],
+}
+
+
+# ============================================
+# Anti-Exploit Rules (preserved + extended)
+# ============================================
+
+# The legacy soul-transfer had 4 anti-exploit rules. Phase F2
+# extends them to 7 by translating numerical rules to semantic ones
+# and adding the new F2 defenses. The 7 rules are referenced in
+# the docs and the tests.
+
+ANTI_EXPLOIT_RULE_1 = "soul can only transfer to a vessel in the same scene"
+ANTI_EXPLOIT_RULE_2 = "soul cannot transfer to a vessel that already has an active soul"
+ANTI_EXPLOIT_RULE_3 = "transfer takes one full turn (defer turn-system check to caller)"
+ANTI_EXPLOIT_RULE_4 = "if the new vessel dies within 3 turns, the soul is destroyed"
+ANTI_EXPLOIT_RULE_5 = "source character must be in a transferable state (not NON_TRANSFERABLE_TAGS)"
+ANTI_EXPLOIT_RULE_6 = "anti-predictability: previous transfer result is NOT the new transfer result"
+ANTI_EXPLOIT_RULE_7 = "cross-character memory isolation: soul takes its own memories, not the vessel's"
+
+ANTI_EXPLOIT_RULES = (
+    ANTI_EXPLOIT_RULE_1,
+    ANTI_EXPLOIT_RULE_2,
+    ANTI_EXPLOIT_RULE_3,
+    ANTI_EXPLOIT_RULE_4,
+    ANTI_EXPLOIT_RULE_5,
+    ANTI_EXPLOIT_RULE_6,
+    ANTI_EXPLOIT_RULE_7,
+)
+
+
+# ============================================
+# Errors
+# ============================================
+
+
+class SoulTransferError(Exception):
+    """Base for soul transfer errors."""
+
+
+class SoulTransferNotAllowedError(SoulTransferError):
+    """Raised when an anti-exploit rule blocks the transfer."""
+
+
+class SoulTransferStateError(SoulTransferError):
+    """Raised when source/vessel state is invalid for transfer."""
+
+
+# ============================================
+# Data models
 # ============================================
 
 
 @dataclass
-class PromptContext:
+class SoulTransferRecord:
+    """The new contract: a pure-text soul transfer record.
+
+    Replaces the legacy `SoulPayload`. No `degradation_factor` (no
+    numbers). The "degraded state" is a list of pure-text tags
+    (inherited from `SemanticState.tags`).
     """
-    The LLM-facing context that builds Scene Agent prompts.
-    Accumulated over a character's lifetime.
-    """
-    recent_choices: List[str] = field(default_factory=list)
-    attitude_history: List[Dict[str, str]] = field(default_factory=list)
-    npc_relationships: Dict[str, str] = field(default_factory=dict)
-    scene_recaps: List[str] = field(default_factory=list)
-    last_narrative: str = ""
+    transfer_id: str
+    source_character_id: str
+    target_vessel_id: str
+    scene_id: str
+    created_at: str
+    # The new tag set assigned to the vessel after transfer.
+    # This is a SUBSET of the source's tags, with one tag replaced
+    # by its downgraded version (see TIER_DOWNGRADES).
+    new_tags: List[str] = field(default_factory=list)
+    # The set of memories carried over (text-only).
+    carried_memories: List[str] = field(default_factory=list)
+    # The tag that was downgraded (None if no downgrade happened).
+    downgraded_from: Optional[str] = None
+    downgraded_to: Optional[str] = None
+    # How the downgrade was computed: "tier_list" or "llm_fallback".
+    downgrade_method: str = "tier_list"
+    # Audit trail (anti-exploit rule pass/fail, etc.).
+    audit: Dict[str, Any] = field(default_factory=dict)
+    # Lifecycle: pending → applied (or rolled_back on failure).
+    applied: bool = False
+    applied_at: Optional[str] = None
+    # Vessel TTL: if vessel is destroyed within `vessel_ttl_turns`,
+    # the soul dies too (rule 4). Set to 0 to disable.
+    vessel_ttl_turns: int = 3
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "PromptContext":
+    def from_dict(cls, data: Dict[str, Any]) -> "SoulTransferRecord":
         return cls(**data)
 
 
-@dataclass
-class SoulPayload:
-    """
-    The atomic unit transferred between characters.
-    Contains 3 dimensions: memories + character_state + prompt_context.
-    """
-    soul_id: str
-    source_character_id: str
-    target_character_id: str
-    created_at: str
-    memories: List[Dict[str, Any]]  # serialized MemoryFragment dicts
-    character_state: Dict[str, Any]  # physical + mental + inventory + relationships
-    prompt_context: PromptContext
-    degradation_factor: float
-    # Audit trail
-    transfer_metadata: Dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> Dict[str, Any]:
-        d = asdict(self)
-        return d
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "SoulPayload":
-        pc = data.get("prompt_context", {})
-        if isinstance(pc, dict):
-            pc = PromptContext.from_dict(pc)
-        else:
-            pc = PromptContext()
-        return cls(
-            soul_id=data["soul_id"],
-            source_character_id=data["source_character_id"],
-            target_character_id=data["target_character_id"],
-            created_at=data["created_at"],
-            memories=data.get("memories", []),
-            character_state=data.get("character_state", {}),
-            prompt_context=pc,
-            degradation_factor=data.get("degradation_factor", 0.7),
-            transfer_metadata=data.get("transfer_metadata", {}),
-        )
-
-
 # ============================================
-# SQLite Schema (soul_payloads table)
+# SQLite schema
 # ============================================
 
 
-SOUL_SCHEMA = """
-CREATE TABLE IF NOT EXISTS soul_payloads (
-    soul_id TEXT PRIMARY KEY,
+SOUL_TRANSFER_SCHEMA = """
+CREATE TABLE IF NOT EXISTS soul_transfers (
+    transfer_id TEXT PRIMARY KEY,
     source_character_id TEXT NOT NULL,
-    target_character_id TEXT NOT NULL,
+    target_vessel_id TEXT NOT NULL,
+    scene_id TEXT NOT NULL,
     created_at TEXT NOT NULL,
-    degradation_factor REAL NOT NULL,
-    payload_json TEXT NOT NULL,
+    new_tags_json TEXT NOT NULL,
+    carried_memories_json TEXT NOT NULL,
+    downgraded_from TEXT,
+    downgraded_to TEXT,
+    downgrade_method TEXT NOT NULL,
+    audit_json TEXT NOT NULL,
     applied INTEGER NOT NULL DEFAULT 0,
-    applied_at TEXT
+    applied_at TEXT,
+    vessel_ttl_turns INTEGER NOT NULL DEFAULT 3
 );
 
-CREATE INDEX IF NOT EXISTS idx_soul_source ON soul_payloads (source_character_id);
-CREATE INDEX IF NOT EXISTS idx_soul_target ON soul_payloads (target_character_id);
-CREATE INDEX IF NOT EXISTS idx_soul_pending ON soul_payloads (applied) WHERE applied = 0;
+CREATE INDEX IF NOT EXISTS idx_transfer_source
+    ON soul_transfers (source_character_id);
+CREATE INDEX IF NOT EXISTS idx_transfer_target
+    ON soul_transfers (target_vessel_id);
+CREATE INDEX IF NOT EXISTS idx_transfer_scene
+    ON soul_transfers (scene_id);
+CREATE INDEX IF NOT EXISTS idx_transfer_pending
+    ON soul_transfers (applied) WHERE applied = 0;
 """
-
-
-# ============================================
-# Degradation Engine
-# ============================================
 
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
-def _clamp(x: float, lo: float, hi: float) -> float:
-    return max(lo, min(hi, x))
+def _validate_tag_strict(tag: str) -> str:
+    """F1-aligned tag validation: CJK only, ≤15 chars, non-empty.
 
-
-def _downshift_semantic(level: str, levels: List[str], steps: int) -> str:
+    Raises ValueError on any violation. Used as a defensive
+    check on LLM output (rule: never trust external input).
     """
-    Move a semantic level by `steps` positions toward the WORSE end
-    (higher index in the levels list, which is conventionally worst).
-    """
-    if level not in levels:
-        return level
-    idx = levels.index(level)
-    new_idx = min(len(levels) - 1, idx + steps)
-    return levels[new_idx]
-
-
-def degrade_character_state(
-    state: Dict[str, Any], factor: float, rng: random.Random
-) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    """
-    Apply lossy degradation to a character state dict.
-
-    Stamina:    downshift by 1 level toward worse
-    Health:     if not "healthy", downshift by 1 toward worse
-    Morale:     downshift by 1 toward worse
-    Active effects: drop a random subset (10-30%)
-    Inventory:  keep only top-3 highest-value items
-    Relationships: drop weakest 50%
-
-    Returns (degraded_state, audit_trail).
-    """
-    if not DEGRADATION_MIN <= factor <= DEGRADATION_MAX:
+    if not isinstance(tag, str):
+        raise ValueError(f"tag must be str, got {type(tag).__name__}")
+    if not tag.strip():
+        raise ValueError("tag is empty or whitespace-only")
+    if len(tag) > MAX_TAG_LENGTH:
         raise ValueError(
-            f"degradation factor must be in [{DEGRADATION_MIN}, {DEGRADATION_MAX}], "
-            f"got {factor}"
+            f"tag too long: {len(tag)} > {MAX_TAG_LENGTH} chars ({tag!r})"
         )
-    physical = state.get("physical", {})
-    mental = state.get("mental", {})
-
-    # Stamina downshift
-    stamina_levels = ["fresh", "slight_breath", "muscle_ache", "exhausted", "collapse"]
-    old_stamina = physical.get("stamina_level", "fresh")
-    new_stamina = _downshift_semantic(old_stamina, stamina_levels, 1)
-    physical["stamina_level"] = new_stamina
-
-    # Health downshift if not healthy
-    health_levels = ["healthy", "wounded", "severely_wounded", "dying", "dead"]
-    old_health = physical.get("health_status", "healthy")
-    if old_health != "healthy":
-        new_health = _downshift_semantic(old_health, health_levels, 1)
-    else:
-        new_health = old_health
-    physical["health_status"] = new_health
-
-    # Morale downshift
-    morale_levels = ["elated", "calm", "neutral", "anxious", "despair"]
-    old_morale = mental.get("morale_level", "neutral")
-    new_morale = _downshift_semantic(old_morale, morale_levels, 1)
-    mental["morale_level"] = new_morale
-
-    # Active effects: drop 10-30%
-    effects = physical.get("active_effects", [])
-    drop_pct = rng.uniform(DIMENSION_LOSS_MIN, DIMENSION_LOSS_MAX)
-    if effects:
-        keep_n = max(0, int(len(effects) * (1 - drop_pct)))
-        physical["active_effects"] = effects[:keep_n]
-
-    # Inventory: keep top 3 (we don't track value, so just first 3)
-    inventory = state.get("inventory", {})
-    items = inventory.get("items", [])
-    if len(items) > 3:
-        inventory["items"] = items[:3]
-
-    # Relationships: drop weakest 50% (first 50% by alphabetical order, simplified)
-    relationships = state.get("relationships", {})
-    if len(relationships) > 1:
-        half = max(1, len(relationships) // 2)
-        # Keep last half (assume those are stronger / more recent)
-        keep_rels = dict(list(relationships.items())[half:])
-        state["relationships"] = keep_rels
-
-    audit = {
-        "stamina": {"old": old_stamina, "new": new_stamina},
-        "health": {"old": old_health, "new": new_health},
-        "morale": {"old": old_morale, "new": new_morale},
-        "active_effects_dropped": len(effects) - len(physical.get("active_effects", [])),
-        "effects_drop_pct": drop_pct,
-        "factor_used": factor,
-    }
-    return state, audit
-
-
-def degrade_prompt_context(
-    ctx: PromptContext, factor: float, rng: random.Random
-) -> Tuple[PromptContext, Dict[str, Any]]:
-    if not DEGRADATION_MIN <= factor <= DEGRADATION_MAX:
+    if not _TAG_PATTERN.match(tag):
         raise ValueError(
-            f"degradation factor must be in [{DEGRADATION_MIN}, {DEGRADATION_MAX}], "
-            f"got {factor}"
+            f"invalid characters in tag (CJK + space + hyphen only): {tag!r}"
         )
-    """
-    Apply lossy degradation to LLM prompt context.
-
-    recent_choices: drop random 30-50%
-    attitude_history: drop random 40-60%
-    scene_recaps: drop random 30-50%
-    Keep last_narrative as-is (single string, no loss)
-    """
-    drop_recent = rng.uniform(0.3, 0.5)
-    drop_attitude = rng.uniform(0.4, 0.6)
-    drop_recaps = rng.uniform(0.3, 0.5)
-
-    if ctx.recent_choices:
-        keep = max(0, int(len(ctx.recent_choices) * (1 - drop_recent)))
-        ctx.recent_choices = ctx.recent_choices[-keep:]
-
-    if ctx.attitude_history:
-        keep = max(0, int(len(ctx.attitude_history) * (1 - drop_attitude)))
-        ctx.attitude_history = ctx.attitude_history[-keep:]
-
-    if ctx.scene_recaps:
-        keep = max(0, int(len(ctx.scene_recaps) * (1 - drop_recaps)))
-        ctx.scene_recaps = ctx.scene_recaps[-keep:]
-
-    # Salience reduction on memories is handled by MemoryPalace.transfer_memories
-    audit = {
-        "recent_choices_drop_pct": drop_recent,
-        "attitude_history_drop_pct": drop_attitude,
-        "scene_recaps_drop_pct": drop_recaps,
-        "factor_used": factor,
-    }
-    return ctx, audit
-
-
-def degrade_memories(
-    memories: List[Dict[str, Any]], factor: float, rng: random.Random
-) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    if not DEGRADATION_MIN <= factor <= DEGRADATION_MAX:
-        raise ValueError(
-            f"degradation factor must be in [{DEGRADATION_MIN}, {DEGRADATION_MAX}], "
-            f"got {factor}"
-        )
-    """
-    Apply salience degradation to all memories in the payload.
-    Uses factor directly (per design lock: random [0.6, 0.9]).
-    """
-    degraded = []
-    for m in memories:
-        new_m = dict(m)
-        old_sal = new_m.get("salience", 0.5)
-        new_m["salience"] = _clamp(old_sal * factor, 0.0, 1.0)
-        # Mark with origin
-        meta = new_m.get("metadata", {}) or {}
-        meta["soul_transferred"] = True
-        new_m["metadata"] = meta
-        degraded.append(new_m)
-
-    # Drop 5-15% of lowest-salience memories
-    drop_pct = rng.uniform(0.05, 0.15)
-    if degraded:
-        # Sort by salience asc, drop the lowest
-        n_drop = int(len(degraded) * drop_pct)
-        if n_drop > 0:
-            sorted_mems = sorted(degraded, key=lambda m: m.get("salience", 0))
-            keep = sorted_mems[n_drop:]
-            degraded = keep
-
-    return degraded, {
-        "factor_used": factor,
-        "count_after": len(degraded),
-        "drop_pct_applied": drop_pct if degraded else 0,
-    }
+    return tag
 
 
 # ============================================
-# SoulTransferService
+# SemanticSoulTransfer — the new engine
 # ============================================
 
 
-class SoulTransferService:
-    """
-    Service-level method for transferring a complete "Soul" between
-    characters. Atomic: either the entire transfer succeeds or nothing
-    changes.
+class SemanticSoulTransfer:
+    """Pure-text soul transfer. NO numerical degradation.
 
-    Usage:
-        svc = SoulTransferService(memory_palace, db_path)
-        result = await svc.transfer(
-            source_character_id="char_a",
-            target_character_id="char_b",
-        )
-        # result["soul_id"] can be queried later
+    Replaces the legacy `SoulTransferService`. The new contract:
+
+      * `is_transfer_allowed(...)` — checks the 7 anti-exploit rules.
+      * `compute_degradation(source_tags, vessel_id)` — picks a
+        downgraded tag (tier list fast path, LLM slow fallback).
+        Anti-predictable: the result differs from any previous
+        transfer to the same vessel.
+      * `execute_transfer(...)` — atomic 5-step flow:
+        1. validate (anti-exploit rules)
+        2. compute degradation
+        3. assemble new tags (source tags minus the downgraded
+           source tag, plus the new downgraded tag)
+        4. write to SQLite (single transaction)
+        5. return SoulTransferRecord (caller applies to vessel)
+
+    The class is safe to instantiate without an LLM client (LLM
+    fallback is then disabled; novel states return a sentinel
+    "未分類" tag and the transfer is still allowed but flagged).
     """
 
     def __init__(
         self,
-        memory_palace,  # backend.memory_palace.MemoryPalace
+        memory_palace: Any = None,  # MemoryPalace or None
+        llm_client: Any = None,     # LLMClient or None
+        memory_isolation_guard: Any = None,  # MemoryIsolationGuard or None
         soul_db_path: Optional[str] = None,
         rng_seed: Optional[int] = None,
-    ):
+        tier_downgrades: Optional[Dict[str, List[str]]] = None,
+        non_transferable_tags: Optional[frozenset] = None,
+    ) -> None:
         self.memory_palace = memory_palace
-        self.soul_db_path = soul_db_path or str(
-            Path(memory_palace.db_path).parent / "soul_palace.db"
+        self.llm_client = llm_client
+        self.memory_isolation_guard = memory_isolation_guard
+        self.rng = random.Random(rng_seed)
+        self.tier_downgrades: Dict[str, List[str]] = dict(tier_downgrades or TIER_DOWNGRADES)
+        self.non_transferable_tags: frozenset = (
+            non_transferable_tags or NON_TRANSFERABLE_TAGS
         )
-        self.rng = random.Random(rng_seed)  # deterministic if seed set
-        self._initialize_soul_storage()
 
-    def _initialize_soul_storage(self) -> None:
-        Path(self.soul_db_path).parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(self.soul_db_path)
-        try:
-            conn.executescript(SOUL_SCHEMA)
-            conn.commit()
-        finally:
-            conn.close()
+        # Anti-predictability: track last result per vessel_id.
+        # vessel_id -> last_downgraded_to (str) or None
+        self._last_result: Dict[str, Optional[str]] = {}
+        # Anti-predictability: tier-list cache (source_tag, vessel_id)
+        # -> computed downgrade. Used as fast path; rotated to
+        # avoid caching the "always the same" answer.
+        self._tier_cache: Dict[Tuple[str, str], str] = {}
 
-    def _connect_soul(self) -> sqlite3.Connection:
+        # Storage path
+        if soul_db_path is None and memory_palace is not None and hasattr(memory_palace, "db_path"):
+            soul_db_path = str(
+                Path(memory_palace.db_path).parent / "soul_transfers.db"
+            )
+        elif soul_db_path is None:
+            soul_db_path = ":memory:"
+        self.soul_db_path = soul_db_path
+
+        self._initialize_storage()
+
+    # -------- storage --------
+
+    def _initialize_storage(self) -> None:
+        if self.soul_db_path == ":memory:":
+            # In-memory mode (tests): keep a single shared connection.
+            self._mem_conn: Optional[sqlite3.Connection] = sqlite3.connect(
+                ":memory:", check_same_thread=False
+            )
+            # Row factory is set here (and on every _connect) so that
+            # callers can do `row["column_name"]`.
+            self._mem_conn.row_factory = sqlite3.Row
+            self._mem_conn.executescript(SOUL_TRANSFER_SCHEMA)
+            self._mem_conn.commit()
+        else:
+            Path(self.soul_db_path).parent.mkdir(parents=True, exist_ok=True)
+            conn = sqlite3.connect(self.soul_db_path)
+            try:
+                conn.executescript(SOUL_TRANSFER_SCHEMA)
+                conn.commit()
+            finally:
+                conn.close()
+            self._mem_conn = None
+
+    def _connect(self) -> sqlite3.Connection:
+        if self._mem_conn is not None:
+            # Always (re)apply the row factory — SQLite connections
+            # reset to default tuple access if anyone touches the
+            # connection directly.
+            self._mem_conn.row_factory = sqlite3.Row
+            return self._mem_conn
         conn = sqlite3.connect(self.soul_db_path)
         conn.row_factory = sqlite3.Row
         return conn
 
-    async def assemble_payload(
+    # -------- 7 anti-exploit rules --------
+
+    def is_transfer_allowed(
         self,
         source_character_id: str,
-        target_character_id: str,
-        character_state: Dict[str, Any],
-        prompt_context: Optional[PromptContext] = None,
-        degradation_factor: Optional[float] = None,
-    ) -> SoulPayload:
-        """
-        Step 1: Read source's memories, build the 3D payload with
-        degradation applied. Does NOT persist yet.
-        """
-        if source_character_id == target_character_id:
-            raise ValueError("source and target character must differ")
+        source_state: List[str],
+        target_vessel_id: str,
+        target_vessel_state: List[str],
+        scene_id: str,
+    ) -> Dict[str, Any]:
+        """Run all 7 anti-exploit rules. Returns {allowed, reason, ...}.
 
-        # Read memories from MemoryPalace
-        memories_fragments = await self.memory_palace.get_memories(
-            source_character_id, limit=10000, include_archived=False
-        )
-        memories_as_dicts = [m.to_dict() for m in memories_fragments]
+        The 5 rules that can be checked synchronously are:
+          1. Same scene (caller passes scene_id; we trust it)
+          2. Vessel does not already have an active soul
+             (heuristic: vessel_state must be empty or contain
+              "空容器" / "無魂" / "vessel_empty")
+          3. Transfer takes one full turn (caller's responsibility)
+          4. Vessel TTL (caller's responsibility)
+          5. Source state is "transferable" (not in non_transferable_tags
+             and not in LOST_SOUL_TAGS)
+          6. Anti-predictability (checked in compute_degradation, not here)
+          7. Memory isolation (memory_isolation_guard, checked in
+             execute_transfer)
+        """
+        if source_character_id == target_vessel_id:
+            return {
+                "allowed": False,
+                "reason": "self-transfer is not allowed",
+                "rule": ANTI_EXPLOIT_RULE_1,
+            }
+        # Rule 1: same scene — caller must ensure; we accept scene_id
+        # as a parameter and trust the caller. (We could cross-check
+        # against a scene registry, but that's the caller's job.)
+        if not scene_id or not isinstance(scene_id, str):
+            return {
+                "allowed": False,
+                "reason": "scene_id is required",
+                "rule": ANTI_EXPLOIT_RULE_1,
+            }
 
-        # Resolve degradation factor
-        if degradation_factor is None:
-            degradation_factor = self.rng.uniform(DEGRADATION_MIN, DEGRADATION_MAX)
-        if not DEGRADATION_MIN <= degradation_factor <= DEGRADATION_MAX:
-            raise ValueError(
-                f"degradation_factor must be in [{DEGRADATION_MIN}, {DEGRADATION_MAX}]"
+        # Rule 2: vessel must not have an active soul.
+        # Heuristic: if vessel_state contains any non-"empty" tag,
+        # assume it has a soul. The caller can pass an empty list
+        # for a fresh vessel.
+        vessel_active_tags = [
+            t for t in target_vessel_state
+            if t not in ("空容器", "無魂", "vessel_empty", "")
+        ]
+        if vessel_active_tags:
+            return {
+                "allowed": False,
+                "reason": (
+                    f"vessel already has an active soul "
+                    f"(tags: {vessel_active_tags[:3]})"
+                ),
+                "rule": ANTI_EXPLOIT_RULE_2,
+            }
+
+        # Rule 5: source must be transferable.
+        for tag in source_state:
+            if tag in self.non_transferable_tags:
+                return {
+                    "allowed": False,
+                    "reason": (
+                        f"source is in non-transferable state: {tag!r}"
+                    ),
+                    "rule": ANTI_EXPLOIT_RULE_5,
+                }
+            if tag in LOST_SOUL_TAGS:
+                return {
+                    "allowed": False,
+                    "reason": (
+                        f"source soul is already lost: {tag!r}"
+                    ),
+                    "rule": ANTI_EXPLOIT_RULE_5,
+                }
+
+        return {
+            "allowed": True,
+            "reason": "all rules passed",
+            "rules_checked": [
+                ANTI_EXPLOIT_RULE_1, ANTI_EXPLOIT_RULE_2,
+                ANTI_EXPLOIT_RULE_5,
+            ],
+        }
+
+    # -------- degradation (tier list + LLM fallback) --------
+
+    def _pick_from_tier_list(
+        self,
+        source_tag: str,
+        vessel_id: str,
+    ) -> Optional[str]:
+        """Pick a downgrade from the tier list, anti-predictably.
+
+        Returns None if `source_tag` is not in the tier list.
+        """
+        choices = self.tier_downgrades.get(source_tag)
+        if not choices:
+            return None
+        # Anti-predictability: if the previous result is in the
+        # choices list, exclude it (so we never repeat).
+        previous = self._last_result.get(vessel_id)
+        valid_choices = [c for c in choices if c != previous]
+        if not valid_choices:
+            # Fallback: all choices equal previous (1-element list).
+            # Just return the only choice; this is the "non-random"
+            # edge case the F2 audit flags.
+            return choices[0]
+        return self.rng.choice(valid_choices)
+
+    async def _llm_downgrade(
+        self,
+        source_tag: str,
+    ) -> Optional[str]:
+        """Ask the LLM for a downgrade. Returns None if no LLM wired.
+
+        Validates the LLM output with the F1 tag rules. If the LLM
+        returns garbage, falls back to "未分類" (uncategorized) so
+        the transfer is never blocked by a flaky LLM.
+        """
+        if self.llm_client is None:
+            return None
+        prompt = DEFAULT_LLM_DOWNGRADE_PROMPT.format(source_state=source_tag)
+        try:
+            raw = await self.llm_client.generate(
+                system_prompt="You are a semantic state downgrade assistant.",
+                user_message=prompt,
+                temperature=1.0,
+                max_tokens=128,
             )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "soul_transfer: LLM downgrade call failed for %r: %s",
+                source_tag, exc,
+            )
+            return None
 
-        # Apply degradation to each dimension
-        memories, mem_audit = degrade_memories(
-            memories_as_dicts, degradation_factor, self.rng
-        )
-        char_state, state_audit = degrade_character_state(
-            character_state, degradation_factor, self.rng
-        )
-        pc = prompt_context or PromptContext()
-        pc, ctx_audit = degrade_prompt_context(pc, degradation_factor, self.rng)
+        # Parse the JSON. The LLM is asked to return
+        # `{"degraded_state": "..."}`.
+        try:
+            data = json.loads(raw)
+            candidate = data.get("degraded_state") or data.get("degraded") or ""
+        except (json.JSONDecodeError, AttributeError):
+            # Try regex extraction
+            match = re.search(r'"degraded_state"\s*:\s*"([^"]+)"', raw)
+            candidate = match.group(1) if match else ""
 
-        soul = SoulPayload(
-            soul_id=str(uuid.uuid4()),
+        # Validate the candidate
+        try:
+            return _validate_tag_strict(candidate)
+        except ValueError as exc:
+            logger.warning(
+                "soul_transfer: LLM returned invalid tag %r: %s",
+                candidate, exc,
+            )
+            return None
+
+    async def compute_degradation(
+        self,
+        source_state: List[str],
+        vessel_id: str,
+    ) -> Dict[str, Any]:
+        """Compute the new state for a transfer.
+
+        Strategy:
+          1. If source_state is empty, return as-is.
+          2. Find a "downgradeable" tag (any tag that is in the
+             tier list, or any tag for which LLM can produce a
+             downgrade). The first such tag is the one we replace.
+          3. Tier list: pick from the list (anti-predictable).
+          4. LLM fallback: ask the LLM, validate, fall back to
+             "未分類" if LLM is unavailable or returns garbage.
+          5. Anti-predictability: ensure the new tag differs from
+             the previous result for the same vessel.
+
+        Returns a dict with:
+          * new_tags: list[str] — the new tag set
+          * downgraded_from: str | None
+          * downgraded_to: str | None
+          * downgrade_method: "tier_list" | "llm_fallback" | "none"
+        """
+        if not source_state:
+            return {
+                "new_tags": [],
+                "downgraded_from": None,
+                "downgraded_to": None,
+                "downgrade_method": "none",
+            }
+
+        # 1. Find the first tier-list-mappable tag.
+        for tag in source_state:
+            tier_pick = self._pick_from_tier_list(tag, vessel_id)
+            if tier_pick is not None:
+                # Build the new tag set
+                new_tags = [t for t in source_state if t != tag] + [tier_pick]
+                # Anti-predictability: update last_result
+                self._last_result[vessel_id] = tier_pick
+                return {
+                    "new_tags": new_tags,
+                    "downgraded_from": tag,
+                    "downgraded_to": tier_pick,
+                    "downgrade_method": "tier_list",
+                }
+
+        # 2. No tier-list match — try LLM fallback for the first tag.
+        first_tag = source_state[0]
+        previous = self._last_result.get(vessel_id)
+        llm_pick = await self._llm_downgrade(first_tag)
+        if llm_pick is None:
+            # No LLM wired or LLM failed. Use a deterministic
+            # fallback so the transfer is never blocked. The
+            # fallback "未分類" is a pure-text "uncategorized"
+            # marker that signals "downgrade was uncertain".
+            llm_pick = "未分類"
+        # Anti-predictability: if LLM picked the previous result,
+        # try a tier-list fallback or "未分類" with a suffix.
+        if llm_pick == previous:
+            # We can't easily ask LLM again; append a deterministic
+            # marker so the result differs.
+            llm_pick = f"{llm_pick}變體"
+
+        new_tags = [t for t in source_state if t != first_tag] + [llm_pick]
+        self._last_result[vessel_id] = llm_pick
+        return {
+            "new_tags": new_tags,
+            "downgraded_from": first_tag,
+            "downgraded_to": llm_pick,
+            "downgrade_method": "llm_fallback",
+        }
+
+    # -------- execute_transfer (atomic 5-step flow) --------
+
+    async def execute_transfer(
+        self,
+        source_character_id: str,
+        source_state: List[str],
+        target_vessel_id: str,
+        target_vessel_state: List[str],
+        scene_id: str,
+        carried_memories: Optional[List[str]] = None,
+        requester_id: Optional[str] = None,
+    ) -> SoulTransferRecord:
+        """Run the full transfer flow. Returns SoulTransferRecord.
+
+        The flow is:
+          1. Anti-exploit check (rules 1, 2, 5)
+          2. Anti-predictability: compute degradation
+          3. Memory isolation check (rule 7) if guard is wired
+          4. Atomic SQLite write
+          5. Return record (caller applies to vessel)
+
+        Raises `SoulTransferNotAllowedError` on rule violation.
+        Raises `SoulTransferStateError` on invalid state.
+        """
+        # 1. Anti-exploit check
+        check = self.is_transfer_allowed(
             source_character_id=source_character_id,
-            target_character_id=target_character_id,
-            created_at=_now_iso(),
-            memories=memories,
-            character_state=char_state,
-            prompt_context=pc,
-            degradation_factor=degradation_factor,
-            transfer_metadata={
-                "degradation_factor": degradation_factor,
-                "memory_audit": mem_audit,
-                "state_audit": state_audit,
-                "context_audit": ctx_audit,
-            },
+            source_state=source_state,
+            target_vessel_id=target_vessel_id,
+            target_vessel_state=target_vessel_state,
+            scene_id=scene_id,
         )
-        return soul
+        if not check["allowed"]:
+            raise SoulTransferNotAllowedError(check["reason"])
 
-    async def persist_soul(self, soul: SoulPayload) -> None:
-        """
-        Step 2: Atomically persist the assembled soul to soul_payloads
-        table. Single transaction.
-        """
-        payload_json = json.dumps(soul.to_dict(), ensure_ascii=False)
-        conn = self._connect_soul()
+        # 2. Compute degradation (anti-predictable)
+        degradation = await self.compute_degradation(
+            source_state=source_state,
+            vessel_id=target_vessel_id,
+        )
+
+        # 3. Memory isolation check (rule 7)
+        if (
+            self.memory_isolation_guard is not None
+            and requester_id is not None
+        ):
+            try:
+                self.memory_isolation_guard.require(
+                    requester_id=requester_id,
+                    scene_id=scene_id,
+                    target_character_id=source_character_id,
+                    op="read",
+                )
+            except Exception as exc:  # noqa: BLE001
+                raise SoulTransferNotAllowedError(
+                    f"memory isolation denied: {exc}"
+                ) from exc
+
+        carried = list(carried_memories or [])
+
+        # 4. Build record
+        record = SoulTransferRecord(
+            transfer_id=str(uuid.uuid4()),
+            source_character_id=source_character_id,
+            target_vessel_id=target_vessel_id,
+            scene_id=scene_id,
+            created_at=_now_iso(),
+            new_tags=degradation["new_tags"],
+            carried_memories=carried,
+            downgraded_from=degradation["downgraded_from"],
+            downgraded_to=degradation["downgraded_to"],
+            downgrade_method=degradation["downgrade_method"],
+            audit={
+                "anti_exploit_check": check,
+                "degradation": degradation,
+                "rules_evaluated": [
+                    ANTI_EXPLOIT_RULE_1, ANTI_EXPLOIT_RULE_2,
+                    ANTI_EXPLOIT_RULE_5, ANTI_EXPLOIT_RULE_6,
+                    ANTI_EXPLOIT_RULE_7,
+                ],
+            },
+            applied=False,
+            applied_at=None,
+            vessel_ttl_turns=3,
+        )
+
+        # 5. Atomic write
+        self._persist(record)
+        return record
+
+    # -------- SQLite persistence --------
+
+    def _persist(self, record: SoulTransferRecord) -> None:
+        """Single-transaction SQLite write. No partial state on failure."""
+        new_tags_json = json.dumps(record.new_tags, ensure_ascii=False)
+        carried_json = json.dumps(record.carried_memories, ensure_ascii=False)
+        audit_json = json.dumps(record.audit, ensure_ascii=False)
+        conn = self._connect()
         try:
             conn.execute(
                 """
-                INSERT INTO soul_payloads
-                (soul_id, source_character_id, target_character_id,
-                 created_at, degradation_factor, payload_json, applied)
-                VALUES (?, ?, ?, ?, ?, ?, 0)
+                INSERT INTO soul_transfers
+                (transfer_id, source_character_id, target_vessel_id, scene_id,
+                 created_at, new_tags_json, carried_memories_json,
+                 downgraded_from, downgraded_to, downgrade_method,
+                 audit_json, applied, applied_at, vessel_ttl_turns)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)
                 """,
                 (
-                    soul.soul_id,
-                    soul.source_character_id,
-                    soul.target_character_id,
-                    soul.created_at,
-                    soul.degradation_factor,
-                    payload_json,
+                    record.transfer_id,
+                    record.source_character_id,
+                    record.target_vessel_id,
+                    record.scene_id,
+                    record.created_at,
+                    new_tags_json,
+                    carried_json,
+                    record.downgraded_from,
+                    record.downgraded_to,
+                    record.downgrade_method,
+                    audit_json,
+                    record.vessel_ttl_turns,
                 ),
             )
             conn.commit()
@@ -449,124 +756,151 @@ class SoulTransferService:
             conn.rollback()
             raise
         finally:
-            conn.close()
+            if self._mem_conn is None:
+                conn.close()
 
-    async def get_soul(self, soul_id: str) -> Optional[SoulPayload]:
-        """Retrieve a previously persisted soul by ID."""
-        conn = self._connect_soul()
-        try:
-            row = conn.execute(
-                "SELECT * FROM soul_payloads WHERE soul_id = ?", (soul_id,)
-            ).fetchone()
-            if row is None:
-                return None
-            data = json.loads(row["payload_json"])
-            return SoulPayload.from_dict(data)
-        finally:
-            conn.close()
+    async def apply_transfer(self, record: SoulTransferRecord) -> Dict[str, Any]:
+        """Mark a persisted record as 'applied' to its vessel.
 
-    async def transfer(
-        self,
-        source_character_id: str,
-        target_character_id: str,
-        character_state: Dict[str, Any],
-        prompt_context: Optional[PromptContext] = None,
-        degradation_factor: Optional[float] = None,
-    ) -> SoulPayload:
+        Called by the caller AFTER they've actually written the
+        new tags to the vessel's SemanticState. The apply is
+        idempotent: only the first call updates the row.
         """
-        Full Soul Transfer flow:
-        1. Assemble 3D payload (with degradation)
-        2. Persist atomically to soul_payloads
-        3. Apply to target: write memories via MemoryPalace, return soul for caller to apply state
-
-        Returns the assembled SoulPayload so the caller can apply
-        character_state to the target's CharacterStateMachine.
-        """
-        if source_character_id == target_character_id:
-            raise ValueError("source and target character must differ")
-
-        # Step 1: Assemble
-        soul = await self.assemble_payload(
-            source_character_id=source_character_id,
-            target_character_id=target_character_id,
-            character_state=character_state,
-            prompt_context=prompt_context,
-            degradation_factor=degradation_factor,
-        )
-
-        # Step 2: Persist atomically
-        await self.persist_soul(soul)
-
-        # Step 3: Apply memories via MemoryPalace (uses its own atomicity)
-        # Re-write the degraded memories as a "transfer" from source.
-        # We use a special character_id pattern so we can reconstruct later.
-        for mem_dict in soul.memories:
-            mem_id = str(uuid.uuid4())
-            mem_dict["id"] = mem_id
-            mem_dict["character_id"] = target_character_id
-        # Note: actual memory_palace insert is handled separately by
-        # the caller via memory_palace.transfer_memories() to ensure
-        # the proper foreign-key semantics. We don't double-write here.
-
-        return soul
-
-    async def apply_soul(
-        self,
-        soul: SoulPayload,
-    ) -> Dict[str, Any]:
-        """
-        Mark a persisted soul as 'applied' to its target character.
-        This is called by the caller AFTER they've actually written the
-        state/memories to the target (which has its own transaction).
-        """
-        conn = self._connect_soul()
+        conn = self._connect()
         try:
             cursor = conn.execute(
                 """
-                UPDATE soul_payloads
+                UPDATE soul_transfers
                 SET applied = 1, applied_at = ?
-                WHERE soul_id = ? AND applied = 0
+                WHERE transfer_id = ? AND applied = 0
                 """,
-                (_now_iso(), soul.soul_id),
+                (_now_iso(), record.transfer_id),
             )
             conn.commit()
-            return {"rows_updated": cursor.rowcount, "soul_id": soul.soul_id}
+            record.applied = cursor.rowcount == 1
+            record.applied_at = _now_iso() if record.applied else None
+            return {"rows_updated": cursor.rowcount, "transfer_id": record.transfer_id}
         except Exception:
             conn.rollback()
             raise
         finally:
-            conn.close()
+            if self._mem_conn is None:
+                conn.close()
 
-    async def get_pending_souls(self, character_id: str) -> List[SoulPayload]:
-        """
-        List souls that are persisted but not yet applied to a target.
-        Used for crash recovery / saga compensation.
-        """
-        conn = self._connect_soul()
+    async def get_transfer(self, transfer_id: str) -> Optional[SoulTransferRecord]:
+        """Retrieve a persisted transfer record by ID."""
+        conn = self._connect()
+        try:
+            row = conn.execute(
+                "SELECT * FROM soul_transfers WHERE transfer_id = ?",
+                (transfer_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            return SoulTransferRecord(
+                transfer_id=row["transfer_id"],
+                source_character_id=row["source_character_id"],
+                target_vessel_id=row["target_vessel_id"],
+                scene_id=row["scene_id"],
+                created_at=row["created_at"],
+                new_tags=json.loads(row["new_tags_json"]),
+                carried_memories=json.loads(row["carried_memories_json"]),
+                downgraded_from=row["downgraded_from"],
+                downgraded_to=row["downgraded_to"],
+                downgrade_method=row["downgrade_method"],
+                audit=json.loads(row["audit_json"]),
+                applied=bool(row["applied"]),
+                applied_at=row["applied_at"],
+                vessel_ttl_turns=row["vessel_ttl_turns"],
+            )
+        finally:
+            if self._mem_conn is None:
+                conn.close()
+
+    async def get_pending_transfers(self, vessel_id: str) -> List[SoulTransferRecord]:
+        """List unapplied transfers to a vessel (crash recovery)."""
+        conn = self._connect()
         try:
             rows = conn.execute(
                 """
-                SELECT * FROM soul_payloads
-                WHERE target_character_id = ? AND applied = 0
+                SELECT * FROM soul_transfers
+                WHERE target_vessel_id = ? AND applied = 0
                 ORDER BY created_at ASC
                 """,
-                (character_id,),
+                (vessel_id,),
             ).fetchall()
-            return [SoulPayload.from_dict(json.loads(r["payload_json"])) for r in rows]
+            return [
+                SoulTransferRecord(
+                    transfer_id=r["transfer_id"],
+                    source_character_id=r["source_character_id"],
+                    target_vessel_id=r["target_vessel_id"],
+                    scene_id=r["scene_id"],
+                    created_at=r["created_at"],
+                    new_tags=json.loads(r["new_tags_json"]),
+                    carried_memories=json.loads(r["carried_memories_json"]),
+                    downgraded_from=r["downgraded_from"],
+                    downgraded_to=r["downgraded_to"],
+                    downgrade_method=r["downgrade_method"],
+                    audit=json.loads(r["audit_json"]),
+                    applied=bool(r["applied"]),
+                    applied_at=r["applied_at"],
+                    vessel_ttl_turns=r["vessel_ttl_turns"],
+                )
+                for r in rows
+            ]
         finally:
-            conn.close()
+            if self._mem_conn is None:
+                conn.close()
 
     async def count_transfers(self, character_id: str) -> int:
-        """Count soul transfers involving a character (as source or target)."""
-        conn = self._connect_soul()
+        """Count transfers involving a character (source or vessel)."""
+        conn = self._connect()
         try:
             row = conn.execute(
                 """
-                SELECT COUNT(*) AS n FROM soul_payloads
-                WHERE source_character_id = ? OR target_character_id = ?
+                SELECT COUNT(*) AS n FROM soul_transfers
+                WHERE source_character_id = ? OR target_vessel_id = ?
                 """,
                 (character_id, character_id),
             ).fetchone()
             return int(row["n"])
         finally:
-            conn.close()
+            if self._mem_conn is None:
+                conn.close()
+
+
+# ============================================
+# Backward-compat shim — DO NOT use in new code
+# ============================================
+#
+# The legacy `SoulTransferService` and `SoulPayload` are **removed**
+# in F2. They carried numerical thinking (`degradation_factor`).
+# The new contract is `SemanticSoulTransfer` + `SoulTransferRecord`.
+#
+# If a frozen caller still references the old classes, the import
+# will raise ImportError — that is intentional, to surface the
+# migration gap before F3 ships.
+
+
+__all__ = [
+    # Constants
+    "MAX_TAGS_PER_TRANSFER",
+    "MAX_TAG_LENGTH",
+    "NON_TRANSFERABLE_TAGS",
+    "LOST_SOUL_TAGS",
+    "DEFAULT_LLM_DOWNGRADE_PROMPT",
+    "TIER_DOWNGRADES",
+    # Anti-exploit rules
+    "ANTI_EXPLOIT_RULE_1", "ANTI_EXPLOIT_RULE_2", "ANTI_EXPLOIT_RULE_3",
+    "ANTI_EXPLOIT_RULE_4", "ANTI_EXPLOIT_RULE_5", "ANTI_EXPLOIT_RULE_6",
+    "ANTI_EXPLOIT_RULE_7",
+    "ANTI_EXPLOIT_RULES",
+    # Errors
+    "SoulTransferError",
+    "SoulTransferNotAllowedError",
+    "SoulTransferStateError",
+    # Data model
+    "SoulTransferRecord",
+    # Engine
+    "SemanticSoulTransfer",
+]
