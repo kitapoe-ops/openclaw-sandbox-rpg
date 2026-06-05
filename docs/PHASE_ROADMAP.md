@@ -97,11 +97,10 @@
 - **Why now:** The backend has 23 endpoints, the frontend doesn't use any of them. Close the loop.
 - **Risk:** Low. Mostly frontend JS work.
 
-### Phase D5 — Docker deploy to Pi5
-- **Effort:** ~1 hr
-- **Scope:** Use the existing `docker-compose.yml`. Add a `Dockerfile` for the backend. Deploy to `kitahim.ddns.net` (Pi5 already has Caddy reverse proxy + Cloudflare Tunnel).
-- **Why now:** The framework is feature-complete enough to demo in production. Real-world usage will surface issues that the test suite misses.
-- **Risk:** Medium. Pi5 has 8GB RAM, need to verify the embedding model + R1-14B don't OOM.
+### Phase D5 — ~~Docker deploy to Pi5~~ **REMOVED 2026-06-05**
+- **Status:** ~~Planned~~ Cancelled by user decision. Do not revive.
+- **Reason:** Pi5 (8GB RAM, no GPU) cannot host R1-14B (~9GB VRAM) + embedding model (~200MB) + FastAPI + Postgres + APScheduler. The framework is local-developer-only; production deploy is out of scope.
+- **Action:** Never re-introduce this phase. Audit function `audit_phase_d5_pi5_deploy` is now deprecated — keep the code (not deleted, for historical reference) but do not invoke it.
 
 ### Phase D6 — Real LLM client to MiniMax-M3 cloud
 - **Effort:** ~1 hr
@@ -115,7 +114,7 @@
 
 The framework's north star is **persistent AI-driven narrative**. By Phase D6, a player should be able to:
 
-1. Spin up the backend (Docker or venv)
+1. Spin up the backend locally (venv)
 2. Open `demo.html` in a browser
 3. Spend 50 turns exploring a YAML-defined world
 4. Close the laptop, return two weeks later
@@ -124,5 +123,7 @@ The framework's north star is **persistent AI-driven narrative**. By Phase D6, a
 7. R1-14B has caught every hallucination along the way
 
 The Memory Palace is the keystone. Everything else (state machine, physics lock, audit hook) exists to make the Memory Palace trustworthy enough to persist across sessions.
+
+**Deployment scope: LOCAL-ONLY.** The framework is designed for local development (single-machine venv + LM Studio for R1-14B). Production / Pi5 / cloud deploy is explicitly out of scope — see removed Phase D5.
 
 Beyond Phase D, the next major axis is **multiplayer** — currently the framework assumes a single player per scene. The async turn system was designed with multiplayer in mind, but the scenes are not shared between concurrent players. This is a Phase E+ scope.

@@ -102,7 +102,7 @@ incorporate R1's concerns into its plan.
 |----------|------:|---------------|-------------|
 | `audit_phase_d1_merge` | D1 | memory_palace.py + memory_palace_integration.py + test_memory_palace.py + test_memory_palace_integration.py | Before deciding the merge strategy (keep-both vs single-module-with-two-classes) or starting the migration of the 30 existing tests. |
 | `audit_phase_d3_repository` | D3 | memory_palace_integration.py + persistence_pg.py + vector_store.py + WAVE2_MEMORY_PALACE.md | Before extracting the `MemoryRepository` interface and choosing the embedding-model load pattern. |
-| `audit_phase_d5_pi5_deploy` | D5 | docker-compose.yml + requirements.txt + main.py + r1_audit_client.py | Before deploying to kitahim.ddns.net (Pi5, 8GB RAM, no GPU). Verifies RAM budget, R1-14B absence, Postgres tradeoff, Caddy/Cloudflare-Tunnel topology. |
+| `audit_phase_d5_pi5_deploy` | ~~D5~~ **DEPRECATED** | Pi5 deploy cancelled 2026-06-05. Function kept for historical reference, do not invoke. |n.py + r1_audit_client.py | Before deploying to kitahim.ddns.net (Pi5, 8GB RAM, no GPU). Verifies RAM budget, R1-14B absence, Postgres tradeoff, Caddy/Cloudflare-Tunnel topology. |
 | `audit_phase_d6_llm_client` | D6 | llm_client.py + r1_audit_client.py + api/action.py + turn_system.py | Before replacing the existing MiniMax-M3 client (or adding retry / rate-limit / cache). Verifies retry contract, 429 handling, cache placement, and M3-specific quirks (thinking mode, 1M context). |
 
 Each function carries a `context` block that includes the shipped
@@ -268,7 +268,7 @@ If the model isn't loaded, you'll get a clear
 - R1-14B Q4_K_M: ~9GB VRAM. Requires a discrete GPU.
 - R1-14B Q4_K_M on CPU (no GPU): ~30s per audit. Tolerable for ad-hoc
   use, painful for CI.
-- For Pi5 (Phase D5): R1-14B **cannot** run. See §4 / `audit_phase_d5_pi5_deploy`
+- For Pi5 (Phase D5 ~~Planned~~ **REMOVED 2026-06-05**): R1-14B cannot run on Pi5 (8GB RAM, no GPU). User decision: deploy scope is local-only. The `audit_phase_d5_pi5_deploy` function is deprecated; do not invoke.`
   for the fail-gracefully path.
 
 ---

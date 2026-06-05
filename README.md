@@ -46,7 +46,7 @@ The design goal is simple: build a sandbox where a player can spend 50 turns exp
 | LLM local | DeepSeek-R1-14B | Q4_K_M | Audit / verification |
 | Embeddings | sentence-transformers | all-MiniLM-L6-v2 | 384-dim vectors |
 | Tests | pytest + pytest-asyncio | 8.0 | 161 tests, 5.3s |
-| Deploy | Docker Compose | — | Pi5 production target |
+| Deploy | Local venv | — | Local-only (Pi5/cloud deploy out of scope) |
 
 ---
 
@@ -235,7 +235,7 @@ backend/tests/  (161 tests, 5.3s full suite)
 | **Phase D2** | Clean 2 pre-existing warnings | Planned | -- |
 | **Phase D3** | Memory Palace Phase B+C (real embeddings) | Planned | -- |
 | **Phase D4** | Frontend demo.html full E2E | Planned | -- |
-| **Phase D5** | Docker deploy to Pi5 | Planned | -- |
+| **Phase D5** | ~~Docker deploy to Pi5~~ | **REMOVED** | -- |
 | **Phase D6** | Real LLM client to MiniMax-M3 cloud | Planned | -- |
 
 ---
