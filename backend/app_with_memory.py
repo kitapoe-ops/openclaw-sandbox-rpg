@@ -253,6 +253,131 @@ async def list_characters() -> List[Dict[str, Any]]:
 
 _wave2_app.include_router(_d4_list_router)
 
+
+# ============================================
+# E6a: WebSocket fan-out router for 1-4 player multiplayer
+# ============================================
+# Per the M3-as-R1 audit (docs/AUDIT_D4_M3.json) the game scope
+# allows 1-4 players per scene, but the existing Wave 2 stack
+# has only a per-character WebSocket endpoint
+# (``/ws/game/{character_id}``). To support multi-player fan-out
+# ("player A acts → server pushes the event to players B/C/D in
+# the same scene") we ship a *new* connection layer at
+# ``/ws/multiplayer/{scene_id}/{player_id}`` plus a server-side
+# HTTP ``POST /api/multiplayer/{scene_id}/broadcast`` that
+# downstream code (e.g. the action processor in
+# :mod:`backend.api.action_processor`) can call to trigger a
+# scene-wide push.
+#
+# The manager itself lives in a new file
+# ``backend/ws/multiplayer_router.py`` (not in the protected
+# list). We import it lazily here so this module can still be
+# imported in unit tests that don't need the WS layer.
+from fastapi import WebSocket, WebSocketDisconnect  # noqa: E402
+from .ws.multiplayer_router import (  # noqa: E402
+    MultiplayerConnectionManager,
+    get_multiplayer_manager,
+    multiplayer_ws_endpoint,
+)
+
+_e6a_router = APIRouter(prefix="/api", tags=["e6a-multiplayer"])
+
+
+@_e6a_router.post(
+    "/multiplayer/{scene_id}/broadcast",
+    summary="Server-push broadcast to all players in a scene (E6a)",
+    responses={
+        200: {"description": "Broadcast delivered to N players"},
+    },
+)
+async def http_broadcast(scene_id: str, message: Dict[str, Any]) -> Dict[str, Any]:
+    """Trigger a server-push broadcast to all players in a scene.
+
+    Body shape (arbitrary JSON, passed through ``send_json``):
+
+        {"event": "npc_action", "actor": "npc_gundren", "verb": "speak",
+         "narrative": "Gundren leans across the bar..."}
+
+    Response::
+
+        {"scene_id": "loc_phandalin_town", "delivered_to": 3}
+
+    The endpoint is HTTP — it is the *outbound* push from server
+    to clients. The *inbound* player action still flows through
+    the WebSocket (and from E6b onwards through the action
+    pipeline).
+    """
+    manager = get_multiplayer_manager()
+    count = await manager.broadcast_to_scene(scene_id, message)
+    return {"scene_id": scene_id, "delivered_to": count}
+
+
+@_e6a_router.get(
+    "/multiplayer/{scene_id}/players",
+    summary="List player IDs connected to a scene (E6a)",
+)
+async def http_list_players(scene_id: str) -> Dict[str, Any]:
+    """Read-only inspection of a scene's connected players.
+
+    Returns::
+
+        {"scene_id": "loc_phandalin_town", "players": ["p1", "p2"],
+         "count": 2, "max_players": 4}
+    """
+    manager = get_multiplayer_manager()
+    players = manager.get_connected_players(scene_id)
+    return {
+        "scene_id": scene_id,
+        "players": players,
+        "count": len(players),
+        "max_players": manager._max_players,
+    }
+
+
+@_e6a_router.get(
+    "/multiplayer/health",
+    summary="Multiplayer manager health (E6a)",
+)
+async def http_multiplayer_health() -> Dict[str, Any]:
+    """Return fan-out router stats: active scenes, connections, by-scene breakdown."""
+    return get_multiplayer_manager().health()
+
+
+_wave2_app.include_router(_e6a_router)
+
+
+# Register the WebSocket route directly on the composed app
+# (FastAPI's ``@app.websocket`` decorator is the canonical pattern;
+# we cannot use ``APIRouter.websocket`` because FastAPI 0.110+
+# supports it but the frozen Wave 2 stack uses the older syntax,
+# so we match the existing style from ``backend/main.py``).
+@_wave2_app.websocket("/ws/multiplayer/{scene_id}/{player_id}")
+async def multiplayer_ws(
+    websocket: WebSocket,
+    scene_id: str,
+    player_id: str,
+) -> None:
+    """WebSocket endpoint for 1-4 player multiplayer fan-out (E6a).
+
+    URL: ``ws://host:8000/ws/multiplayer/{scene_id}/{player_id}``
+
+    Server pushes (after accept)::
+
+        {"event": "connected", "scene_id": "...", "player_id": "...",
+         "active_players": [...], "max_players": 4}
+
+    On full scene or duplicate player_id, the server sends::
+
+        {"event": "error", "reason": "scene_full" | "duplicate"}
+
+    and closes the socket. Otherwise, every JSON message the
+    client sends is echoed back as a ``{"event": "received"}``
+    receipt. E6b will replace the echo with the real action
+    pipeline + scene broadcast.
+    """
+    await multiplayer_ws_endpoint(websocket, scene_id, player_id)
+
+
 # Re-export under a friendly name so the lifespan / app-state /
 # test fixtures all see the same instance. (Alias, not a copy.)
 app: FastAPI = _wave2_app
