@@ -4,7 +4,7 @@ Character State Machine
 Manages character state transitions and persistence.
 """
 from typing import Dict, Any, Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 
 from .semantic_gradient import (
@@ -37,8 +37,8 @@ class CharacterStateMachine:
     def __init__(self, character_id: str, initial_state: Dict[str, Any]):
         self.character_id = character_id
         self.state = initial_state
-        self.created_at = datetime.utcnow()
-        self.updated_at = datetime.utcnow()
+        self.created_at = datetime.now(timezone.utc)
+        self.updated_at = datetime.now(timezone.utc)
         # Tag priorities side-channel: maps tag -> priority
         if "_tag_priorities" not in self.state:
             self.state["_tag_priorities"] = {}
@@ -114,7 +114,7 @@ class CharacterStateMachine:
                     relationships[npc_id] = new_rel
 
         # Step 8: Mark updated_at
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(timezone.utc)
 
         # Step 9: Return new state
         return self.state
@@ -133,7 +133,7 @@ class CharacterStateMachine:
         # Already present — just refresh priority
         if tag in effects:
             tag_priorities[tag] = priority
-            self.updated_at = datetime.utcnow()
+            self.updated_at = datetime.now(timezone.utc)
             return True
 
         # If at capacity, evict the lowest-priority tag
@@ -153,7 +153,7 @@ class CharacterStateMachine:
 
         effects.append(tag)
         tag_priorities[tag] = priority
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(timezone.utc)
         return True
 
     def remove_status_tag(self, tag: str) -> bool:
@@ -163,6 +163,6 @@ class CharacterStateMachine:
         if tag in effects:
             effects.remove(tag)
             tag_priorities.pop(tag, None)
-            self.updated_at = datetime.utcnow()
+            self.updated_at = datetime.now(timezone.utc)
             return True
         return False
