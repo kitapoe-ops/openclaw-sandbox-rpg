@@ -48,7 +48,13 @@ jobs:
           POSTGRES_PASSWORD: test_password
         run: |
           cd backend
-          pytest tests/ -v --cov=. --cov-report=xml
+          pytest tests/ -vv --tb=short --no-header -p no:cacheprovider --cov=. --cov-report=xml || EXIT_CODE=$?
+          echo "pytest exit code: $EXIT_CODE"
+          # If pytest failed, print last 200 lines of any captured log
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "--- Recent test output above ---"
+            exit $EXIT_CODE
+          fi
 
       - name: Upload coverage
         uses: codecov/codecov-action@v3
