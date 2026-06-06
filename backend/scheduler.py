@@ -37,13 +37,12 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
-from typing import Optional
 
 try:
+    from apscheduler.executors.asyncio import AsyncIOExecutor
+    from apscheduler.jobstores.memory import MemoryJobStore
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     from apscheduler.triggers.cron import CronTrigger
-    from apscheduler.jobstores.memory import MemoryJobStore
-    from apscheduler.executors.asyncio import AsyncIOExecutor
     _APSCHEDULER_AVAILABLE = True
 except ImportError:  # pragma: no cover - exercised only when dep missing
     AsyncIOScheduler = None  # type: ignore[assignment]
@@ -109,7 +108,7 @@ def _require_apscheduler() -> None:
         )
 
 
-def build_scheduler() -> "AsyncIOScheduler":
+def build_scheduler() -> AsyncIOScheduler:
     """Build an `AsyncIOScheduler` with the 3 jobs registered, NOT started.
 
     Returns
@@ -176,7 +175,7 @@ def build_scheduler() -> "AsyncIOScheduler":
 @asynccontextmanager
 async def _scheduler_lifespan(app: FastAPI):
     """Lifespan that starts the scheduler on app startup, shuts it down cleanly."""
-    scheduler: Optional["AsyncIOScheduler"] = getattr(app, "state", None)
+    scheduler: AsyncIOScheduler | None = getattr(app, "state", None)
     scheduler = getattr(scheduler, "scheduler", None) if scheduler else None
     if scheduler is None:
         # Fall back to the well-known attribute name set in create_app_with_scheduler
@@ -231,13 +230,13 @@ def create_app_with_scheduler() -> FastAPI:
 
     @app.get("/health")
     async def health():
-        sched: "AsyncIOScheduler" = app.state.scheduler
+        sched: AsyncIOScheduler = app.state.scheduler
         jobs_info = []
         for job in sched.get_jobs():
             # APScheduler 3.x: `next_run_time` is a property that raises
             # if the scheduler isn't running. Guard so /health is safe
             # to call pre-startup too.
-            next_run_iso: Optional[str] = None
+            next_run_iso: str | None = None
             if sched.running:
                 try:
                     nrt = job.next_run_time

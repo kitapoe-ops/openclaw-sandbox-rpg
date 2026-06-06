@@ -95,7 +95,7 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +135,7 @@ class PlayerState:
     turn_position: int = 0  # 0 = not in queue
     alive: bool = True
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "player_id": self.player_id,
             "character_id": self.character_id,
@@ -158,9 +158,9 @@ class NPCState:
     character_id: str
     location: str
     alive: bool = True
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "npc_id": self.npc_id,
             "character_id": self.character_id,
@@ -187,10 +187,10 @@ class TurnTicket:
 
     ticket_id: str
     actor_id: str
-    action: Dict[str, Any]
+    action: dict[str, Any]
     enqueued_at: float
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "ticket_id": self.ticket_id,
             "actor_id": self.actor_id,
@@ -240,9 +240,9 @@ class MultiplayerScene:
         self.scene_id = scene_id
         self.max_players = max_players
         self.max_npcs = max_npcs
-        self._players: Dict[str, PlayerState] = {}
-        self._npcs: Dict[str, NPCState] = {}
-        self._turn_queue: "asyncio.Queue[TurnTicket]" = asyncio.Queue()
+        self._players: dict[str, PlayerState] = {}
+        self._npcs: dict[str, NPCState] = {}
+        self._turn_queue: asyncio.Queue[TurnTicket] = asyncio.Queue()
         self._lock = asyncio.Lock()
         self._created_at: float = time.time()
 
@@ -320,7 +320,7 @@ class MultiplayerScene:
             # remaining tickets. Drain is bounded by queue size —
             # a full queue is 100k+ tickets, so this is O(n) but
             # only when a player leaves; acceptable.
-            kept: List[TurnTicket] = []
+            kept: list[TurnTicket] = []
             while not self._turn_queue.empty():
                 try:
                     ticket = self._turn_queue.get_nowait()
@@ -336,11 +336,11 @@ class MultiplayerScene:
                 f"{len(kept)} tickets kept)"
             )
 
-    def get_players(self) -> List[PlayerState]:
+    def get_players(self) -> list[PlayerState]:
         """Snapshot of the current players. Lock-free."""
         return list(self._players.values())
 
-    def get_player(self, player_id: str) -> Optional[PlayerState]:
+    def get_player(self, player_id: str) -> PlayerState | None:
         """Lookup a single player. Lock-free. Returns None if absent."""
         return self._players.get(player_id)
 
@@ -379,11 +379,11 @@ class MultiplayerScene:
             )
             return True
 
-    def get_npcs(self) -> List[NPCState]:
+    def get_npcs(self) -> list[NPCState]:
         """Snapshot of the NPCs. Lock-free."""
         return list(self._npcs.values())
 
-    def get_npc(self, npc_id: str) -> Optional[NPCState]:
+    def get_npc(self, npc_id: str) -> NPCState | None:
         """Lookup a single NPC. Lock-free. Returns None if absent."""
         return self._npcs.get(npc_id)
 
@@ -392,7 +392,7 @@ class MultiplayerScene:
     # ============================================
 
     async def enqueue_action(
-        self, actor_id: str, action: Dict[str, Any]
+        self, actor_id: str, action: dict[str, Any]
     ) -> str:
         """Submit an action to the turn queue.
 
@@ -416,7 +416,7 @@ class MultiplayerScene:
             await self._turn_queue.put(ticket)
             return ticket.ticket_id
 
-    async def process_next_turn(self) -> Optional[TurnTicket]:
+    async def process_next_turn(self) -> TurnTicket | None:
         """Pop and return the next action in the queue.
 
         Returns ``None`` if the queue is empty (non-blocking).
@@ -433,7 +433,7 @@ class MultiplayerScene:
         """Number of pending actions. Lock-free snapshot."""
         return self._turn_queue.qsize()
 
-    def peek_next_turn(self) -> Optional[TurnTicket]:
+    def peek_next_turn(self) -> TurnTicket | None:
         """Read the head ticket without removing it. Lock-free.
 
         Returns ``None`` if empty. Useful for the audit log to
@@ -459,7 +459,7 @@ class MultiplayerScene:
     # Health
     # ============================================
 
-    def health(self) -> Dict[str, Any]:
+    def health(self) -> dict[str, Any]:
         """Return scene stats — for ``/health`` and the audit log."""
         players = self.get_players()
         npcs = self.get_npcs()
@@ -560,7 +560,7 @@ class SceneRegistry:
     """
 
     def __init__(self) -> None:
-        self._scenes: Dict[str, MultiplayerScene] = {}
+        self._scenes: dict[str, MultiplayerScene] = {}
         self._lock = asyncio.Lock()
 
     async def get_or_create(
@@ -595,15 +595,15 @@ class SceneRegistry:
         async with self._lock:
             return self._scenes.pop(scene_id, None) is not None
 
-    def get(self, scene_id: str) -> Optional[MultiplayerScene]:
+    def get(self, scene_id: str) -> MultiplayerScene | None:
         """Lookup a scene. Lock-free."""
         return self._scenes.get(scene_id)
 
-    def all_scenes(self) -> List[MultiplayerScene]:
+    def all_scenes(self) -> list[MultiplayerScene]:
         """Snapshot of all scenes. Lock-free."""
         return list(self._scenes.values())
 
-    def health(self) -> Dict[str, Any]:
+    def health(self) -> dict[str, Any]:
         """Aggregate health across all scenes."""
         return {
             "scene_count": len(self._scenes),

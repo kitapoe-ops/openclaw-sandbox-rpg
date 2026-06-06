@@ -30,11 +30,9 @@ Memory characteristics:
 """
 import asyncio
 import logging
-from pathlib import Path
-from typing import Dict, Optional
-from dataclasses import dataclass
-import yaml
 import time
+from dataclasses import dataclass
+from pathlib import Path
 
 from .world_lore_db import WorldLoreDB
 
@@ -51,8 +49,8 @@ class WorldMetadata:
     file_size_bytes: int
     is_parsed: bool = False
     is_indexed: bool = False
-    parse_started_at: Optional[float] = None
-    parse_completed_at: Optional[float] = None
+    parse_started_at: float | None = None
+    parse_completed_at: float | None = None
 
 
 class WorldLoreLoader:
@@ -64,9 +62,9 @@ class WorldLoreLoader:
 
     def __init__(self, worlds_dir: Path = Path("worlds")):
         self._worlds_dir = worlds_dir
-        self._metadata: Dict[str, WorldMetadata] = {}
-        self._instances: Dict[str, WorldLoreDB] = {}
-        self._locks: Dict[str, asyncio.Lock] = {}
+        self._metadata: dict[str, WorldMetadata] = {}
+        self._instances: dict[str, WorldLoreDB] = {}
+        self._locks: dict[str, asyncio.Lock] = {}
         self._meta_lock = asyncio.Lock()
 
     async def scan_and_register(self) -> int:
@@ -79,7 +77,7 @@ class WorldLoreLoader:
             for yaml_file in self._worlds_dir.glob("*.yaml"):
                 try:
                     # Read only the top-level metadata fields (cheap)
-                    with open(yaml_file, "r", encoding="utf-8") as f:
+                    with open(yaml_file, encoding="utf-8") as f:
                         # Read first 1KB to extract metadata
                         head = f.read(1024)
 
@@ -113,7 +111,7 @@ class WorldLoreLoader:
             asyncio.create_task(self._parse_and_index_world(world_id))
             logger.info(f"[WorldLoreLoader] Scheduled indexing for {world_id}")
 
-    async def get_world_db(self, world_id: str) -> Optional[WorldLoreDB]:
+    async def get_world_db(self, world_id: str) -> WorldLoreDB | None:
         """
         Phase 2: Get a parsed WorldLoreDB instance (lazy).
         First call triggers YAML parse + cache. Subsequent calls return cache.
@@ -175,7 +173,7 @@ class WorldLoreLoader:
         except Exception as e:
             logger.exception(f"[WorldLoreLoader] Indexing failed for {world_id}: {e}")
 
-    def _extract_field(self, text: str, field_marker: str) -> Optional[str]:
+    def _extract_field(self, text: str, field_marker: str) -> str | None:
         """Extract a YAML field value from the first 1KB of a file."""
         try:
             for line in text.split("\n"):
@@ -187,7 +185,7 @@ class WorldLoreLoader:
             pass
         return None
 
-    def get_metadata(self, world_id: str) -> Optional[WorldMetadata]:
+    def get_metadata(self, world_id: str) -> WorldMetadata | None:
         return self._metadata.get(world_id)
 
     def list_worlds(self) -> list:

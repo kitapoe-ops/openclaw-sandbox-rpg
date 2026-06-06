@@ -4,13 +4,12 @@ Demo Scene Data
 Hard-coded fallback scene content for testing without LLM.
 Used when MINIMAX_API_KEY is not set OR LLM call fails.
 """
-from typing import Dict, Any, List
-
+from typing import Any
 
 # ============================================
 # Demo Scene: Phandalin Town (loc_phandalin_town)
 # ============================================
-DEMO_SCENE: Dict[str, Any] = {
+DEMO_SCENE: dict[str, Any] = {
     "scene_id": "loc_phandalin_town",
     "scene_narrative": (
         "你從 Old Coast Road 嘅塵土中行入凡達林。\n\n"
@@ -92,7 +91,7 @@ DEMO_SCENE: Dict[str, Any] = {
 # ============================================
 # Demo Starter Character
 # ============================================
-DEMO_STARTER: Dict[str, Any] = {
+DEMO_STARTER: dict[str, Any] = {
     "character_id": "char_demo_player",
     "name": "Rockseeker 家族嘅探子",
     "race": "Dwarf (Shield)",
@@ -148,20 +147,20 @@ DEMO_STARTER: Dict[str, Any] = {
 }
 
 
-def get_demo_scene(scene_id: str) -> Dict[str, Any] | None:
+def get_demo_scene(scene_id: str) -> dict[str, Any] | None:
     """Get demo scene by ID."""
     if scene_id == "loc_phandalin_town":
         return DEMO_SCENE
     return None
 
 
-def get_demo_character(character_id: str) -> Dict[str, Any] | None:
+def get_demo_character(character_id: str) -> dict[str, Any] | None:
     """Get demo character by ID."""
     if character_id == "char_demo_player":
         return DEMO_STARTER
     return None
 
 
-def list_demo_choices() -> List[Dict[str, Any]]:
+def list_demo_choices() -> list[dict[str, Any]]:
     """List all 4 choices from demo scene."""
     return DEMO_SCENE["choices"]

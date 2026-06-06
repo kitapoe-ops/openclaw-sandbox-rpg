@@ -31,7 +31,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import Any
 
 import httpx
 
@@ -68,7 +68,7 @@ class R1AuditClient:
     async def close(self) -> None:
         await self._http.aclose()
 
-    async def verify_endpoint(self) -> Dict[str, Any]:
+    async def verify_endpoint(self) -> dict[str, Any]:
         """
         Pre-flight: confirm the endpoint has the R1 model loaded.
         Raises RuntimeError if not available.
@@ -127,10 +127,10 @@ class R1AuditClient:
 
     async def audit(
         self,
-        target_files: List[str],
-        concerns: List[str],
-        context: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        target_files: list[str],
+        concerns: list[str],
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """
         Send an architecture audit request to real R1.
 
@@ -162,7 +162,7 @@ class R1AuditClient:
                     content = "\n".join(lines[:100]) + f"\n... [truncated; {len(lines)-100} more lines]"
                 file_contents[f] = content
             else:
-                file_contents[f] = f"[FILE NOT FOUND]"
+                file_contents[f] = "[FILE NOT FOUND]"
 
         # Use a SHORT system prompt to preserve context for the actual content
         system_prompt = "You are R1, an architecture auditor. Output JSON in the user's required format."
@@ -170,12 +170,12 @@ class R1AuditClient:
         user_message = (
             "Perform an architecture audit of the following files. "
             "These are real production code paths.\n\n"
-            f"## Target Files\n\n"
+            "## Target Files\n\n"
             + "\n\n".join(
                 f"### `{f}`\n```\n{file_contents[f]}\n```"
                 for f in target_files
             )
-            + f"\n\n## Specific Concerns to Audit\n\n"
+            + "\n\n## Specific Concerns to Audit\n\n"
             + "\n".join(f"{i+1}. {c}" for i, c in enumerate(concerns))
             + (f"\n\n## Additional Context\n\n```json\n{json.dumps(context, indent=2, ensure_ascii=False)}\n```"
                if context else "")
@@ -202,7 +202,7 @@ class R1AuditClient:
 
         # Try to extract JSON block
         verdict = "UNKNOWN"
-        findings: List[Dict[str, Any]] = []
+        findings: list[dict[str, Any]] = []
         json_start = raw.find("{")
         json_end = raw.rfind("}")
         if json_start >= 0 and json_end > json_start:
@@ -226,7 +226,7 @@ class R1AuditClient:
 # ============================================
 
 
-async def audit_memory_palace(repo_root: str = ".") -> Dict[str, Any]:
+async def audit_memory_palace(repo_root: str = ".") -> dict[str, Any]:
     """
     Run a real R1 audit on the Memory Palace code.
     """
@@ -251,7 +251,7 @@ async def audit_memory_palace(repo_root: str = ".") -> Dict[str, Any]:
         await client.close()
 
 
-async def audit_full_wave2(repo_root: str = ".") -> Dict[str, Any]:
+async def audit_full_wave2(repo_root: str = ".") -> dict[str, Any]:
     """
     Real R1 audit covering all Wave 2 deliverables:
     - memory_palace.py (post R1 fixes)
@@ -298,7 +298,7 @@ async def audit_full_wave2(repo_root: str = ".") -> Dict[str, Any]:
         await client.close()
 
 
-async def audit_full_wave2_stack(repo_root: str = ".") -> Dict[str, Any]:
+async def audit_full_wave2_stack(repo_root: str = ".") -> dict[str, Any]:
     """
     Real R1 audit covering the entire Wave 2 stack:
     - turn_system.py (Async Turn System)
@@ -357,7 +357,7 @@ async def audit_full_wave2_stack(repo_root: str = ".") -> Dict[str, Any]:
         await client.close()
 
 
-async def audit_phase_d1_merge(repo_root: str = ".") -> Dict[str, Any]:
+async def audit_phase_d1_merge(repo_root: str = ".") -> dict[str, Any]:
     """
     Real R1 audit for Phase D1 — merge the two memory_palace modules.
 
@@ -410,7 +410,7 @@ async def audit_phase_d1_merge(repo_root: str = ".") -> Dict[str, Any]:
         await client.close()
 
 
-async def audit_phase_d3_repository(repo_root: str = ".") -> Dict[str, Any]:
+async def audit_phase_d3_repository(repo_root: str = ".") -> dict[str, Any]:
     """
     Real R1 audit for Phase D3 — Memory Palace Phase B + C (Repository pattern
     + real embedding model integration).
@@ -464,7 +464,7 @@ async def audit_phase_d3_repository(repo_root: str = ".") -> Dict[str, Any]:
         await client.close()
 
 
-async def audit_phase_d5_pi5_deploy(repo_root: str = ".") -> Dict[str, Any]:
+async def audit_phase_d5_pi5_deploy(repo_root: str = ".") -> dict[str, Any]:
     """
     Real R1 audit for Phase D5 — Docker deploy to Pi5 (8GB RAM, no GPU).
 
@@ -519,7 +519,7 @@ async def audit_phase_d5_pi5_deploy(repo_root: str = ".") -> Dict[str, Any]:
         await client.close()
 
 
-async def audit_phase_d6_llm_client(repo_root: str = ".") -> Dict[str, Any]:
+async def audit_phase_d6_llm_client(repo_root: str = ".") -> dict[str, Any]:
     """
     Real R1 audit for Phase D6 — replace mock LLM client with real
     MiniMax-M3 cloud (1M context, thinking mode on).

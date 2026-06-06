@@ -53,10 +53,9 @@ Neither finding is actionable in E6b (both touch frozen files).
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .scene_multiplayer import (
-    MultiplayerScene,
     SceneRegistry,
     get_scene_registry,
 )
@@ -87,7 +86,7 @@ class MemoryIsolationGuard:
     """
 
     def __init__(
-        self, scene_registry: Optional[SceneRegistry] = None
+        self, scene_registry: SceneRegistry | None = None
     ) -> None:
         self._scenes = scene_registry or get_scene_registry()
 
@@ -158,7 +157,7 @@ class MemoryIsolationGuard:
         memory_palace: Any,
         scene_id: str,
         requester_id: str,
-    ) -> "_IsolatedMemoryPalace":
+    ) -> _IsolatedMemoryPalace:
         """Return a wrapped memory palace that enforces isolation.
 
         The returned proxy intercepts ``remember`` /

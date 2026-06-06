@@ -41,17 +41,14 @@ import json
 import logging
 import os
 import re
-import time
 from abc import ABC, abstractmethod
 from collections import OrderedDict
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import httpx
 from pydantic import ValidationError
 
 from backend.state_machine import (
-    MAX_TAGS_PER_MUTATION,
-    MAX_TAG_LENGTH,
     StateMutation,
 )
 
@@ -124,7 +121,7 @@ class LLMClient(ABC):
     @abstractmethod
     async def chat(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         temperature: float = DEFAULT_TEMPERATURE,
         max_tokens: int = DEFAULT_MAX_TOKENS,
         use_cache: bool = True,
@@ -151,9 +148,9 @@ class LLMClient(ABC):
         self,
         system_prompt: str,
         user_message: str,
-        current_state: List[str],
+        current_state: list[str],
         max_retries: int = 2,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Generate a response and enforce the F3 StateMutation contract.
 
         Phase F3, Requirement 1: the LLM's response JSON must parse
@@ -221,7 +218,7 @@ class LLMClient(ABC):
 
 
 def _make_cache_key(
-    messages: List[Dict[str, str]],
+    messages: list[dict[str, str]],
     temperature: float,
     max_tokens: int,
     model: str,
@@ -245,7 +242,7 @@ def _make_cache_key(
     return hashlib.sha256(blob).hexdigest()
 
 
-def _parse_json_response(content: str) -> Dict[str, Any]:
+def _parse_json_response(content: str) -> dict[str, Any]:
     """Extract JSON from a (possibly prose-wrapped) LLM response.
 
     Handles:
@@ -284,7 +281,7 @@ def _parse_json_response(content: str) -> Dict[str, Any]:
 # ============================================
 
 
-def _extract_state_mutations_dict(content: str) -> Optional[Dict[str, Any]]:
+def _extract_state_mutations_dict(content: str) -> dict[str, Any] | None:
     """Find the JSON object that contains a `state_mutations` field.
 
     Phase F3 contract: the LLM's response is expected to be a JSON
@@ -381,7 +378,7 @@ def _format_validation_error(exc: ValidationError) -> str:
     to avoid drowning the LLM in noise.
     """
     errors = exc.errors() or []
-    parts: List[str] = []
+    parts: list[str] = []
     for err in errors[:5]:
         loc = ".".join(str(p) for p in err.get("loc", ()) if p not in ("__root__",))
         msg = err.get("msg", "validation failed")
@@ -403,7 +400,7 @@ def _format_validation_error(exc: ValidationError) -> str:
 
 def state_mutations_validator(
     raw_response: str,
-) -> Tuple[Optional[StateMutation], Optional[str], Optional[Dict[str, Any]]]:
+) -> tuple[StateMutation | None, str | None, dict[str, Any] | None]:
     """Parse a raw LLM response and validate the `state_mutations` field.
 
     Phase F3 defense D2: the LLM's `state_mutations` block must parse
@@ -532,7 +529,7 @@ class MiniMaxM3Client(LLMClient):
             write=timeout_write,
             pool=timeout_pool,
         )
-        self._cache: "OrderedDict[str, str]" = OrderedDict()
+        self._cache: OrderedDict[str, str] = OrderedDict()
         # Bookkeeping for tests / observability.
         self.retry_count: int = 0
         self.cache_hits: int = 0
@@ -558,7 +555,7 @@ class MiniMaxM3Client(LLMClient):
 
     async def chat(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         temperature: float = DEFAULT_TEMPERATURE,
         max_tokens: int = DEFAULT_MAX_TOKENS,
         use_cache: bool = True,
@@ -578,11 +575,11 @@ class MiniMaxM3Client(LLMClient):
 
     async def chat_with_meta(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         temperature: float = DEFAULT_TEMPERATURE,
         max_tokens: int = DEFAULT_MAX_TOKENS,
         use_cache: bool = True,
-    ) -> Tuple[str, Dict[str, Any]]:
+    ) -> tuple[str, dict[str, Any]]:
         """Multi-turn chat. Returns (assistant_text, meta).
 
         `meta` keys:
@@ -643,9 +640,9 @@ class MiniMaxM3Client(LLMClient):
         self,
         system_prompt: str,
         user_message: str,
-        current_state: List[str],
+        current_state: list[str],
         max_retries: int = 2,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Phase F3 + G1: enforce the StateMutation contract on LLM output.
 
         Phase F3 calls :meth:`generate` (which routes through the
@@ -697,14 +694,14 @@ class MiniMaxM3Client(LLMClient):
         # re-inject them on the next attempt. The last error wins
         # in the final return; earlier errors are logged for
         # observability.
-        last_result: Dict[str, Any] = {
+        last_result: dict[str, Any] = {
             "narrative": "",
             "mutation": None,
             "parsed": None,
             "raw": "",
             "error": None,
         }
-        last_error: Optional[str] = None
+        last_error: str | None = None
         attempts_made = 0
         retries_used = 0
         # max_retries=2 → 3 total attempts (initial + 2 retries).
@@ -797,7 +794,7 @@ class MiniMaxM3Client(LLMClient):
         self,
         system_prompt: str,
         user_message: str,
-        current_state: List[str],
+        current_state: list[str],
     ) -> str:
         """Single-attempt LLM call used by the G1 retry loop.
 
@@ -815,17 +812,17 @@ class MiniMaxM3Client(LLMClient):
 
     def _build_payload(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         temperature: float,
         max_tokens: int,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Build the chat-completions payload, with M3 prompt-cache hints."""
         # Phase D6 R1 finding MEDIUM #6: add cache_control breakpoints on
         # the system message and the first user message (typically the
         # world_lore block). M3 supports Anthropic-style breakpoints.
-        decorated: List[Dict[str, Any]] = []
+        decorated: list[dict[str, Any]] = []
         for idx, m in enumerate(messages):
-            entry: Dict[str, Any] = {"role": m.get("role", "user"), "content": m.get("content", "")}
+            entry: dict[str, Any] = {"role": m.get("role", "user"), "content": m.get("content", "")}
             if idx < 2:  # system + first user block
                 entry["cache_control"] = {"type": "ephemeral"}
             decorated.append(entry)
@@ -841,10 +838,10 @@ class MiniMaxM3Client(LLMClient):
 
     async def _post_with_retry(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         temperature: float,
         max_tokens: int,
-    ) -> Tuple[str, Dict[str, Any]]:
+    ) -> tuple[str, dict[str, Any]]:
         """POST with exponential-backoff retry on transient errors.
 
         R1 findings addressed:
@@ -858,7 +855,7 @@ class MiniMaxM3Client(LLMClient):
         }
 
         attempt = 0
-        last_exc: Optional[Exception] = None
+        last_exc: Exception | None = None
         self.retry_count = 0
         while True:
             try:
@@ -932,7 +929,7 @@ class MiniMaxM3Client(LLMClient):
         return min(self.backoff_base * (2 ** attempt), self.backoff_cap)
 
     @staticmethod
-    def _parse_response(data: Dict[str, Any], retries: int) -> Tuple[str, Dict[str, Any]]:
+    def _parse_response(data: dict[str, Any], retries: int) -> tuple[str, dict[str, Any]]:
         """Extract text + token usage from the chat-completions JSON.
 
         M3 returns `reasoning_content` separately from `content`. We
@@ -954,7 +951,7 @@ class MiniMaxM3Client(LLMClient):
         details = usage.get("completion_tokens_details", {}) or {}
         reasoning_tokens = int(details.get("reasoning_tokens", 0) or 0)
 
-        meta: Dict[str, Any] = {
+        meta: dict[str, Any] = {
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
             "reasoning_tokens": reasoning_tokens,
@@ -980,7 +977,7 @@ class MockLLMClient(LLMClient):
     MiniMax-M3 API key (developer machines, CI without secrets).
     """
 
-    def __init__(self, canned_response: Optional[str] = None) -> None:
+    def __init__(self, canned_response: str | None = None) -> None:
         self.canned_response = canned_response or (
             '{"scene_narrative": "Mock scene.", "choices": []}'
         )
@@ -999,7 +996,7 @@ class MockLLMClient(LLMClient):
 
     async def chat(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         temperature: float = DEFAULT_TEMPERATURE,
         max_tokens: int = DEFAULT_MAX_TOKENS,
         use_cache: bool = True,
@@ -1014,9 +1011,9 @@ class MockLLMClient(LLMClient):
         self,
         system_prompt: str,
         user_message: str,
-        current_state: List[str],
+        current_state: list[str],
         max_retries: int = 2,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Phase F3 + G1: validate the canned response against StateMutation.
 
         Same shape as the real client's method, but uses
@@ -1039,13 +1036,13 @@ class MockLLMClient(LLMClient):
         # (default behaviour: a single response used every time —
         # this preserves the F3 mock contract.)
         last_raw: str = ""
-        last_error: Optional[str] = None
-        last_mutation: Optional[StateMutation] = None
-        last_parsed: Optional[Dict[str, Any]] = None
+        last_error: str | None = None
+        last_mutation: StateMutation | None = None
+        last_parsed: dict[str, Any] | None = None
 
         # Resolve the per-attempt response sequence.
         if isinstance(self.canned_response, list):
-            sequence: List[str] = list(self.canned_response)
+            sequence: list[str] = list(self.canned_response)
         else:
             # F3 behaviour: a single canned response used on every
             # attempt. This means the mock will fail-then-fail
@@ -1105,7 +1102,7 @@ class MockLLMClient(LLMClient):
 # ============================================
 
 
-def get_llm_client(provider: Optional[str] = None) -> LLMClient:
+def get_llm_client(provider: str | None = None) -> LLMClient:
     """Build an LLMClient from environment variables.
 
     Env vars:
@@ -1156,10 +1153,10 @@ def get_llm_client(provider: Optional[str] = None) -> LLMClient:
 async def generate_scene_response(
     system_prompt: str,
     user_input: str,
-    few_shots: Optional[List[Dict[str, str]]] = None,
+    few_shots: list[dict[str, str]] | None = None,
     temperature: float = DEFAULT_TEMPERATURE,
     max_tokens: int = DEFAULT_MAX_TOKENS,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Backwards-compat helper. Delegates to a MiniMax-M3 client.
 
     Returns the parsed JSON dict (extracted from the assistant text
@@ -1170,7 +1167,7 @@ async def generate_scene_response(
         "generate_scene_response() requires provider='minimax'; "
         "set MINIMAX_API_KEY in the environment."
     )
-    messages: List[Dict[str, str]] = [{"role": "system", "content": system_prompt}]
+    messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
     if few_shots:
         messages.extend(few_shots)
     messages.append({"role": "user", "content": user_input})
@@ -1181,7 +1178,7 @@ async def generate_scene_response(
     return _parse_json_response(text)
 
 
-def build_few_shots(examples: List[Dict[str, str]]) -> List[Dict[str, str]]:
+def build_few_shots(examples: list[dict[str, str]]) -> list[dict[str, str]]:
     """Convert raw examples to OpenAI chat format."""
     return [{"role": ex["role"], "content": ex["content"]} for ex in examples]
 

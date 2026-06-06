@@ -1,8 +1,9 @@
 """
 Action API Endpoints (v3.6)
 """
-from fastapi import APIRouter, HTTPException
-from typing import Dict, Any
+from typing import Any
+
+from fastapi import APIRouter
 
 from ..ws import registry
 
@@ -10,7 +11,7 @@ router = APIRouter()
 
 
 @router.post("/submit")
-async def submit_action(player_input: Dict[str, Any]) -> Dict[str, Any]:
+async def submit_action(player_input: dict[str, Any]) -> dict[str, Any]:
     """
     Submit a player's action (HTTP fallback for non-WebSocket clients).
     In production, prefer WebSocket; this is for debugging.
@@ -24,7 +25,7 @@ async def submit_action(player_input: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @router.post("/auto")
-async def auto_action(character_id: str) -> Dict[str, Any]:
+async def auto_action(character_id: str) -> dict[str, Any]:
     """Trigger NPC auto-behavior when player doesn't submit in 15 min."""
     return {
         "character_id": character_id,

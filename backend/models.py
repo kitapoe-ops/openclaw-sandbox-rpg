@@ -4,14 +4,12 @@ SQLAlchemy ORM Models
 Maps to deploy/sql/schema.sql tables.
 Used by backend/db.py for type-safe queries.
 """
-from datetime import datetime
-from sqlalchemy import (
-    Column, String, Integer, Boolean, DateTime, Text, ForeignKey, JSON, Enum
-)
-from sqlalchemy.dialects.postgresql import UUID, JSONB
-from sqlalchemy.orm import relationship
 import enum
 import uuid
+from datetime import datetime
+
+from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from .db import Base
 

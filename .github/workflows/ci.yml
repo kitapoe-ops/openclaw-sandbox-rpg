@@ -33,7 +33,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'
 
       - name: Install dependencies
         run: |
@@ -48,18 +47,65 @@ jobs:
           POSTGRES_PASSWORD: test_password
         run: |
           cd backend
-          pytest tests/ -vv --tb=short --no-header -p no:cacheprovider --cov=. --cov-report=xml || EXIT_CODE=$?
-          echo "pytest exit code: $EXIT_CODE"
-          # If pytest failed, print last 200 lines of any captured log
-          if [ $EXIT_CODE -ne 0 ]; then
-            echo "--- Recent test output above ---"
-            exit $EXIT_CODE
-          fi
+          pytest tests/ -vv --tb=short --no-header -p no:cacheprovider \
+            --cov=. --cov-report=xml --cov-report=term-missing \
+            --cov-fail-under=85
+        # Phase H3: --cov-fail-under=85 sets the gate. The "term-missing"
+        # report prints uncovered lines so future PRs can drive this
+        # number up toward 100% over time without blocking today.
 
       - name: Upload coverage
-        uses: codecov/codecov-action@v3
+        if: always()
+        uses: codecov/codecov-action@v4
         with:
           file: backend/coverage.xml
+          fail_ci_if_error: false
+
+  backend-lint:
+    name: Backend Lint (ruff + mypy)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+
+      - name: Ruff (linter)
+        working-directory: backend
+        run: |
+          # Phase H2: ruff replaces the implicit lack of linting in CI.
+          # 'ruff check' = lint gate (fails on E/F rule violations).
+          # 'ruff format --check' is informational only in this PR — 60
+          # files would be reformatted, so we don't enforce format yet.
+          # Future PRs can run 'ruff format' to fix formatting and then
+          # promote this to a hard gate.
+          ruff check . --output-format=github
+          echo "---"
+          echo "ruff format --check (informational, not a gate):"
+          ruff format --check . || echo "(format violations exist; tracked for future PR)"
+
+      - name: Mypy (type check)
+        working-directory: backend
+        run: |
+          # Phase H2: mypy gate. Backend has no pyproject [tool.mypy] or
+          # mypy.ini yet, so we use permissive flags: --ignore-missing-imports
+          # (third-party libs like lancedb don't ship stubs), --no-strict
+          # (don't require all strict flags), and we exclude tests/ since
+          # the project policy is to type-check production code only.
+          # First run is expected to surface many errors; we don't fail
+          # the gate on them yet — we capture them to mypy.log so the
+          # next PR can triage. The PR just establishes that mypy RUNS.
+          mypy . --ignore-missing-imports --no-strict --exclude 'tests/' \
+            > mypy.log 2>&1 || echo "Mypy warnings/errors captured in mypy.log (not failing the gate yet)"
+          tail -20 mypy.log
 
   frontend-build:
     name: Frontend Build
@@ -71,7 +117,12 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # Phase H1: bump from Node 20 to Node 24.
+          # GitHub deprecated Node 20 actions in 2025-09; Node 24 becomes
+          # default 2026-06-16 and Node 20 removed 2026-09-16.
+          # frontend/package.json (vite ^5, vue-tsc ^2) supports Node 24
+          # without changes — verified locally.
+          node-version: '24'
 
       - name: Install dependencies
         working-directory: frontend

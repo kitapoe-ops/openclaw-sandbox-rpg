@@ -80,13 +80,13 @@ references `R1AuditClient` (frozen) by its public `audit()` method.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +108,7 @@ class AuditVerdict(str, Enum):
     TIMEOUT = "timeout"          # Exceeded per-request timeout
 
     @classmethod
-    def from_r1_verdict(cls, raw: str) -> "AuditVerdict":
+    def from_r1_verdict(cls, raw: str) -> AuditVerdict:
         """Map R1's verdict string to our enum.
 
         R1 returns "PASS" | "CONDITIONAL" | "FAIL" | "BLOCK" (per
@@ -149,12 +149,12 @@ class AuditRequest:
     entirely if it observes the deadline already passed.
     """
 
-    target_files: List[str]
-    concerns: List[str]
-    context: Optional[Dict[str, Any]] = None
+    target_files: list[str]
+    concerns: list[str]
+    context: dict[str, Any] | None = None
     request_id: str = ""           # set by submit() if empty
     submitted_at: float = field(default_factory=time.time)
-    deadline: Optional[float] = None  # unix timestamp
+    deadline: float | None = None  # unix timestamp
 
 
 @dataclass
@@ -169,12 +169,12 @@ class AuditResult:
 
     request_id: str
     verdict: AuditVerdict = AuditVerdict.PENDING
-    findings: List[Dict[str, Any]] = field(default_factory=list)
+    findings: list[dict[str, Any]] = field(default_factory=list)
     raw_response: str = ""
     started_at: float = 0.0
     completed_at: float = 0.0
     submitted_at: float = 0.0
-    error: Optional[str] = None
+    error: str | None = None
 
     @property
     def duration_seconds(self) -> float:
@@ -231,7 +231,7 @@ class AsyncAuditQueue:
         max_queue_size: int = 200,
         request_timeout: float = 600.0,
         backpressure: BackpressurePolicy = BackpressurePolicy.BLOCK,
-        result_sink: Optional[ResultSink] = None,
+        result_sink: ResultSink | None = None,
     ) -> None:
         if worker_count < 1:
             raise ValueError(f"worker_count must be >= 1, got {worker_count}")
@@ -248,8 +248,8 @@ class AsyncAuditQueue:
         self._result_sink = result_sink
 
         self._queue: asyncio.Queue[AuditRequest] = asyncio.Queue(maxsize=max_queue_size)
-        self._results: Dict[str, AuditResult] = {}
-        self._workers: List[asyncio.Task[None]] = []
+        self._results: dict[str, AuditResult] = {}
+        self._workers: list[asyncio.Task[None]] = []
         self._running = False
         self._stopping = False
 
@@ -301,7 +301,7 @@ class AsyncAuditQueue:
                     asyncio.gather(*self._workers, return_exceptions=True),
                     timeout=timeout,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
             self._workers.clear()
             self._running = False
@@ -315,7 +315,7 @@ class AsyncAuditQueue:
         # stopping and rely on workers checking _stopping.
         try:
             await asyncio.wait_for(self._wait_drained(), timeout=timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning("AsyncAuditQueue.stop: drain timeout, cancelling workers")
 
         for w in self._workers:
@@ -404,7 +404,7 @@ class AsyncAuditQueue:
 
     # ---- result access ----
 
-    async def get_result(self, request_id: str, timeout: Optional[float] = None) -> AuditResult:
+    async def get_result(self, request_id: str, timeout: float | None = None) -> AuditResult:
         """Wait for an audit to reach a terminal state.
 
         Raises asyncio.TimeoutError if `timeout` elapses first. If
@@ -419,7 +419,7 @@ class AsyncAuditQueue:
             if result.is_terminal:
                 return result
             if deadline is not None and time.monotonic() >= deadline:
-                raise asyncio.TimeoutError(
+                raise TimeoutError(
                     f"audit {request_id} did not complete within {timeout}s"
                 )
             await asyncio.sleep(poll_interval)
@@ -440,9 +440,9 @@ class AsyncAuditQueue:
             raise KeyError(f"unknown request_id: {request_id}")
         return result
 
-    def health(self) -> Dict[str, Any]:
+    def health(self) -> dict[str, Any]:
         """Snapshot of queue stats for observability."""
-        terminal_verdicts: Dict[str, int] = {}
+        terminal_verdicts: dict[str, int] = {}
         for r in self._results.values():
             terminal_verdicts[r.verdict.value] = terminal_verdicts.get(r.verdict.value, 0) + 1
         return {
@@ -522,7 +522,7 @@ class AsyncAuditQueue:
                 ),
                 timeout=self._request_timeout,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             result.verdict = AuditVerdict.TIMEOUT
             result.error = f"R1 audit exceeded {self._request_timeout}s"
             result.completed_at = time.time()
@@ -586,7 +586,7 @@ class AsyncAuditQueue:
 # Module-level singleton. Stays None until get_audit_queue() is
 # called. The first call constructs it; subsequent calls return the
 # same instance. Tests can reset by setting `audit_queue = None`.
-audit_queue: Optional[AsyncAuditQueue] = None
+audit_queue: AsyncAuditQueue | None = None
 
 
 def get_audit_queue(

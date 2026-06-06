@@ -1,4 +1,4 @@
 """API package — REST endpoints."""
-from . import character, action, scene, world
+from . import action, character, scene, world
 
 __all__ = ["character", "action", "scene", "world"]

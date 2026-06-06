@@ -74,10 +74,9 @@ and the "state is always above memory" invariant.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from backend.state_machine import (
-    MAX_TAGS_PER_CHARACTER,
     SemanticState,
 )
 
@@ -214,7 +213,7 @@ class PromptBuilder:
         self,
         character_id: str,
         current_state: SemanticState,
-        action_context: Dict[str, Any],
+        action_context: dict[str, Any],
     ) -> str:
         """Build the system prompt for an LLM call.
 
@@ -312,7 +311,7 @@ class PromptBuilder:
         return formatted
 
     async def _format_memory_section(
-        self, character_id: str, action_context: Dict[str, Any]
+        self, character_id: str, action_context: dict[str, Any]
     ) -> str:
         """Format the memory section. Best-effort; never raises.
 
@@ -355,13 +354,13 @@ class PromptBuilder:
         if not memories:
             return "(無相關記憶)"
 
-        lines: List[str] = []
+        lines: list[str] = []
         for m in memories:
             content = (m.get("content", "") or "")[:MAX_MEMORY_DISPLAY_LENGTH]
             lines.append(f"- {content}")
         return "\n".join(lines)
 
-    def _format_action_context(self, action_context: Dict[str, Any]) -> str:
+    def _format_action_context(self, action_context: dict[str, Any]) -> str:
         """Format the action context (verb, target, args)."""
         verb = action_context.get("verb") or "未知"
         target = action_context.get("target") or "無"

@@ -27,8 +27,8 @@ from __future__ import annotations
 import os
 import sys
 import uuid
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import AsyncIterator
 
 import pytest
 import pytest_asyncio
@@ -44,6 +44,8 @@ if _REPO_ROOT not in sys.path:
 from backend.memory_palace_integration import MemoryPalaceIntegration  # noqa: E402
 from backend.memory_palace_integration_endpoint import (  # noqa: E402
     router as memory_router,
+)
+from backend.memory_palace_integration_endpoint import (
     set_integration,
 )
 from backend.persistence_pg import PostgresPersistence  # noqa: E402

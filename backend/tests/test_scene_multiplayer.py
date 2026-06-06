@@ -59,21 +59,20 @@ _REPO_ROOT = os.path.abspath(
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
+from backend.memory_isolation import (  # noqa: E402
+    MemoryIsolationError,
+    MemoryIsolationGuard,
+    get_isolation_guard,
+    isolation_guard,
+)
 from backend.scene_multiplayer import (  # noqa: E402
     DEFAULT_MAX_NPCS_PER_SCENE,
     DEFAULT_MAX_PLAYERS_PER_SCENE,
     MultiplayerScene,
     SceneRegistry,
-    scene_registry,
     get_scene_registry,
+    scene_registry,
 )
-from backend.memory_isolation import (  # noqa: E402
-    MemoryIsolationError,
-    MemoryIsolationGuard,
-    isolation_guard,
-    get_isolation_guard,
-)
-
 
 # ============================================
 # Fixtures

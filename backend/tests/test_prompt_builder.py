@@ -49,14 +49,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-
 # ============================================
 # Fixtures
 # ============================================
 
 
 @pytest.fixture
-def basic_state() -> "SemanticState":
+def basic_state() -> SemanticState:
     """A 2-tag state for most tests."""
     from backend.state_machine import SemanticState
 
@@ -67,7 +66,7 @@ def basic_state() -> "SemanticState":
 
 
 @pytest.fixture
-def empty_state() -> "SemanticState":
+def empty_state() -> SemanticState:
     """A 0-tag state — the (no_state) edge case."""
     from backend.state_machine import SemanticState
 
@@ -75,7 +74,7 @@ def empty_state() -> "SemanticState":
 
 
 @pytest.fixture
-def cjk_seven_tag_state() -> "SemanticState":
+def cjk_seven_tag_state() -> SemanticState:
     """7 CJK tags — at the display cap."""
     from backend.state_machine import SemanticState
 
@@ -89,7 +88,7 @@ def cjk_seven_tag_state() -> "SemanticState":
 
 
 @pytest.fixture
-def basic_action_context() -> Dict[str, Any]:
+def basic_action_context() -> dict[str, Any]:
     """A typical action context with a query_embedding for memory recall."""
     return {
         "verb": "attack",
@@ -235,7 +234,8 @@ def test_memory_section_uses_memory_palace_recall(
 ) -> None:
     """The mock palace is called with character_id, query_embedding, k=5."""
     import asyncio
-    from backend.prompt_builder import PromptBuilder, DEFAULT_TOP_K_MEMORIES
+
+    from backend.prompt_builder import DEFAULT_TOP_K_MEMORIES, PromptBuilder
 
     builder = PromptBuilder(memory_palace=mock_palace)
     prompt = asyncio.run(
@@ -310,6 +310,7 @@ def test_state_always_above_memory_in_prompt(
     at the top, regardless of what the Memory Palace returned.
     """
     import asyncio
+
     from backend.prompt_builder import PromptBuilder
 
     builder = PromptBuilder(memory_palace=mock_palace)
@@ -366,6 +367,7 @@ def test_invalid_state_falls_back_gracefully(
     without error, with the first 7 visible and an overflow marker.
     """
     import asyncio
+
     from backend.prompt_builder import MAX_TAGS_DISPLAYED
     from backend.state_machine import (
         MAX_TAGS_PER_CHARACTER,

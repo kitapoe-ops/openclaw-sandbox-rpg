@@ -20,7 +20,6 @@ Cleanup:
 """
 import asyncio
 import logging
-from typing import Dict
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
@@ -32,8 +31,8 @@ class SceneLockManager:
     """
 
     def __init__(self, gc_after_hours: int = 24):
-        self._locks: Dict[str, asyncio.Lock] = {}
-        self._last_used: Dict[str, datetime] = {}
+        self._locks: dict[str, asyncio.Lock] = {}
+        self._last_used: dict[str, datetime] = {}
         self._gc_after = timedelta(hours=gc_after_hours)
         self._meta_lock = asyncio.Lock()
 
@@ -76,7 +75,7 @@ class SceneLockManager:
     def stats(self) -> dict:
         return {
             "total_locks": len(self._locks),
-            "active_locks": sum(1 for l in self._locks.values() if l.locked()),
+            "active_locks": sum(1 for lock in self._locks.values() if lock.locked()),
         }
 
 

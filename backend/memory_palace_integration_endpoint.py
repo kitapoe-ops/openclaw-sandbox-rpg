@@ -45,7 +45,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -134,10 +134,10 @@ class RememberRequest(BaseModel):
 
     character_id: str = Field(..., min_length=1, max_length=256)
     content: str = Field(..., min_length=1, max_length=4000)
-    embedding: List[float] = Field(..., min_length=EMBEDDING_DIM, max_length=EMBEDDING_DIM)
+    embedding: list[float] = Field(..., min_length=EMBEDDING_DIM, max_length=EMBEDDING_DIM)
     memory_type: str = Field("episodic", pattern="^(episodic|semantic|procedural)$")
     salience: float = Field(0.5, ge=0.0, le=1.0)
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: dict[str, Any] | None = None
 
 
 class RememberResponse(BaseModel):
@@ -150,16 +150,16 @@ class RecallRequest(BaseModel):
     """POST /memory/recall body."""
 
     character_id: str = Field(..., min_length=1, max_length=256)
-    query_embedding: List[float] = Field(..., min_length=EMBEDDING_DIM, max_length=EMBEDDING_DIM)
+    query_embedding: list[float] = Field(..., min_length=EMBEDDING_DIM, max_length=EMBEDDING_DIM)
     k: int = Field(5, ge=1, le=50)
-    memory_type: Optional[str] = Field(None, pattern="^(episodic|semantic|procedural)$")
+    memory_type: str | None = Field(None, pattern="^(episodic|semantic|procedural)$")
     min_salience: float = Field(0.0, ge=0.0, le=1.0)
 
 
 class RecallResponse(BaseModel):
     """POST /memory/recall response."""
 
-    results: List[Dict[str, Any]]
+    results: list[dict[str, Any]]
 
 
 class ForgetResponse(BaseModel):

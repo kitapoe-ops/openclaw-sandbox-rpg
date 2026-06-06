@@ -9,6 +9,7 @@ Tests the FastAPI routes via TestClient. These verify that:
 """
 import os
 import sys
+
 import pytest
 
 # Ensure backend on sys.path
@@ -16,6 +17,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), os.pa
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
 from backend.main import app
 
 
@@ -35,6 +37,7 @@ class TestCharacterApi:
         monkeypatch.setenv("DEMO_MODE", "true")
         # Reload demo_mode module to pick up env var
         import importlib
+
         from backend import demo_mode
         importlib.reload(demo_mode)
         client = TestClient(app)
@@ -53,6 +56,7 @@ class TestCharacterApi:
         """
         monkeypatch.setenv("DEMO_MODE", "true")
         import importlib
+
         from backend import demo_mode
         importlib.reload(demo_mode)
         client = TestClient(app)
@@ -86,6 +90,7 @@ class TestWorldApi:
         """
         monkeypatch.setenv("DEMO_MODE", "true")
         import importlib
+
         from backend import demo_mode
         importlib.reload(demo_mode)
         client = TestClient(app)
@@ -107,6 +112,7 @@ class TestWorldApi:
         """GET /api/world/ in demo mode scans the worlds/ directory."""
         monkeypatch.setenv("DEMO_MODE", "true")
         import importlib
+
         from backend import demo_mode
         importlib.reload(demo_mode)
         client = TestClient(app)
@@ -121,6 +127,7 @@ class TestWorldApi:
         """GET /api/world/{id}/parameters returns the YAML world_parameters list."""
         monkeypatch.setenv("DEMO_MODE", "true")
         import importlib
+
         from backend import demo_mode
         importlib.reload(demo_mode)
         client = TestClient(app)
@@ -140,6 +147,7 @@ class TestWorldApi:
         """POST /api/world/{id}/etl in demo mode is a no-op ack."""
         monkeypatch.setenv("DEMO_MODE", "true")
         import importlib
+
         from backend import demo_mode
         importlib.reload(demo_mode)
         client = TestClient(app)
@@ -154,6 +162,7 @@ class TestWorldApi:
         """Unknown world_id returns 404 even in demo mode (no YAML found)."""
         monkeypatch.setenv("DEMO_MODE", "true")
         import importlib
+
         from backend import demo_mode
         importlib.reload(demo_mode)
         client = TestClient(app)

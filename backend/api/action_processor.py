@@ -107,7 +107,8 @@ import asyncio
 import logging
 import time
 import uuid
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
@@ -160,8 +161,8 @@ class ProcessActionRequest(BaseModel):
 
     character_id: str = Field(..., min_length=1, max_length=128)
     verb: str = Field(..., min_length=1, max_length=50)
-    target: Optional[str] = None
-    args: Optional[Dict[str, Any]] = None
+    target: str | None = None
+    args: dict[str, Any] | None = None
 
 
 class ProcessActionResponse(BaseModel):
@@ -183,14 +184,14 @@ class ProcessActionResponse(BaseModel):
     status: str = "processed"
     action_id: str
     narrative: str
-    side_effects: List[Dict[str, Any]] = Field(default_factory=list)
+    side_effects: list[dict[str, Any]] = Field(default_factory=list)
     # Debug-friendly echoes (kept stable for the frontend picker).
-    received: Dict[str, Any] = Field(default_factory=dict)
+    received: dict[str, Any] = Field(default_factory=dict)
     # Phase F3: state mutation contract result. ``mutation`` is a
     # dict-shaped StateMutation; ``mutation_error`` is a short reason
     # if the mutation was rejected.
-    mutation: Optional[Dict[str, Any]] = None
-    mutation_error: Optional[str] = None
+    mutation: dict[str, Any] | None = None
+    mutation_error: str | None = None
 
 
 # ============================================
@@ -226,10 +227,10 @@ class InMemoryTurnSystem:
     """
 
     def __init__(self) -> None:
-        self._active: Dict[str, str] = {}
+        self._active: dict[str, str] = {}
         self._lock = asyncio.Lock()
 
-    async def begin(self, character_id: str) -> Optional[str]:
+    async def begin(self, character_id: str) -> str | None:
         """Claim a turn slot. Returns action_id if free, None if busy."""
         async with self._lock:
             if self._active.get(character_id):
@@ -245,7 +246,7 @@ class InMemoryTurnSystem:
             if self._active.get(character_id) == action_id:
                 del self._active[character_id]
 
-    def active_for(self, character_id: str) -> Optional[str]:
+    def active_for(self, character_id: str) -> str | None:
         return self._active.get(character_id)
 
 
@@ -281,8 +282,8 @@ class ActionProcessor:
         llm_client: Any,
         memory_palace: Any = None,
         turn_system: Any = None,
-        scene_context_fn: Optional[Callable[[str], Awaitable[Dict[str, Any]]]] = None,
-        allowed_verbs: Optional[frozenset[str]] = None,
+        scene_context_fn: Callable[[str], Awaitable[dict[str, Any]]] | None = None,
+        allowed_verbs: frozenset[str] | None = None,
         state_machine: Any = None,
         prompt_builder: Any = None,
     ) -> None:
@@ -292,7 +293,7 @@ class ActionProcessor:
         self._scene_context_fn = scene_context_fn
         self.allowed_verbs = allowed_verbs or ALLOWED_VERBS
         # Per-character concurrency gate (physics lock surrogate).
-        self._character_locks: Dict[str, asyncio.Lock] = {}
+        self._character_locks: dict[str, asyncio.Lock] = {}
         self._locks_meta_lock = asyncio.Lock()
         # Phase F3: state machine + prompt builder.
         self._state_machine = state_machine
@@ -312,10 +313,10 @@ class ActionProcessor:
         self,
         character_id: str,
         verb: str,
-        target: Optional[str] = None,
-        args: Optional[Dict[str, Any]] = None,
-        max_retries: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        target: str | None = None,
+        args: dict[str, Any] | None = None,
+        max_retries: int | None = None,
+    ) -> dict[str, Any]:
         """Run the full pipeline. Returns the response dict.
 
         Raises ``HTTPException(400)`` on invalid verb. Raises
@@ -364,10 +365,10 @@ class ActionProcessor:
         self,
         character_id: str,
         verb: str,
-        target: Optional[str],
-        args: Optional[Dict[str, Any]],
-        max_retries: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        target: str | None,
+        args: dict[str, Any] | None,
+        max_retries: int | None = None,
+    ) -> dict[str, Any]:
         # 3) Claim a turn in the turn system.
         action_id = await self.turn_system.begin(character_id)
         if action_id is None:
@@ -378,12 +379,12 @@ class ActionProcessor:
                 detail=f"Turn slot for {character_id!r} is busy.",
             )
 
-        side_effects: List[Dict[str, Any]] = []
-        mutation_dict: Optional[Dict[str, Any]] = None
-        mutation_error: Optional[str] = None
+        side_effects: list[dict[str, Any]] = []
+        mutation_dict: dict[str, Any] | None = None
+        mutation_error: str | None = None
         try:
             # 4) Resolve scene context (if a hook is wired).
-            scene_ctx: Dict[str, Any] = {}
+            scene_ctx: dict[str, Any] = {}
             if self._scene_context_fn is not None:
                 try:
                     scene_ctx = await self._scene_context_fn(character_id)
@@ -438,7 +439,6 @@ class ActionProcessor:
             # (e.g. a custom test double), fall back to the legacy
             # ``generate()`` path. ``max_retries`` is passed through
             # so the LLM can self-correct on a dropped mutation.
-            t0 = time.monotonic()
             llm_result = await self._call_llm_with_state_contract(
                 system_prompt=system_prompt,
                 user_message=user_message,
@@ -666,8 +666,8 @@ class ActionProcessor:
         character_id: str,
         current_state: Any,
         verb: str,
-        target: Optional[str],
-        args: Optional[Dict[str, Any]],
+        target: str | None,
+        args: dict[str, Any] | None,
     ) -> str:
         """Build the system prompt via PromptBuilder (F4).
 
@@ -676,7 +676,7 @@ class ActionProcessor:
         section is at the top of the data, even when the builder is
         absent.
         """
-        action_context: Dict[str, Any] = {
+        action_context: dict[str, Any] = {
             "verb": verb,
             "target": target or "(nothing)",
             "args": args or {},
@@ -715,7 +715,7 @@ class ActionProcessor:
         system_prompt: str,
         user_message: str,
         current_state: Any,
-        max_retries: Optional[int] = None,
+        max_retries: int | None = None,
     ) -> tuple:
         """Call the LLM with the F3 state contract.
 
@@ -792,10 +792,10 @@ class ActionProcessor:
         self,
         character_id: str,
         verb: str,
-        target: Optional[str],
+        target: str | None,
         narrative: str,
         action_id: str,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Persist a one-line summary to Memory Palace. Best-effort.
 
         Returns the new memory_id on success, None on skip (no

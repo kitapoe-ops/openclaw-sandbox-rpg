@@ -24,9 +24,9 @@ apscheduler = pytest.importorskip("apscheduler")
 from fastapi import FastAPI  # noqa: E402
 
 from backend.scheduler import (  # noqa: E402
-    JOB_SENTINEL_DAILY,
     JOB_DASHBOARD_REFRESH,
     JOB_HEARTBEAT,
+    JOB_SENTINEL_DAILY,
     build_scheduler,
     create_app_with_scheduler,
     job_dashboard_refresh,

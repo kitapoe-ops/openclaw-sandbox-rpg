@@ -47,7 +47,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # Ensure repo root is on sys.path so `from backend.llm_client import ...` works
 # when pytest is invoked from the sandbox-rpg-tmp directory.
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -60,7 +59,6 @@ from backend.llm_client import (  # noqa: E402
     MockLLMClient,
     get_llm_client,
 )
-
 
 # ============================================
 # 1. ABC cannot be instantiated
@@ -233,7 +231,7 @@ def _build_minimax_client() -> MiniMaxM3Client:
     )
 
 
-def _stub_200_response() -> Dict[str, Any]:
+def _stub_200_response() -> dict[str, Any]:
     return {
         "choices": [
             {
@@ -256,7 +254,7 @@ def _stub_response_with_429() -> MagicMock:
     return response
 
 
-def _stub_response_with_status(status: int, body: Optional[Dict[str, Any]] = None) -> MagicMock:
+def _stub_response_with_status(status: int, body: dict[str, Any] | None = None) -> MagicMock:
     response = MagicMock()
     response.status_code = status
     response.headers = {}

@@ -1,17 +1,18 @@
 """
 Character API Endpoints (v3.7 — demo + DB modes)
 """
-from fastapi import APIRouter, HTTPException
-from typing import Dict, Any
+from typing import Any
 
-from ..scenes_demo import get_demo_character
+from fastapi import APIRouter, HTTPException
+
 from ..demo_mode import is_demo_mode
+from ..scenes_demo import get_demo_character
 
 router = APIRouter()
 
 
 @router.get("/{character_id}")
-async def get_character(character_id: str) -> Dict[str, Any]:
+async def get_character(character_id: str) -> dict[str, Any]:
     """
     Get a character's current state.
     Demo mode: returns hard-coded character.
@@ -64,13 +65,13 @@ async def get_character(character_id: str) -> Dict[str, Any]:
 
 
 @router.post("/")
-async def create_character(character_data: Dict[str, Any]) -> Dict[str, Any]:
+async def create_character(character_data: dict[str, Any]) -> dict[str, Any]:
     """Create a new character."""
     return {"message": "TODO: Implement character creation", "received": character_data}
 
 
 @router.put("/{character_id}")
-async def update_character(character_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
+async def update_character(character_id: str, updates: dict[str, Any]) -> dict[str, Any]:
     """Update a character (equipment change, etc.)."""
     return {
         "character_id": character_id,
@@ -79,7 +80,7 @@ async def update_character(character_id: str, updates: Dict[str, Any]) -> Dict[s
     }
 
 
-def _demo_to_response(demo: Dict[str, Any]) -> Dict[str, Any]:
+def _demo_to_response(demo: dict[str, Any]) -> dict[str, Any]:
     """Convert demo data to API response format."""
     return {
         "character_id": demo["character_id"],

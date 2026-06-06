@@ -43,7 +43,8 @@ import os
 import sys
 import time
 import uuid
-from typing import Any, AsyncIterator, Dict, List
+from collections.abc import AsyncIterator
+from typing import Any, Dict, List
 from unittest.mock import AsyncMock
 
 import pytest
@@ -68,7 +69,6 @@ from backend.api.action_processor import (  # noqa: E402
     build_default_processor,
 )
 from backend.llm_client import MockLLMClient  # noqa: E402
-
 
 # ============================================
 # Fixtures
@@ -390,7 +390,7 @@ async def test_process_concurrent_actions_serialized() -> None:
     """
 
     # Slow LLM that records start time of each state-contract call.
-    call_starts: List[float] = []
+    call_starts: list[float] = []
 
     slow_canned = (
         '{"narrative": "Slow narrative.", "state_mutations": null}'
@@ -399,7 +399,7 @@ async def test_process_concurrent_actions_serialized() -> None:
     class _SlowMock(MockLLMClient):
         async def generate_with_state_contract(
             self, *args: Any, **kwargs: Any
-        ) -> Dict[str, Any]:
+        ) -> dict[str, Any]:
             call_starts.append(time.monotonic())
             await asyncio.sleep(0.1)  # 100ms — enough to overlap
             return await super().generate_with_state_contract(
@@ -549,12 +549,12 @@ async def test_process_calls_prompt_builder_before_llm() -> None:
     output is passed as ``system_prompt`` to the LLM). We
     instrument both with a counter and check the ordering.
     """
-    call_order: List[str] = []
+    call_order: list[str] = []
 
     class _OrderLLM(MockLLMClient):
         async def generate_with_state_contract(
             self, *args: Any, **kwargs: Any
-        ) -> Dict[str, Any]:
+        ) -> dict[str, Any]:
             call_order.append("llm")
             return await super().generate_with_state_contract(
                 *args, **kwargs

@@ -39,10 +39,10 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
 
-from sqlalchemy import String, DateTime, ForeignKey, Index
+from sqlalchemy import DateTime, ForeignKey, Index, String
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -74,7 +74,7 @@ class CharacterRow(Base):
     __tablename__ = "characters"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
-    payload: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
@@ -92,7 +92,7 @@ class SceneRow(Base):
     character_id: Mapped[str] = mapped_column(
         String, ForeignKey("characters.id"), nullable=False
     )
-    payload: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
@@ -228,7 +228,7 @@ class PostgresPersistence:
             raise TypeError("payload must be a dict")
 
         await self._ensure_schema()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         async with self._sessionmaker() as session:
             try:
                 existing = await session.get(CharacterRow, character_id)
@@ -249,7 +249,7 @@ class PostgresPersistence:
                 await session.rollback()
                 raise
 
-    async def load_character(self, character_id: str) -> Optional[dict]:
+    async def load_character(self, character_id: str) -> dict | None:
         """Return the stored payload for ``character_id`` or None."""
         if not character_id:
             raise ValueError("character_id is required")
@@ -301,7 +301,7 @@ class PostgresPersistence:
             raise TypeError("payload must be a dict")
 
         await self._ensure_schema()
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         async with self._sessionmaker() as session:
             try:
                 session.add(
@@ -317,7 +317,7 @@ class PostgresPersistence:
                 await session.rollback()
                 raise
 
-    async def load_scene(self, scene_id: str) -> Optional[dict]:
+    async def load_scene(self, scene_id: str) -> dict | None:
         """Return the stored payload for ``scene_id`` or None."""
         if not scene_id:
             raise ValueError("scene_id is required")

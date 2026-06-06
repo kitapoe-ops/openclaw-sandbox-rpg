@@ -15,9 +15,9 @@ Key simplifications from v2.0:
 - No in-memory pending updates (DB-driven recovery)
 - Per-scene lock instead of per-character (allows parallel scenes)
 """
-from .connection_manager import registry, ConnectionRegistry
-from .scene_locks import scene_lock_manager, SceneLockManager
+from .connection_manager import ConnectionRegistry, registry
 from .game_socket import websocket_endpoint
+from .scene_locks import SceneLockManager, scene_lock_manager
 
 __all__ = [
     "registry",

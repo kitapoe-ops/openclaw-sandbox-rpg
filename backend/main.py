@@ -11,17 +11,17 @@ Or with full DB:
 Auto-detect:
   DEMO_MODE=auto (default) — tries DB, falls back to demo
 """
-import os
-import json
 import logging
+import os
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import character, action, scene, world
-from .ws import websocket_endpoint, registry, scene_lock_manager
+from .api import action, character, scene, world
 from .demo_mode import is_demo_mode
 from .scenes_demo import DEMO_SCENE, DEMO_STARTER
+from .ws import registry, scene_lock_manager, websocket_endpoint
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -45,8 +45,8 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("[Mode] FULL MODE — connecting to DB")
         try:
-            from .db import init_db, get_db_session, engine
-            from .models import World, Scene, CharacterState
+            from .db import engine, get_db_session, init_db
+            from .models import CharacterState, Scene, World
 
             await init_db()
             logger.info("[Startup] DB schema initialized")

@@ -5,11 +5,11 @@ Validates player input against character state, world state, and game rules.
 
 Reference: docs/SCHEMAS/player_input.schema.json
 """
-from typing import Dict, Any, Tuple, List
-from jsonschema import validate, ValidationError
+from typing import Any
+
+from jsonschema import ValidationError, validate
 
 from .physics_lock import PhysicsLock
-from .semantic_gradient import SemanticGradient
 
 
 class ChoiceValidator:
@@ -32,10 +32,10 @@ class ChoiceValidator:
 
     def validate(
         self,
-        player_input: Dict[str, Any],
-        character_state: Dict[str, Any],
-        current_scene: Dict[str, Any],
-    ) -> Tuple[bool, List[str]]:
+        player_input: dict[str, Any],
+        character_state: dict[str, Any],
+        current_scene: dict[str, Any],
+    ) -> tuple[bool, list[str]]:
         """
         Validate a player input. Returns (is_valid, list_of_errors).
         """

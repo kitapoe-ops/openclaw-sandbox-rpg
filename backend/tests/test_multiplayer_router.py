@@ -44,10 +44,11 @@ if _REPO_ROOT not in sys.path:
 from backend.ws.multiplayer_router import (  # noqa: E402
     MultiplayerConnectionManager,
     get_multiplayer_manager,
-    multiplayer_manager as default_manager,
     multiplayer_ws_endpoint,
 )
-
+from backend.ws.multiplayer_router import (
+    multiplayer_manager as default_manager,
+)
 
 # ============================================
 # Fixtures
@@ -326,6 +327,7 @@ async def http_client():
     composed app's lifespan opens Postgres; we want hermetic.
     """
     from httpx import ASGITransport, AsyncClient
+
     from backend.app_with_memory import app
 
     transport = ASGITransport(app=app)

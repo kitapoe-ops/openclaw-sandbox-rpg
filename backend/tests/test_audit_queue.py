@@ -52,7 +52,6 @@ from backend.audit_queue import (  # noqa: E402
     reset_audit_queue,
 )
 
-
 # ============================================
 # Fixtures
 # ============================================
@@ -70,8 +69,8 @@ def _make_mock_r1(
     *,
     delay: float = 0.0,
     verdict: str = "PASS",
-    findings: Optional[List[Dict[str, Any]]] = None,
-    raise_exc: Optional[BaseException] = None,
+    findings: list[dict[str, Any]] | None = None,
+    raise_exc: BaseException | None = None,
 ) -> AsyncMock:
     """Build an AsyncMock standing in for R1AuditClient.
 

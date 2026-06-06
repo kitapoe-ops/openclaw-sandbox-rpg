@@ -38,8 +38,8 @@ from __future__ import annotations
 
 import asyncio
 import os
-import sys
 import sqlite3
+import sys
 from typing import Any, Dict, List, Optional
 
 import pytest
@@ -67,8 +67,8 @@ async def engine(tmp_path):
 @pytest_asyncio.fixture
 async def engine_with_mock_llm(tmp_path):
     """SemanticSoulTransfer with a mock LLM that returns a known tag."""
-    from backend.soul_transfer import SemanticSoulTransfer
     from backend.llm_client import MockLLMClient
+    from backend.soul_transfer import SemanticSoulTransfer
     mock = MockLLMClient(
         canned_response='{"degraded_state": "測試降級"}',
     )
@@ -81,8 +81,8 @@ async def engine_with_mock_llm(tmp_path):
 @pytest_asyncio.fixture
 async def engine_with_bad_llm(tmp_path):
     """SemanticSoulTransfer with a mock LLM that returns garbage."""
-    from backend.soul_transfer import SemanticSoulTransfer
     from backend.llm_client import MockLLMClient
+    from backend.soul_transfer import SemanticSoulTransfer
     mock = MockLLMClient(canned_response='{"degraded_state": "!!garbage!!"}')
     return SemanticSoulTransfer(
         soul_db_path=":memory:",

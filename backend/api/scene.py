@@ -1,17 +1,18 @@
 """
 Scene API Endpoints (v3.7 — demo + DB modes)
 """
-from fastapi import APIRouter, HTTPException
-from typing import Dict, Any
+from typing import Any
 
-from ..scenes_demo import DEMO_SCENE, get_demo_scene
+from fastapi import APIRouter, HTTPException
+
 from ..demo_mode import is_demo_mode
+from ..scenes_demo import DEMO_SCENE, get_demo_scene
 
 router = APIRouter()
 
 
 @router.get("/{character_id}")
-async def get_current_scene(character_id: str) -> Dict[str, Any]:
+async def get_current_scene(character_id: str) -> dict[str, Any]:
     """
     Get the current scene for a character.
     Demo mode: returns hard-coded scene based on character.
@@ -69,7 +70,7 @@ async def get_current_scene(character_id: str) -> Dict[str, Any]:
 
 
 @router.get("/{character_id}/history")
-async def get_scene_history(character_id: str, limit: int = 20) -> Dict[str, Any]:
+async def get_scene_history(character_id: str, limit: int = 20) -> dict[str, Any]:
     """Get last N scenes for the character."""
     return {
         "character_id": character_id,
@@ -79,7 +80,7 @@ async def get_scene_history(character_id: str, limit: int = 20) -> Dict[str, Any
     }
 
 
-def _format_demo_response(character_id: str, scene: Dict[str, Any]) -> Dict[str, Any]:
+def _format_demo_response(character_id: str, scene: dict[str, Any]) -> dict[str, Any]:
     return {
         "round": 1,
         "character_id": character_id,

@@ -29,8 +29,9 @@ import os
 import socket
 import sys
 import time
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import AsyncIterator, Optional
+from typing import Optional
 
 import pytest
 import pytest_asyncio
@@ -226,8 +227,8 @@ class TestServeDemoScript:
         except ImportError as exc:  # pragma: no cover — safety net
             pytest.fail(f"scripts.serve_demo.DemoHandler not importable: {exc}")
 
-        import threading
         import socketserver
+        import threading
 
         port = _find_free_port(5173)
         socketserver.TCPServer.allow_reuse_address = True
@@ -263,11 +264,11 @@ class TestServeDemoScript:
         with the ``Access-Control-Allow-Origin: *`` header.
         """
         sys.path.insert(0, str(REPO_ROOT / "backend"))
-        from scripts.serve_demo import DemoHandler  # type: ignore
-
-        import threading
         import socketserver
+        import threading
         import urllib.request
+
+        from scripts.serve_demo import DemoHandler  # type: ignore
 
         port = _find_free_port(5173)
         socketserver.TCPServer.allow_reuse_address = True

@@ -7,10 +7,9 @@ No numbers — only semantic bucket labels.
 Reference: docs/SCHEMAS/character_state.schema.json
            docs/SCHEMAS/world_parameter.yaml (semantic_states section)
 """
-from typing import List, Optional, Dict, Any
-from enum import Enum
 from dataclasses import dataclass, field
-
+from enum import Enum
+from typing import Any
 
 # ============================================
 # Default Semantic Levels
@@ -56,7 +55,7 @@ class SemanticGradient:
         stamina = SemanticGradient([...], current="fresh")
         stamina.shift(-1, environment="unsafe")  # fresh → slight_breath
     """
-    levels: List[str]
+    levels: list[str]
     current: str
     max_shift_per_round: int = 1
     safe_environment_bonus: int = 1
@@ -95,7 +94,7 @@ class SemanticGradient:
         self.current = self.levels[new_index]
         return True
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "current": self.current,
             "current_index": self._current_index,
@@ -117,11 +116,11 @@ class StateChange:
     health_new: str
     morale_old: str
     morale_new: str
-    new_status_tags: List[str] = field(default_factory=list)
-    removed_status_tags: List[str] = field(default_factory=list)
-    items_consumed: List[Dict[str, Any]] = field(default_factory=list)
-    new_memories: List[str] = field(default_factory=list)
-    relationship_changes: List[Dict[str, Any]] = field(default_factory=list)
+    new_status_tags: list[str] = field(default_factory=list)
+    removed_status_tags: list[str] = field(default_factory=list)
+    items_consumed: list[dict[str, Any]] = field(default_factory=list)
+    new_memories: list[str] = field(default_factory=list)
+    relationship_changes: list[dict[str, Any]] = field(default_factory=list)
 
 
 class StateChangeCalculator:
@@ -137,7 +136,7 @@ class StateChangeCalculator:
     5. Return StateChange
     """
 
-    def __init__(self, world_parameter_config: Dict[str, Any] = None):
+    def __init__(self, world_parameter_config: dict[str, Any] = None):
         self.world_config = world_parameter_config or {}
         # Per-world max shift override
         self.max_shift = self.world_config.get("max_shift_per_semantic_level", 1)
@@ -146,9 +145,9 @@ class StateChangeCalculator:
 
     def calculate(
         self,
-        character_state: Dict[str, Any],
-        player_input: Dict[str, Any],
-        scene_output: Dict[str, Any],
+        character_state: dict[str, Any],
+        player_input: dict[str, Any],
+        scene_output: dict[str, Any],
     ) -> StateChange:
         """
         Calculate state changes for a round.
@@ -220,7 +219,7 @@ class StateChangeCalculator:
             relationship_changes=llm_changes.get("relationship_changes", []),
         )
 
-    def _compute_delta(self, old: str, new: str, levels: List[str]) -> int:
+    def _compute_delta(self, old: str, new: str, levels: list[str]) -> int:
         """Compute signed delta between two semantic levels."""
         if old not in levels or new not in levels:
             return 0
@@ -230,7 +229,7 @@ class StateChangeCalculator:
         self,
         old: str,
         delta: int,
-        levels: List[str],
+        levels: list[str],
         field: str,
         environment: str = "neutral",
     ) -> str:

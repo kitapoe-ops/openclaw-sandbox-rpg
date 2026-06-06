@@ -18,17 +18,18 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sqlite3
 import uuid
-from dataclasses import dataclass, field, asdict
-from datetime import datetime, timezone
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
-UTC = timezone.utc
+UTC = UTC
 
 
 class TurnStatus(str, Enum):
@@ -77,13 +78,13 @@ class Turn:
     round_number: int
     status: TurnStatus
     submitted_at: str
-    player_input: Dict[str, Any] = field(default_factory=dict)
-    scene_output: Dict[str, Any] = field(default_factory=dict)
-    started_at: Optional[str] = None
-    completed_at: Optional[str] = None
-    deadline: Optional[str] = None
+    player_input: dict[str, Any] = field(default_factory=dict)
+    scene_output: dict[str, Any] = field(default_factory=dict)
+    started_at: str | None = None
+    completed_at: str | None = None
+    deadline: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["status"] = self.status.value
         return d
@@ -115,7 +116,7 @@ class TurnSystem:
     async def submit_turn(
         self,
         character_id: str,
-        player_input: Dict[str, Any],
+        player_input: dict[str, Any],
         deadline_seconds: int = 900,  # 15-min default
     ) -> str:
         """
@@ -157,7 +158,7 @@ class TurnSystem:
     async def advance_turn(
         self,
         character_id: str,
-    ) -> Optional[Turn]:
+    ) -> Turn | None:
         """
         Atomically claim and activate the next pending turn for a
         character. Uses DB row lock (UPDATE ... RETURNING) so only
@@ -210,7 +211,7 @@ class TurnSystem:
     async def complete_turn(
         self,
         turn_id: str,
-        scene_output: Dict[str, Any],
+        scene_output: dict[str, Any],
     ) -> bool:
         """
         Mark a turn as completed with its scene output.
@@ -267,7 +268,7 @@ class TurnSystem:
         finally:
             conn.close()
 
-    async def get_turn(self, turn_id: str) -> Optional[Turn]:
+    async def get_turn(self, turn_id: str) -> Turn | None:
         """Retrieve a single turn by ID."""
         conn = self._connect()
         try:
@@ -290,7 +291,7 @@ class TurnSystem:
         finally:
             conn.close()
 
-    async def get_active_turn(self, character_id: str) -> Optional[Turn]:
+    async def get_active_turn(self, character_id: str) -> Turn | None:
         """Get the currently active turn for a character (if any)."""
         conn = self._connect()
         try:

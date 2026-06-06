@@ -35,7 +35,6 @@ from unittest.mock import patch
 
 import pytest
 
-
 # Ensure the project root is on sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)))
 
@@ -47,6 +46,7 @@ def fresh_demo_mode():
     for each test. Also restores the module state on teardown.
     """
     import importlib
+
     from backend import demo_mode
     importlib.reload(demo_mode)
     yield demo_mode

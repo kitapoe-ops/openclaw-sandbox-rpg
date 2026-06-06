@@ -67,8 +67,8 @@ from __future__ import annotations
 import os
 import re
 import sys
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import AsyncIterator
 
 import pytest
 import pytest_asyncio
@@ -88,7 +88,6 @@ from backend.memory_palace_integration_endpoint import (  # noqa: E402
 )
 from backend.persistence_pg import PostgresPersistence  # noqa: E402
 from backend.vector_store import VectorStore  # noqa: E402
-
 
 # ============================================
 # Constants — mirror demo.html's URL contract
@@ -510,9 +509,9 @@ class TestMultiplayerFrontendWireUp:
         unique_usages = sorted(set(real_usages))
 
         assert not unique_usages, (
-            f"XSS invariant violated: demo.html contains "
-            f"forbidden patterns. "
-            f"Offending lines:\n"
+            "XSS invariant violated: demo.html contains "
+            "forbidden patterns. "
+            "Offending lines:\n"
             + "\n".join(
                 f"  L{ln}: {pat!r}  →  {line!r}"
                 for pat, ln, line in unique_usages

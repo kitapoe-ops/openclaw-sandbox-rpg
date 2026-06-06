@@ -15,11 +15,11 @@ Design rationale:
   - Burst protection works even before DB is touched
   - Crash-safe via try/finally
 """
-from typing import Dict, List, Optional
-from fastapi import WebSocket
 import asyncio
 import logging
 import time
+
+from fastapi import WebSocket
 
 logger = logging.getLogger(__name__)
 
@@ -29,13 +29,13 @@ class ConnectionRegistry:
 
     def __init__(self, inflight_timeout_seconds: int = 60):
         # character_id -> dict of connection_id -> websocket
-        self._connections: Dict[str, Dict[str, WebSocket]] = {}
+        self._connections: dict[str, dict[str, WebSocket]] = {}
         # character_id -> whether currently controlled by an active player
-        self._player_controlled: Dict[str, bool] = {}
+        self._player_controlled: dict[str, bool] = {}
         # Q7: In-memory anti-burst lock (set is atomic under GIL)
         self._inflight_flags: set = set()
         # Track when flag was acquired (for stale-flag detection)
-        self._inflight_since: Dict[str, float] = {}
+        self._inflight_since: dict[str, float] = {}
         self._inflight_timeout = inflight_timeout_seconds
         self._lock = asyncio.Lock()
 

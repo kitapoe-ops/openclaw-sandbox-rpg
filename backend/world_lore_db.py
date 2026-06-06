@@ -10,10 +10,10 @@ Reference: docs/SCHEMAS/world_parameter.yaml
            docs/SCHEMAS/location.schema.json
            docs/SCHEMAS/quest.schema.json
 """
-from typing import Dict, Any, List, Optional
-import yaml
-import json
 from pathlib import Path
+from typing import Any
+
+import yaml
 
 
 class WorldLoreDB:
@@ -27,16 +27,16 @@ class WorldLoreDB:
     TODO: Implement full DB integration.
     """
 
-    def __init__(self, world_id: str, world_config_path: Optional[Path] = None):
+    def __init__(self, world_id: str, world_config_path: Path | None = None):
         self.world_id = world_id
         self.world_config_path = world_config_path
-        self.npcs: Dict[str, Any] = {}
-        self.items: Dict[str, Any] = {}
-        self.locations: Dict[str, Any] = {}
-        self.quests: Dict[str, Any] = {}
-        self.world_parameters: Dict[str, Any] = {}
-        self.attitude_dimensions: Dict[str, Any] = {}
-        self.physics_lock_rules: Dict[str, List[str]] = {}
+        self.npcs: dict[str, Any] = {}
+        self.items: dict[str, Any] = {}
+        self.locations: dict[str, Any] = {}
+        self.quests: dict[str, Any] = {}
+        self.world_parameters: dict[str, Any] = {}
+        self.attitude_dimensions: dict[str, Any] = {}
+        self.physics_lock_rules: dict[str, list[str]] = {}
 
     def load_from_yaml(self, yaml_path: Path) -> bool:
         """
@@ -45,7 +45,7 @@ class WorldLoreDB:
         Reference format: docs/SCHEMAS/world_parameter.yaml
         """
         try:
-            with open(yaml_path, "r", encoding="utf-8") as f:
+            with open(yaml_path, encoding="utf-8") as f:
                 config = yaml.safe_load(f)
 
             # Load eternal rules
@@ -84,34 +84,34 @@ class WorldLoreDB:
             print(f"Failed to load world config: {e}")
             return False
 
-    def get_npc(self, npc_id: str) -> Optional[Dict[str, Any]]:
+    def get_npc(self, npc_id: str) -> dict[str, Any] | None:
         return self.npcs.get(npc_id)
 
-    def get_item(self, item_id: str) -> Optional[Dict[str, Any]]:
+    def get_item(self, item_id: str) -> dict[str, Any] | None:
         return self.items.get(item_id)
 
-    def get_location(self, location_id: str) -> Optional[Dict[str, Any]]:
+    def get_location(self, location_id: str) -> dict[str, Any] | None:
         return self.locations.get(location_id)
 
-    def get_quest(self, quest_id: str) -> Optional[Dict[str, Any]]:
+    def get_quest(self, quest_id: str) -> dict[str, Any] | None:
         return self.quests.get(quest_id)
 
-    def get_npcs_in_location(self, location_id: str) -> List[Dict[str, Any]]:
+    def get_npcs_in_location(self, location_id: str) -> list[dict[str, Any]]:
         loc = self.get_location(location_id)
         if not loc:
             return []
         return [self.npcs[npc_id] for npc_id in loc.get("npcs_present", []) if npc_id in self.npcs]
 
-    def get_items_in_location(self, location_id: str) -> List[Dict[str, Any]]:
+    def get_items_in_location(self, location_id: str) -> list[dict[str, Any]]:
         loc = self.get_location(location_id)
         if not loc:
             return []
         return [self.items[item_id] for item_id in loc.get("items_present", []) if item_id in self.items]
 
-    def get_world_parameter(self, param_id: str) -> Optional[Dict[str, Any]]:
+    def get_world_parameter(self, param_id: str) -> dict[str, Any] | None:
         return self.world_parameters.get(param_id)
 
-    def get_attitude_dimension(self, dim_id: str) -> Optional[Dict[str, Any]]:
+    def get_attitude_dimension(self, dim_id: str) -> dict[str, Any] | None:
         return self.attitude_dimensions.get(dim_id)
 
     # ============================================
@@ -121,9 +121,9 @@ class WorldLoreDB:
     def semantic_search(
         self,
         query: str,
-        entity_types: List[str] = None,
+        entity_types: list[str] = None,
         top_k: int = 5,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Search world lore using in-memory keyword matching.
 
@@ -134,7 +134,7 @@ class WorldLoreDB:
         if not query:
             return []
         q_lower = query.lower()
-        results: List[tuple] = []  # (score, entity)
+        results: list[tuple] = []  # (score, entity)
 
         # Search in selected entity types (or all)
         type_to_dict = {
@@ -175,9 +175,9 @@ class WorldLoreDB:
     def get_context_for_scene(
         self,
         location_id: str,
-        character_state: Dict[str, Any],
-        world_state: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        character_state: dict[str, Any],
+        world_state: dict[str, Any],
+    ) -> dict[str, Any]:
         """
         Build a context object for the Scene Agent.
         Includes relevant NPCs, items, world parameters.

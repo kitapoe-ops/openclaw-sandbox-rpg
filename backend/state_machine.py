@@ -53,10 +53,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-import time
-import uuid
-from datetime import datetime, timezone
-from typing import Any, Awaitable, Callable, Dict, FrozenSet, List, Literal, Optional, Tuple
+from collections.abc import Callable
+from datetime import UTC, datetime
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -175,20 +174,20 @@ class StateMutation(BaseModel):
     character_id: str = Field(..., min_length=1, max_length=64)
 
     # Pure-text tag mutations (defense D2: max 7, each max 15 chars).
-    add_state: List[str] = Field(default_factory=list, max_length=MAX_TAGS_PER_MUTATION)
-    remove_state: List[str] = Field(default_factory=list, max_length=MAX_TAGS_PER_MUTATION)
+    add_state: list[str] = Field(default_factory=list, max_length=MAX_TAGS_PER_MUTATION)
+    remove_state: list[str] = Field(default_factory=list, max_length=MAX_TAGS_PER_MUTATION)
 
     # Optional scalar state changes. All strings, no numbers (no more
     # stamina_level / health_status enums; the LLM picks the
     # descriptor, the audit pins the convention).
-    stamina: Optional[str] = Field(default=None, max_length=64)
-    health: Optional[str] = Field(default=None, max_length=64)
-    morale: Optional[str] = Field(default=None, max_length=64)
+    stamina: str | None = Field(default=None, max_length=64)
+    health: str | None = Field(default=None, max_length=64)
+    morale: str | None = Field(default=None, max_length=64)
 
     # Side effects (defense D2: bounded lists).
-    items_consumed: List[ItemConsumed] = Field(default_factory=list, max_length=16)
-    new_memories: List[str] = Field(default_factory=list, max_length=16)
-    relationship_changes: List[RelationshipChange] = Field(
+    items_consumed: list[ItemConsumed] = Field(default_factory=list, max_length=16)
+    new_memories: list[str] = Field(default_factory=list, max_length=16)
+    relationship_changes: list[RelationshipChange] = Field(
         default_factory=list, max_length=16
     )
 
@@ -197,7 +196,7 @@ class StateMutation(BaseModel):
 
     @field_validator("add_state", "remove_state", mode="after")
     @classmethod
-    def _validate_tag_list(cls, tags: List[str]) -> List[str]:
+    def _validate_tag_list(cls, tags: list[str]) -> list[str]:
         """Apply D2 tag-level validation to every item in the list.
 
         Raises ValueError on the first invalid tag — the WHOLE
@@ -209,7 +208,7 @@ class StateMutation(BaseModel):
 
     @field_validator("new_memories", mode="after")
     @classmethod
-    def _validate_memory_lengths(cls, memories: List[str]) -> List[str]:
+    def _validate_memory_lengths(cls, memories: list[str]) -> list[str]:
         for mem in memories:
             if not isinstance(mem, str) or not mem.strip():
                 raise ValueError(f"memory is empty or non-str: {mem!r}")
@@ -225,7 +224,7 @@ class StateMutation(BaseModel):
 # The new state machine keeps the same default rule map; future
 # worlds can override via physics_lock_rules.yaml (deferred to F2).
 
-DEFAULT_FORBIDDEN_ACTIONS: Dict[str, List[str]] = {
+DEFAULT_FORBIDDEN_ACTIONS: dict[str, list[str]] = {
     "雙腿嚴重骨折": ["狂奔", "跳躍", "攀爬", "衝刺", "疾跑"],
     "左臂骨折": ["雙手握劍", "投擲", "格擋"],
     "右臂骨折": ["雙手握劍", "寫字", "投擲"],
@@ -257,12 +256,12 @@ class PhysicsLock:
 
     def __init__(
         self,
-        custom_rules: Optional[Dict[str, List[str]]] = None,
+        custom_rules: dict[str, list[str]] | None = None,
         audit_queue: Any = None,
-        r1_prompt_builder: Optional[Callable[[str, List[str]], str]] = None,
+        r1_prompt_builder: Callable[[str, list[str]], str] | None = None,
         timeout_s: float = DEFAULT_PHYSICS_LOCK_TIMEOUT_S,
     ) -> None:
-        self.rules: Dict[str, List[str]] = {**DEFAULT_FORBIDDEN_ACTIONS}
+        self.rules: dict[str, list[str]] = {**DEFAULT_FORBIDDEN_ACTIONS}
         if custom_rules:
             self.rules.update(custom_rules)
         self._audit_queue = audit_queue
@@ -270,7 +269,7 @@ class PhysicsLock:
         self._timeout_s = timeout_s
         # Sync cache: cache_key -> (allowed: bool, reason: str).
         # Keyed by (frozenset(state_tags), action_text).
-        self._cache: Dict[Tuple[FrozenSet[str], str], Dict[str, Any]] = {}
+        self._cache: dict[tuple[frozenset[str], str], dict[str, Any]] = {}
         # Track audit latency for the cache (debug / observability).
         self._audit_call_count: int = 0
         self._audit_cache_hits: int = 0
@@ -280,8 +279,8 @@ class PhysicsLock:
     def validate(
         self,
         action_text: str,
-        state_tags: List[str],
-    ) -> Dict[str, Any]:
+        state_tags: list[str],
+    ) -> dict[str, Any]:
         """Synchronous validation. Returns {"allowed": bool, "reason": str}.
 
         This is the fast path used for LLM self-check and for tests.
@@ -305,8 +304,8 @@ class PhysicsLock:
         self,
         character_id: str,
         action_text: str,
-        state_tags: List[str],
-    ) -> Dict[str, Any]:
+        state_tags: list[str],
+    ) -> dict[str, Any]:
         """Async, R1-audited, fail-closed physics-lock check.
 
         Defense D1 implementation:
@@ -362,7 +361,7 @@ class PhysicsLock:
                 timeout=self._timeout_s,
             )
             self._audit_call_count += 1
-        except asyncio.TimeoutError as exc:
+        except TimeoutError:
             logger.warning(
                 "physics_lock: R1 audit timed out for character=%s action=%r",
                 character_id, action_text[:40],
@@ -418,7 +417,7 @@ class PhysicsLock:
         self._audit_cache_hits = 0
 
     @staticmethod
-    def _default_prompt(action_text: str, state_tags: List[str]) -> str:
+    def _default_prompt(action_text: str, state_tags: list[str]) -> str:
         return (
             f"Character state tags: {state_tags}\n"
             f"Proposed action: {action_text}\n"
@@ -429,7 +428,7 @@ class PhysicsLock:
 def _build_audit_request(
     character_id: str,
     action_text: str,
-    state_tags: List[str],
+    state_tags: list[str],
     prompt: str,
 ) -> Any:
     """Build an AuditRequest for the physics lock check.
@@ -474,13 +473,13 @@ class SemanticState:
     def __init__(
         self,
         character_id: str,
-        tags: Optional[List[str]] = None,
-        stamina: Optional[str] = None,
-        health: Optional[str] = None,
-        morale: Optional[str] = None,
-        memories: Optional[List[str]] = None,
-        relationships: Optional[Dict[str, str]] = None,
-        inventory: Optional[Dict[str, Any]] = None,
+        tags: list[str] | None = None,
+        stamina: str | None = None,
+        health: str | None = None,
+        morale: str | None = None,
+        memories: list[str] | None = None,
+        relationships: dict[str, str] | None = None,
+        inventory: dict[str, Any] | None = None,
     ) -> None:
         if not isinstance(character_id, str) or not character_id.strip():
             raise StateValidationError(
@@ -499,14 +498,14 @@ class SemanticState:
                 f"max is {MAX_TAGS_PER_CHARACTER}"
             )
         self.character_id = character_id
-        self.tags: List[str] = list(tags)
+        self.tags: list[str] = list(tags)
         self.stamina = stamina
         self.health = health
         self.morale = morale
-        self.memories: List[str] = list(memories or [])
-        self.relationships: Dict[str, str] = dict(relationships or {})
-        self.inventory: Dict[str, Any] = dict(inventory or {"items": []})
-        self._updated_at: datetime = datetime.now(timezone.utc)
+        self.memories: list[str] = list(memories or [])
+        self.relationships: dict[str, str] = dict(relationships or {})
+        self.inventory: dict[str, Any] = dict(inventory or {"items": []})
+        self._updated_at: datetime = datetime.now(UTC)
 
     # -------- convenience --------
 
@@ -527,7 +526,7 @@ class SemanticState:
 
     def touch(self) -> None:
         """Bump updated_at. Called by the state machine on every apply."""
-        self._updated_at = datetime.now(timezone.utc)
+        self._updated_at = datetime.now(UTC)
 
     def __repr__(self) -> str:  # pragma: no cover — debug only
         return (
@@ -562,7 +561,7 @@ class SemanticStateMachine:
         self,
         audit_queue: Any = None,
         memory_palace: Any = None,
-        physics_lock: Optional[PhysicsLock] = None,
+        physics_lock: PhysicsLock | None = None,
         duplicate_similarity_threshold: float = DEFAULT_DUPLICATE_SIMILARITY_THRESHOLD,
     ) -> None:
         self._audit_queue = audit_queue
@@ -571,7 +570,7 @@ class SemanticStateMachine:
         self._duplicate_similarity_threshold = duplicate_similarity_threshold
         # In-memory state store. Production wire-up uses
         # `persistence_pg.py`; this dict is the test/demo source.
-        self._states: Dict[str, SemanticState] = {}
+        self._states: dict[str, SemanticState] = {}
 
     # -------- state store --------
 
@@ -583,7 +582,7 @@ class SemanticStateMachine:
             )
         self._states[state.character_id] = state
 
-    def get(self, character_id: str) -> Optional[SemanticState]:
+    def get(self, character_id: str) -> SemanticState | None:
         return self._states.get(character_id)
 
     def get_or_create(self, character_id: str) -> SemanticState:
@@ -598,9 +597,9 @@ class SemanticStateMachine:
     def _apply_tag_mutation(
         self,
         state: SemanticState,
-        add: List[str],
-        remove: List[str],
-    ) -> Dict[str, Any]:
+        add: list[str],
+        remove: list[str],
+    ) -> dict[str, Any]:
         """Apply add/remove with capacity enforcement (invariant #5).
 
         Returns a side-effect report dict for the caller's
@@ -641,7 +640,7 @@ class SemanticStateMachine:
 
         return report
 
-    def _is_duplicate_tag(self, candidate: str, existing: List[str]) -> bool:
+    def _is_duplicate_tag(self, candidate: str, existing: list[str]) -> bool:
         """Defense D3: reject a tag that fuzzy-matches an existing one.
 
         Default comparison is character-level Jaccard similarity
@@ -669,10 +668,10 @@ class SemanticStateMachine:
     def _apply_scalar_mutation(
         self,
         state: SemanticState,
-        stamina: Optional[str],
-        health: Optional[str],
-        morale: Optional[str],
-    ) -> Dict[str, Any]:
+        stamina: str | None,
+        health: str | None,
+        morale: str | None,
+    ) -> dict[str, Any]:
         """Apply scalar state changes (invariants #6, #7, #8).
 
         All values are strings (no numbers). The LLM picks the
@@ -695,8 +694,8 @@ class SemanticStateMachine:
     def _apply_items_consumed(
         self,
         state: SemanticState,
-        items_consumed: List[ItemConsumed],
-    ) -> Dict[str, Any]:
+        items_consumed: list[ItemConsumed],
+    ) -> dict[str, Any]:
         """Apply item consumption (invariants #9, #10, #11).
 
           #9  — quantity is decremented; partially-consumed items persist
@@ -729,8 +728,8 @@ class SemanticStateMachine:
     def _apply_new_memories(
         self,
         state: SemanticState,
-        new_memories: List[str],
-    ) -> Dict[str, Any]:
+        new_memories: list[str],
+    ) -> dict[str, Any]:
         """Append new memories in input order (invariants #12, #13)."""
         if not new_memories:
             return {"appended": []}
@@ -742,8 +741,8 @@ class SemanticStateMachine:
     def _apply_relationship_changes(
         self,
         state: SemanticState,
-        rel_changes: List[RelationshipChange],
-    ) -> Dict[str, Any]:
+        rel_changes: list[RelationshipChange],
+    ) -> dict[str, Any]:
         """Update relationship map (invariant #14). No enum enforcement
         (audit finding #15 — defer to F2 or manual flag)."""
         report = []
@@ -758,8 +757,8 @@ class SemanticStateMachine:
 
     def apply_mutations(
         self,
-        mutations: List[StateMutation],
-    ) -> Dict[str, Any]:
+        mutations: list[StateMutation],
+    ) -> dict[str, Any]:
         """Apply a list of StateMutations atomically (per-mutation).
 
         Per the brief: each mutation is applied as a unit. A mutation
@@ -800,7 +799,7 @@ class SemanticStateMachine:
 
             character_id = mutation.character_id
             state = self.get_or_create(character_id)
-            effects: Dict[str, Any] = {"character_id": character_id, "reason": mutation.reason}
+            effects: dict[str, Any] = {"character_id": character_id, "reason": mutation.reason}
 
             # Apply sub-effects in deterministic order.
             effects["tags"] = self._apply_tag_mutation(
@@ -830,8 +829,8 @@ class SemanticStateMachine:
     async def is_action_allowed(
         self,
         character_id: str,
-        action: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        action: dict[str, Any],
+    ) -> dict[str, Any]:
         """Physics Lock check. Defense D1.
 
         Returns `{"allowed": bool, "reason": str}`. Fails closed on
@@ -855,7 +854,7 @@ class SemanticStateMachine:
         )
 
     @staticmethod
-    def _action_to_text(action: Dict[str, Any]) -> str:
+    def _action_to_text(action: dict[str, Any]) -> str:
         """Extract the gate-able text from an action dict."""
         if "text" in action and action["text"]:
             return str(action["text"])
@@ -869,8 +868,8 @@ class SemanticStateMachine:
         self,
         character_id: str,
         narrative: str,
-        current_state: Optional[SemanticState] = None,
-    ) -> Optional[str]:
+        current_state: SemanticState | None = None,
+    ) -> str | None:
         """Feed Memory Palace. Defense D3.
 
         Concatenates tags (NOT narrative) as the primary anchor.

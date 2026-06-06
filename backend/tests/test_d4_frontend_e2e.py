@@ -38,8 +38,8 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import AsyncIterator
 
 import pytest
 import pytest_asyncio
@@ -59,7 +59,6 @@ from backend.memory_palace_integration_endpoint import (  # noqa: E402
 )
 from backend.persistence_pg import PostgresPersistence  # noqa: E402
 from backend.vector_store import EMBEDDING_DIM, VectorStore  # noqa: E402
-
 
 # ============================================
 # Constants — mirror demo.html's URL contract
@@ -423,6 +422,7 @@ class TestFrontendURLContract:
         from any port. We check the *runtime* CORS config matches.
         """
         import os
+
         from starlette.middleware.cors import CORSMiddleware
         # Inspect the *actual* middleware list on the composed app
         # (which inherits main.app's middleware).

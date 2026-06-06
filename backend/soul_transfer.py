@@ -44,14 +44,14 @@ import random
 import re
 import sqlite3
 import uuid
-from dataclasses import dataclass, field, asdict
-from datetime import datetime, timezone
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
-UTC = timezone.utc
+UTC = UTC
 
 
 # ============================================
@@ -114,7 +114,7 @@ DEFAULT_LLM_DOWNGRADE_PROMPT = (
 #
 # If a source state is NOT in the map, we fall through to the
 # LLM-driven downgrade path (see `compute_degradation`).
-TIER_DOWNGRADES: Dict[str, List[str]] = {
+TIER_DOWNGRADES: dict[str, list[str]] = {
     # Physical health
     "非常健康": ["虚弱", "疲惫", "輕傷", "小病"],
     "健康": ["小病", "虚弱", "輕傷"],
@@ -212,28 +212,28 @@ class SoulTransferRecord:
     # The new tag set assigned to the vessel after transfer.
     # This is a SUBSET of the source's tags, with one tag replaced
     # by its downgraded version (see TIER_DOWNGRADES).
-    new_tags: List[str] = field(default_factory=list)
+    new_tags: list[str] = field(default_factory=list)
     # The set of memories carried over (text-only).
-    carried_memories: List[str] = field(default_factory=list)
+    carried_memories: list[str] = field(default_factory=list)
     # The tag that was downgraded (None if no downgrade happened).
-    downgraded_from: Optional[str] = None
-    downgraded_to: Optional[str] = None
+    downgraded_from: str | None = None
+    downgraded_to: str | None = None
     # How the downgrade was computed: "tier_list" or "llm_fallback".
     downgrade_method: str = "tier_list"
     # Audit trail (anti-exploit rule pass/fail, etc.).
-    audit: Dict[str, Any] = field(default_factory=dict)
+    audit: dict[str, Any] = field(default_factory=dict)
     # Lifecycle: pending → applied (or rolled_back on failure).
     applied: bool = False
-    applied_at: Optional[str] = None
+    applied_at: str | None = None
     # Vessel TTL: if vessel is destroyed within `vessel_ttl_turns`,
     # the soul dies too (rule 4). Set to 0 to disable.
     vessel_ttl_turns: int = 3
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "SoulTransferRecord":
+    def from_dict(cls, data: dict[str, Any]) -> SoulTransferRecord:
         return cls(**data)
 
 
@@ -329,27 +329,27 @@ class SemanticSoulTransfer:
         memory_palace: Any = None,  # MemoryPalace or None
         llm_client: Any = None,     # LLMClient or None
         memory_isolation_guard: Any = None,  # MemoryIsolationGuard or None
-        soul_db_path: Optional[str] = None,
-        rng_seed: Optional[int] = None,
-        tier_downgrades: Optional[Dict[str, List[str]]] = None,
-        non_transferable_tags: Optional[frozenset] = None,
+        soul_db_path: str | None = None,
+        rng_seed: int | None = None,
+        tier_downgrades: dict[str, list[str]] | None = None,
+        non_transferable_tags: frozenset | None = None,
     ) -> None:
         self.memory_palace = memory_palace
         self.llm_client = llm_client
         self.memory_isolation_guard = memory_isolation_guard
         self.rng = random.Random(rng_seed)
-        self.tier_downgrades: Dict[str, List[str]] = dict(tier_downgrades or TIER_DOWNGRADES)
+        self.tier_downgrades: dict[str, list[str]] = dict(tier_downgrades or TIER_DOWNGRADES)
         self.non_transferable_tags: frozenset = (
             non_transferable_tags or NON_TRANSFERABLE_TAGS
         )
 
         # Anti-predictability: track last result per vessel_id.
         # vessel_id -> last_downgraded_to (str) or None
-        self._last_result: Dict[str, Optional[str]] = {}
+        self._last_result: dict[str, str | None] = {}
         # Anti-predictability: tier-list cache (source_tag, vessel_id)
         # -> computed downgrade. Used as fast path; rotated to
         # avoid caching the "always the same" answer.
-        self._tier_cache: Dict[Tuple[str, str], str] = {}
+        self._tier_cache: dict[tuple[str, str], str] = {}
 
         # Storage path
         if soul_db_path is None and memory_palace is not None and hasattr(memory_palace, "db_path"):
@@ -367,7 +367,7 @@ class SemanticSoulTransfer:
     def _initialize_storage(self) -> None:
         if self.soul_db_path == ":memory:":
             # In-memory mode (tests): keep a single shared connection.
-            self._mem_conn: Optional[sqlite3.Connection] = sqlite3.connect(
+            self._mem_conn: sqlite3.Connection | None = sqlite3.connect(
                 ":memory:", check_same_thread=False
             )
             # Row factory is set here (and on every _connect) so that
@@ -401,11 +401,11 @@ class SemanticSoulTransfer:
     def is_transfer_allowed(
         self,
         source_character_id: str,
-        source_state: List[str],
+        source_state: list[str],
         target_vessel_id: str,
-        target_vessel_state: List[str],
+        target_vessel_state: list[str],
         scene_id: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Run all 7 anti-exploit rules. Returns {allowed, reason, ...}.
 
         The 5 rules that can be checked synchronously are:
@@ -489,7 +489,7 @@ class SemanticSoulTransfer:
         self,
         source_tag: str,
         vessel_id: str,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Pick a downgrade from the tier list, anti-predictably.
 
         Returns None if `source_tag` is not in the tier list.
@@ -511,7 +511,7 @@ class SemanticSoulTransfer:
     async def _llm_downgrade(
         self,
         source_tag: str,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Ask the LLM for a downgrade. Returns None if no LLM wired.
 
         Validates the LLM output with the F1 tag rules. If the LLM
@@ -557,9 +557,9 @@ class SemanticSoulTransfer:
 
     async def compute_degradation(
         self,
-        source_state: List[str],
+        source_state: list[str],
         vessel_id: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Compute the new state for a transfer.
 
         Strategy:
@@ -633,12 +633,12 @@ class SemanticSoulTransfer:
     async def execute_transfer(
         self,
         source_character_id: str,
-        source_state: List[str],
+        source_state: list[str],
         target_vessel_id: str,
-        target_vessel_state: List[str],
+        target_vessel_state: list[str],
         scene_id: str,
-        carried_memories: Optional[List[str]] = None,
-        requester_id: Optional[str] = None,
+        carried_memories: list[str] | None = None,
+        requester_id: str | None = None,
     ) -> SoulTransferRecord:
         """Run the full transfer flow. Returns SoulTransferRecord.
 
@@ -759,7 +759,7 @@ class SemanticSoulTransfer:
             if self._mem_conn is None:
                 conn.close()
 
-    async def apply_transfer(self, record: SoulTransferRecord) -> Dict[str, Any]:
+    async def apply_transfer(self, record: SoulTransferRecord) -> dict[str, Any]:
         """Mark a persisted record as 'applied' to its vessel.
 
         Called by the caller AFTER they've actually written the
@@ -787,7 +787,7 @@ class SemanticSoulTransfer:
             if self._mem_conn is None:
                 conn.close()
 
-    async def get_transfer(self, transfer_id: str) -> Optional[SoulTransferRecord]:
+    async def get_transfer(self, transfer_id: str) -> SoulTransferRecord | None:
         """Retrieve a persisted transfer record by ID."""
         conn = self._connect()
         try:
@@ -817,7 +817,7 @@ class SemanticSoulTransfer:
             if self._mem_conn is None:
                 conn.close()
 
-    async def get_pending_transfers(self, vessel_id: str) -> List[SoulTransferRecord]:
+    async def get_pending_transfers(self, vessel_id: str) -> list[SoulTransferRecord]:
         """List unapplied transfers to a vessel (crash recovery)."""
         conn = self._connect()
         try:

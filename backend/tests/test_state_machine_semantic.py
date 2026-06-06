@@ -32,14 +32,13 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from pydantic import ValidationError
 
-
 # ============================================
 # Fixtures
 # ============================================
 
 
 @pytest.fixture
-def sm() -> "SemanticStateMachine":
+def sm() -> SemanticStateMachine:
     """A fresh SemanticStateMachine with no audit/memory wiring."""
     from backend.state_machine import SemanticStateMachine
 
@@ -47,7 +46,7 @@ def sm() -> "SemanticStateMachine":
 
 
 @pytest.fixture
-def sm_with_audit() -> "SemanticStateMachine":
+def sm_with_audit() -> SemanticStateMachine:
     """A SemanticStateMachine with a mock audit_queue for D1 tests."""
     from backend.state_machine import SemanticStateMachine
 
@@ -59,7 +58,7 @@ class MockMemoryPalace:
     """In-memory recorder for `feed_memory_palace` tests (D3)."""
 
     def __init__(self) -> None:
-        self.calls: List[Dict[str, Any]] = []
+        self.calls: list[dict[str, Any]] = []
 
     async def remember(self, character_id: str, content: str, **kwargs: Any) -> str:
         self.calls.append(
@@ -83,7 +82,7 @@ def mock_palace() -> MockMemoryPalace:
 
 
 # Invariant #1 — add a status tag
-def test_invariant_1_add_status_tag(sm: "SemanticStateMachine") -> None:
+def test_invariant_1_add_status_tag(sm: SemanticStateMachine) -> None:
     """Status tags can be added to a character's active_effects."""
     from backend.state_machine import StateMutation
 
@@ -96,7 +95,7 @@ def test_invariant_1_add_status_tag(sm: "SemanticStateMachine") -> None:
 
 
 # Invariant #2 — remove a status tag
-def test_invariant_2_remove_status_tag(sm: "SemanticStateMachine") -> None:
+def test_invariant_2_remove_status_tag(sm: SemanticStateMachine) -> None:
     """Status tags can be removed."""
     from backend.state_machine import StateMutation
 
@@ -111,7 +110,7 @@ def test_invariant_2_remove_status_tag(sm: "SemanticStateMachine") -> None:
 
 
 # Invariant #3 — remove missing tag is silent no-op
-def test_invariant_3_remove_missing_noop(sm: "SemanticStateMachine") -> None:
+def test_invariant_3_remove_missing_noop(sm: SemanticStateMachine) -> None:
     """Removing a non-existent tag is a silent no-op (LLM not penalized)."""
     from backend.state_machine import StateMutation
 
@@ -128,7 +127,7 @@ def test_invariant_3_remove_missing_noop(sm: "SemanticStateMachine") -> None:
 
 
 # Invariant #4 — re-adding an existing tag is idempotent
-def test_invariant_4_re_add_idempotent(sm: "SemanticStateMachine") -> None:
+def test_invariant_4_re_add_idempotent(sm: SemanticStateMachine) -> None:
     """Re-adding a tag does NOT create a duplicate."""
     from backend.state_machine import StateMutation
 
@@ -143,7 +142,7 @@ def test_invariant_4_re_add_idempotent(sm: "SemanticStateMachine") -> None:
 
 
 # Invariant #5 — max 8 tags with deterministic eviction
-def test_invariant_5_max_tags_eviction(sm: "SemanticStateMachine") -> None:
+def test_invariant_5_max_tags_eviction(sm: SemanticStateMachine) -> None:
     """Tag budget is bounded; lexicographic-last tag is evicted when full."""
     from backend.state_machine import StateMutation
 
@@ -177,7 +176,7 @@ def test_invariant_5_max_tags_eviction(sm: "SemanticStateMachine") -> None:
 
 
 # Invariant #6 — stamina scalar change
-def test_invariant_6_stamina_change(sm: "SemanticStateMachine") -> None:
+def test_invariant_6_stamina_change(sm: SemanticStateMachine) -> None:
     """Stamina is a pure-text string (no numbers)."""
     from backend.state_machine import StateMutation
 
@@ -195,7 +194,7 @@ def test_invariant_6_stamina_change(sm: "SemanticStateMachine") -> None:
 
 
 # Invariant #7 — health scalar change
-def test_invariant_7_health_change(sm: "SemanticStateMachine") -> None:
+def test_invariant_7_health_change(sm: SemanticStateMachine) -> None:
     """Health is a pure-text string."""
     from backend.state_machine import StateMutation
 
@@ -213,7 +212,7 @@ def test_invariant_7_health_change(sm: "SemanticStateMachine") -> None:
 
 
 # Invariant #8 — morale scalar change
-def test_invariant_8_morale_change(sm: "SemanticStateMachine") -> None:
+def test_invariant_8_morale_change(sm: SemanticStateMachine) -> None:
     """Morale is a pure-text string."""
     from backend.state_machine import StateMutation
 
@@ -231,7 +230,7 @@ def test_invariant_8_morale_change(sm: "SemanticStateMachine") -> None:
 
 
 # Invariant #9 — consume 1 of 3, leaves 2
-def test_invariant_9_consume_partial(sm: "SemanticStateMachine") -> None:
+def test_invariant_9_consume_partial(sm: SemanticStateMachine) -> None:
     """Item quantities are decremented; partially-consumed items persist."""
     from backend.state_machine import ItemConsumed, StateMutation
 
@@ -256,7 +255,7 @@ def test_invariant_9_consume_partial(sm: "SemanticStateMachine") -> None:
 
 
 # Invariant #10 — consume last item, removed
-def test_invariant_10_consume_last_removed(sm: "SemanticStateMachine") -> None:
+def test_invariant_10_consume_last_removed(sm: SemanticStateMachine) -> None:
     """Quantity 0 ⇒ item is removed from inventory."""
     from backend.state_machine import ItemConsumed, StateMutation
 
@@ -279,7 +278,7 @@ def test_invariant_10_consume_last_removed(sm: "SemanticStateMachine") -> None:
 
 
 # Invariant #11 — consume unknown item is silent no-op
-def test_invariant_11_consume_unknown_noop(sm: "SemanticStateMachine") -> None:
+def test_invariant_11_consume_unknown_noop(sm: SemanticStateMachine) -> None:
     """Unknown item IDs do not raise."""
     from backend.state_machine import ItemConsumed, StateMutation
 
@@ -298,7 +297,7 @@ def test_invariant_11_consume_unknown_noop(sm: "SemanticStateMachine") -> None:
 
 
 # Invariant #12 — single memory appended
-def test_invariant_12_single_memory(sm: "SemanticStateMachine") -> None:
+def test_invariant_12_single_memory(sm: SemanticStateMachine) -> None:
     """New memories are appended to the character's memory list."""
     from backend.state_machine import StateMutation
 
@@ -316,7 +315,7 @@ def test_invariant_12_single_memory(sm: "SemanticStateMachine") -> None:
 
 
 # Invariant #13 — multiple memories preserve order
-def test_invariant_13_memories_order(sm: "SemanticStateMachine") -> None:
+def test_invariant_13_memories_order(sm: SemanticStateMachine) -> None:
     """Memory list preserves input order."""
     from backend.state_machine import StateMutation
 
@@ -334,7 +333,7 @@ def test_invariant_13_memories_order(sm: "SemanticStateMachine") -> None:
 
 
 # Invariant #14 — relationship update
-def test_invariant_14_relationship_update(sm: "SemanticStateMachine") -> None:
+def test_invariant_14_relationship_update(sm: SemanticStateMachine) -> None:
     """NPC relationships are stored as dict[npc_id, str]."""
     from backend.state_machine import RelationshipChange, StateMutation
 
@@ -354,7 +353,7 @@ def test_invariant_14_relationship_update(sm: "SemanticStateMachine") -> None:
 
 
 # Invariant #15 — invalid relationship value silently accepted
-def test_invariant_15_invalid_relationship_accepted(sm: "SemanticStateMachine") -> None:
+def test_invariant_15_invalid_relationship_accepted(sm: SemanticStateMachine) -> None:
     """Per audit finding #15, preserve-as-bug: any string is accepted.
 
     The LLM-facing contract does not enforce an enum for relationship
@@ -435,7 +434,7 @@ async def test_physics_lock_timeout_fails_closed() -> None:
             await asyncio.sleep(60)  # never returns in time
             return "never"
 
-        async def get_result(self, request_id: str, timeout: Optional[float] = None) -> Any:
+        async def get_result(self, request_id: str, timeout: float | None = None) -> Any:
             await asyncio.sleep(60)
             return None
 
@@ -471,7 +470,7 @@ async def test_physics_lock_caches_repeated_calls() -> None:
             call_count["submit"] += 1
             return f"req_{call_count['submit']}"
 
-        async def get_result(self, request_id: str, timeout: Optional[float] = None) -> Any:
+        async def get_result(self, request_id: str, timeout: float | None = None) -> Any:
             from backend.audit_queue import AuditResult, AuditVerdict
 
             return AuditResult(
@@ -692,13 +691,13 @@ def test_register_and_get_state() -> None:
     assert created.tags == []
 
 
-def test_apply_mutations_empty_list(sm: "SemanticStateMachine") -> None:
+def test_apply_mutations_empty_list(sm: SemanticStateMachine) -> None:
     """An empty mutation list is a valid no-op."""
     report = sm.apply_mutations([])
     assert report == {"applied": [], "dropped": [], "side_effects_total": 0}
 
 
-def test_apply_mutations_rejects_non_list(sm: "SemanticStateMachine") -> None:
+def test_apply_mutations_rejects_non_list(sm: SemanticStateMachine) -> None:
     """apply_mutations validates input is a list (audit finding #7)."""
     from backend.state_machine import StateMachineError
 

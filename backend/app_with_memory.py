@@ -43,9 +43,11 @@ Notes
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List
+from typing import Any
 
 from fastapi import APIRouter, FastAPI, HTTPException
+
+from .demo_mode import is_demo_mode
 
 # Reuse the Wave 2 production app (frozen). Importing it also
 # triggers its router registrations and lifespan wiring.
@@ -56,7 +58,6 @@ from .memory_palace_integration_endpoint import (
     router as memory_router,
 )
 from .scenes_demo import DEMO_STARTER, get_demo_character
-from .demo_mode import is_demo_mode
 
 logger = logging.getLogger(__name__)
 
@@ -165,8 +166,8 @@ _wave2_app.include_router(_e1_router)
 _d4_list_router = APIRouter(prefix="/api", tags=["d4-v2"])
 
 
-@_d4_list_router.get("/character-list/", response_model=List[Dict[str, Any]])
-async def list_characters() -> List[Dict[str, Any]]:
+@_d4_list_router.get("/character-list/", response_model=list[dict[str, Any]])
+async def list_characters() -> list[dict[str, Any]]:
     """List available characters (D4 v2: resolves Phase E blocker #2).
 
     * Demo mode: returns the single demo starter character.
@@ -209,7 +210,7 @@ async def list_characters() -> List[Dict[str, Any]]:
         from .db import get_db_session
         from .models import CharacterState
 
-        results: List[Dict[str, Any]] = []
+        results: list[dict[str, Any]] = []
         async with get_db_session() as session:
             # ``select(CharacterState)`` would need an extra import;
             # we use ``session.execute`` with a typed select for
@@ -273,20 +274,17 @@ _wave2_app.include_router(_d4_list_router)
 # ``backend/ws/multiplayer_router.py`` (not in the protected
 # list). We import it lazily here so this module can still be
 # imported in unit tests that don't need the WS layer.
-from fastapi import WebSocket, WebSocketDisconnect  # noqa: E402
-from .ws.multiplayer_router import (  # noqa: E402
-    MultiplayerConnectionManager,
-    get_multiplayer_manager,
-    multiplayer_ws_endpoint,
+from fastapi import WebSocket  # noqa: E402
+
+from .memory_isolation import (  # noqa: E402
+    get_isolation_guard,
 )
 from .scene_multiplayer import (  # noqa: E402
-    MultiplayerScene,
     get_scene_registry,
 )
-from .memory_isolation import (  # noqa: E402
-    MemoryIsolationGuard,
-    MemoryIsolationError,
-    get_isolation_guard,
+from .ws.multiplayer_router import (  # noqa: E402
+    get_multiplayer_manager,
+    multiplayer_ws_endpoint,
 )
 
 _e6a_router = APIRouter(prefix="/api", tags=["e6a-multiplayer"])
@@ -299,7 +297,7 @@ _e6a_router = APIRouter(prefix="/api", tags=["e6a-multiplayer"])
         200: {"description": "Broadcast delivered to N players"},
     },
 )
-async def http_broadcast(scene_id: str, message: Dict[str, Any]) -> Dict[str, Any]:
+async def http_broadcast(scene_id: str, message: dict[str, Any]) -> dict[str, Any]:
     """Trigger a server-push broadcast to all players in a scene.
 
     Body shape (arbitrary JSON, passed through ``send_json``):
@@ -325,7 +323,7 @@ async def http_broadcast(scene_id: str, message: Dict[str, Any]) -> Dict[str, An
     "/multiplayer/{scene_id}/players",
     summary="List player IDs connected to a scene (E6a)",
 )
-async def http_list_players(scene_id: str) -> Dict[str, Any]:
+async def http_list_players(scene_id: str) -> dict[str, Any]:
     """Read-only inspection of a scene's connected players.
 
     Returns::
@@ -347,7 +345,7 @@ async def http_list_players(scene_id: str) -> Dict[str, Any]:
     "/multiplayer/health",
     summary="Multiplayer manager health (E6a)",
 )
-async def http_multiplayer_health() -> Dict[str, Any]:
+async def http_multiplayer_health() -> dict[str, Any]:
     """Return fan-out router stats: active scenes, connections, by-scene breakdown."""
     return get_multiplayer_manager().health()
 
@@ -428,7 +426,7 @@ async def http_create_scene(
     scene_id: str,
     max_players: int = 4,
     max_npcs: int = 100,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Idempotent — returns the existing scene if present.
 
     Hard caps: ``max_players`` defaults to 4, ``max_npcs`` to
@@ -464,7 +462,7 @@ async def http_create_scene(
 )
 async def http_join_scene(
     scene_id: str, player_id: str, character_id: str
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Add a player. Returns 409 if the scene is full, the
     player_id is already in the scene, or the character_id is
     already controlled by another player in the scene.
@@ -490,7 +488,7 @@ async def http_join_scene(
     summary="Remove a player from a scene (E6b)",
     responses={200: {"description": "Player removed (idempotent)"}},
 )
-async def http_leave_scene(scene_id: str, player_id: str) -> Dict[str, Any]:
+async def http_leave_scene(scene_id: str, player_id: str) -> dict[str, Any]:
     """Idempotent — removing a non-existent player is a no-op."""
     registry = get_scene_registry()
     scene = registry.get(scene_id)
@@ -504,7 +502,7 @@ async def http_leave_scene(scene_id: str, player_id: str) -> Dict[str, Any]:
     "/{scene_id}/players",
     summary="List players in a scene (E6b)",
 )
-async def http_list_scene_players(scene_id: str) -> Dict[str, Any]:
+async def http_list_scene_players(scene_id: str) -> dict[str, Any]:
     """Read-only player list. Returns 404 if the scene is unknown."""
     registry = get_scene_registry()
     scene = registry.get(scene_id)
@@ -522,7 +520,7 @@ async def http_list_scene_players(scene_id: str) -> Dict[str, Any]:
     "/{scene_id}/npcs",
     summary="List NPCs in a scene (E6b)",
 )
-async def http_list_scene_npcs(scene_id: str) -> Dict[str, Any]:
+async def http_list_scene_npcs(scene_id: str) -> dict[str, Any]:
     """Read-only NPC list (shared by all players in the scene)."""
     registry = get_scene_registry()
     scene = registry.get(scene_id)
@@ -543,8 +541,8 @@ async def http_list_scene_npcs(scene_id: str) -> Dict[str, Any]:
 async def http_enqueue_turn(
     scene_id: str,
     actor_id: str,
-    action: Dict[str, Any],
-) -> Dict[str, Any]:
+    action: dict[str, Any],
+) -> dict[str, Any]:
     """Submit ``action`` to the scene's turn queue on behalf of
     ``actor_id``. Returns the ``ticket_id`` (UUID4) for
     correlation. The consumer of the queue (E1 action
@@ -567,7 +565,7 @@ async def http_enqueue_turn(
     "/{scene_id}/turn/process",
     summary="Pop the next action from the scene turn queue (E6b)",
 )
-async def http_process_next_turn(scene_id: str) -> Dict[str, Any]:
+async def http_process_next_turn(scene_id: str) -> dict[str, Any]:
     """Pop and return the head ticket. Returns an empty result
     if the queue is empty (no 404). The actual action
     processing (LLM narrative + memory write + WebSocket
@@ -597,7 +595,7 @@ async def http_process_next_turn(scene_id: str) -> Dict[str, Any]:
     "/{scene_id}/turn/queue-size",
     summary="Read the turn-queue size (E6b)",
 )
-async def http_turn_queue_size(scene_id: str) -> Dict[str, Any]:
+async def http_turn_queue_size(scene_id: str) -> dict[str, Any]:
     """Read-only inspection of the queue depth."""
     registry = get_scene_registry()
     scene = registry.get(scene_id)
@@ -618,7 +616,7 @@ async def http_isolation_check(
     requester_id: str,
     target_character_id: str,
     op: str = "read",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Lightweight authorisation check. Useful for the
     frontend to gate UI elements ("can this player see this
     NPC's lore?") without round-tripping through the memory
@@ -646,7 +644,7 @@ async def http_isolation_check(
     "/health",
     summary="Scene registry health (E6b)",
 )
-async def http_scene_registry_health() -> Dict[str, Any]:
+async def http_scene_registry_health() -> dict[str, Any]:
     """Aggregate stats across all live scenes."""
     return get_scene_registry().health()
 

@@ -1,8 +1,8 @@
 """
 Configuration management using Pydantic Settings.
 """
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import List
 
 
 class Settings(BaseSettings):
@@ -30,7 +30,7 @@ class Settings(BaseSettings):
 
     # CORS
     enable_cors: bool = True
-    cors_origins: List[str] = ["http://localhost:5173", "http://localhost:3000"]
+    cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
 
     # LLM - Cloud
     llm_cloud_provider: str = "minimax"

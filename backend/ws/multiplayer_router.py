@@ -93,7 +93,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Dict, List, Optional
 
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -117,9 +116,9 @@ class MultiplayerConnectionManager:
             )
         self._max_players = max_players_per_scene
         # scene_id -> {player_id -> WebSocket}
-        self._scenes: Dict[str, Dict[str, WebSocket]] = {}
+        self._scenes: dict[str, dict[str, WebSocket]] = {}
         # Per-scene lock to prevent race during connect/disconnect
-        self._scene_locks: Dict[str, asyncio.Lock] = {}
+        self._scene_locks: dict[str, asyncio.Lock] = {}
         # Global lock to protect the scenes dict itself
         self._global_lock = asyncio.Lock()
         # Stats counters
@@ -259,7 +258,7 @@ class MultiplayerConnectionManager:
         self,
         scene_id: str,
         message: dict,
-        exclude: Optional[str] = None,
+        exclude: str | None = None,
     ) -> int:
         """Send a message to all connected players in a scene.
 
@@ -341,7 +340,7 @@ class MultiplayerConnectionManager:
     # Public API — read-only inspection
     # ============================================
 
-    def get_connected_players(self, scene_id: str) -> List[str]:
+    def get_connected_players(self, scene_id: str) -> list[str]:
         """List player IDs currently connected to a scene.
 
         Lock-free snapshot: the returned list may include players
@@ -412,7 +411,7 @@ async def multiplayer_ws_endpoint(
     websocket: WebSocket,
     scene_id: str,
     player_id: str,
-    manager: Optional[MultiplayerConnectionManager] = None,
+    manager: MultiplayerConnectionManager | None = None,
 ) -> None:
     """Standard FastAPI WS handler — accept, loop, disconnect.
 

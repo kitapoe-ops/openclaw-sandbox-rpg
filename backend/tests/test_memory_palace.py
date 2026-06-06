@@ -11,9 +11,9 @@ Covers:
 """
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
-import asyncio
 import tempfile
 from pathlib import Path
 
@@ -69,7 +69,7 @@ class TestEnums:
 
     def test_enums_are_orthogonal(self):
         """A memory can be e.g. EMOTIONAL + PLAYER_DIRECT (later) or EMOTIONAL + CHOICE."""
-        from backend.memory_palace import MemoryType, MemorySource
+        from backend.memory_palace import MemorySource, MemoryType
         # All 16 combinations should be valid
         for mt in MemoryType:
             for ms in MemorySource:
@@ -87,7 +87,7 @@ class TestMemoryFragment:
     """Verify dataclass field validation."""
 
     def test_valid_construction(self):
-        from backend.memory_palace import MemoryFragment, MemoryType, MemorySource
+        from backend.memory_palace import MemoryFragment, MemorySource, MemoryType
         m = MemoryFragment(
             id="m1",
             character_id="char1",
@@ -103,7 +103,7 @@ class TestMemoryFragment:
         assert m.salience == 0.8
 
     def test_salience_out_of_range_raises(self):
-        from backend.memory_palace import MemoryFragment, MemoryType, MemorySource
+        from backend.memory_palace import MemoryFragment, MemorySource, MemoryType
         with pytest.raises(ValueError, match="salience"):
             MemoryFragment(
                 id="m1",
@@ -118,7 +118,7 @@ class TestMemoryFragment:
             )
 
     def test_decay_rate_out_of_range_raises(self):
-        from backend.memory_palace import MemoryFragment, MemoryType, MemorySource
+        from backend.memory_palace import MemoryFragment, MemorySource, MemoryType
         with pytest.raises(ValueError, match="decay_rate"):
             MemoryFragment(
                 id="m1",
@@ -134,7 +134,7 @@ class TestMemoryFragment:
             )
 
     def test_to_from_dict_roundtrip(self):
-        from backend.memory_palace import MemoryFragment, MemoryType, MemorySource
+        from backend.memory_palace import MemoryFragment, MemorySource, MemoryType
         original = MemoryFragment(
             id="m1",
             character_id="char1",
@@ -391,6 +391,7 @@ class TestSchemaIntegrity:
     def test_check_constraint_rejects_invalid_type(self, tmp_path):
         """Direct INSERT with invalid memory_type should fail (CHECK constraint)."""
         import sqlite3
+
         from backend.memory_palace import MemoryPalace
         db = tmp_path / "test.db"
         MemoryPalace(str(db))

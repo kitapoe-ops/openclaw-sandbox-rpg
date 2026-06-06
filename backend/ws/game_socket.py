@@ -16,17 +16,17 @@ Architecture:
   Client (WS) -> inflight_check -> _persist_pending (short TX) ->
   _call_llm (NO DB) -> _verify_and_persist (long TX) -> broadcast
 """
-from fastapi import WebSocket, WebSocketDisconnect
 import asyncio
 import json
 import logging
 import uuid
 from datetime import datetime
-from typing import Optional
 
+from fastapi import WebSocket, WebSocketDisconnect
+
+from ..db import get_db_session
 from .connection_manager import registry
 from .scene_locks import scene_lock_manager
-from ..db import get_db_session
 
 logger = logging.getLogger(__name__)
 

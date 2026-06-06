@@ -54,11 +54,10 @@ Hard constraints honored
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 try:
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -90,18 +89,18 @@ DEMO_HEALTH_INTERVAL_SECONDS = 60  # 1 minute — the cheapest interval
 # Capped at 16 entries so /demo/info stays bounded. We use a
 # plain list + length cap (no deque dependency) — the writes
 # are append-only and reads are tail-sliced.
-_RECENT_HEALTH_RESULTS: List[Dict[str, Any]] = []
+_RECENT_HEALTH_RESULTS: list[dict[str, Any]] = []
 _RECENT_HEALTH_MAX = 16
 
 
-def _record_health(result: Dict[str, Any]) -> None:
+def _record_health(result: dict[str, Any]) -> None:
     """Append a result to the rolling buffer, dropping the oldest."""
     _RECENT_HEALTH_RESULTS.append(result)
     if len(_RECENT_HEALTH_RESULTS) > _RECENT_HEALTH_MAX:
         del _RECENT_HEALTH_RESULTS[: -_RECENT_HEALTH_MAX]
 
 
-def get_recent_health() -> List[Dict[str, Any]]:
+def get_recent_health() -> list[dict[str, Any]]:
     """Read-only view of the rolling buffer (for tests + /demo/info)."""
     return list(_RECENT_HEALTH_RESULTS)
 
@@ -133,14 +132,14 @@ async def job_memory_health_minute() -> None:
     except ImportError:  # pragma: no cover - defensive
         logger.exception("[demo] httpx unavailable; job_memory_health_minute cannot run")
         _record_health({
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "ok": False,
             "error": "httpx unavailable",
         })
         return
 
     transport = httpx.ASGITransport(app=composed_app)
-    timestamp = datetime.now(timezone.utc).isoformat()
+    timestamp = datetime.now(UTC).isoformat()
     try:
         async with httpx.AsyncClient(
             transport=transport, base_url="http://demo",
@@ -180,7 +179,7 @@ async def job_memory_health_minute() -> None:
 # ============================================
 # Scheduler factory + job registration
 # ============================================
-def add_demo_job(scheduler: "AsyncIOScheduler") -> None:
+def add_demo_job(scheduler: AsyncIOScheduler) -> None:
     """Register the demo job on an existing AsyncIOScheduler.
 
     Parameters
@@ -210,7 +209,7 @@ def add_demo_job(scheduler: "AsyncIOScheduler") -> None:
     )
 
 
-def build_demo_scheduler() -> "AsyncIOScheduler":
+def build_demo_scheduler() -> AsyncIOScheduler:
     """Build a fresh AsyncIOScheduler with the demo job pre-registered.
 
     The returned scheduler is NOT started. Caller is expected to
@@ -246,7 +245,7 @@ async def _demo_lifespan(application: FastAPI):
     uses the lifespan of the app instance the import returns
     (which is the one from :mod:`backend.main`).
     """
-    scheduler: "AsyncIOScheduler" = application.state.demo_scheduler
+    scheduler: AsyncIOScheduler = application.state.demo_scheduler
     assert not scheduler.running, "demo scheduler must not be running yet"
     scheduler.start()
     logger.info("[demo] AsyncIOScheduler started; demo job is live")
@@ -286,12 +285,12 @@ def create_demo_app() -> FastAPI:
     composed_app.router.lifespan_context = _demo_lifespan
 
     @composed_app.get("/demo/info")
-    async def demo_info() -> Dict[str, Any]:
+    async def demo_info() -> dict[str, Any]:
         """Report the registered jobs and recent health-check results."""
-        sched: "AsyncIOScheduler" = composed_app.state.demo_scheduler
-        jobs_info: List[Dict[str, Any]] = []
+        sched: AsyncIOScheduler = composed_app.state.demo_scheduler
+        jobs_info: list[dict[str, Any]] = []
         for job in sched.get_jobs():
-            next_run_iso: Optional[str] = None
+            next_run_iso: str | None = None
             if sched.running:
                 try:
                     nrt = job.next_run_time
@@ -317,7 +316,7 @@ def create_demo_app() -> FastAPI:
 # ============================================
 # Module-level ASGI app for `uvicorn backend.demo_integration:app`
 # ============================================
-app: Optional[FastAPI] = (
+app: FastAPI | None = (
     create_demo_app() if _APSCHEDULER_AVAILABLE else None  # type: ignore[assignment]
 )
 

@@ -267,7 +267,7 @@ class TestConcurrentComputeDegradation:
         # test the actual behavior: with 100 transfers to one
         # vessel, no two consecutive picks should be equal.
         vessel = "hot_vessel"
-        picks: List[str] = []
+        picks: list[str] = []
         for _ in range(20):
             r = await engine.compute_degradation(
                 source_state=["非常健康"],  # 4-entry tier list

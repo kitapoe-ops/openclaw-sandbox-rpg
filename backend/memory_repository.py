@@ -116,7 +116,7 @@ import asyncio
 import hashlib
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +164,7 @@ class MemoryRepository(ABC):
         content: str,
         memory_type: str,
         salience: float,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """Persist a memory. Idempotent on ``memory_id``.
 
@@ -186,7 +186,7 @@ class MemoryRepository(ABC):
         """
 
     @abstractmethod
-    async def load(self, memory_id: str) -> Optional[Dict[str, Any]]:
+    async def load(self, memory_id: str) -> dict[str, Any] | None:
         """Return the stored payload or ``None`` if absent."""
 
     @abstractmethod
@@ -201,9 +201,9 @@ class MemoryRepository(ABC):
     async def list_by_character(
         self,
         character_id: str,
-        memory_type: Optional[str] = None,
+        memory_type: str | None = None,
         min_salience: float = 0.0,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """List memories for a character, sorted by salience DESC.
 
         Filters compose with AND. ``memory_type=None`` returns
@@ -271,7 +271,7 @@ class SqliteMemoryRepository(MemoryRepository):
         content: str,
         memory_type: str,
         salience: float,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         # Phase A: add_memory auto-generates a UUID; we
         # preserve the caller's id in metadata. The
@@ -296,7 +296,7 @@ class SqliteMemoryRepository(MemoryRepository):
         )
         return actual_id
 
-    async def load(self, memory_id: str) -> Optional[Dict[str, Any]]:
+    async def load(self, memory_id: str) -> dict[str, Any] | None:
         # Phase A exposes ``get_memory`` which takes a
         # UUID. We therefore cannot load by an arbitrary
         # ``memory_id`` string at the repository level.
@@ -316,7 +316,6 @@ class SqliteMemoryRepository(MemoryRepository):
         # SQL helper on the fly. The lock pattern matches
         # the rest of ``MemoryPalace`` (lazy asyncio.Lock).
         import asyncio
-        import sqlite3
 
         palace = self._palace
         if not hasattr(palace, "_repo_delete_lock") or palace._repo_delete_lock is None:
@@ -336,12 +335,12 @@ class SqliteMemoryRepository(MemoryRepository):
     async def list_by_character(
         self,
         character_id: str,
-        memory_type: Optional[str] = None,
+        memory_type: str | None = None,
         min_salience: float = 0.0,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         from backend.memory_palace import MemoryType
 
-        mt: Optional[MemoryType] = MemoryType(memory_type) if memory_type else None
+        mt: MemoryType | None = MemoryType(memory_type) if memory_type else None
         # Phase A's get_memories already filters by
         # min_salience; we pass it through.
         fragments = await self._palace.get_memories(
@@ -410,7 +409,7 @@ class PostgresMemoryRepository(MemoryRepository):
     def __init__(
         self,
         integration: Any,
-        embedding_model: Optional["EmbeddingModel"] = None,
+        embedding_model: EmbeddingModel | None = None,
     ) -> None:
         # ``Any`` to avoid a circular import; callers pass
         # a real :class:`MemoryPalaceIntegration`.
@@ -424,7 +423,7 @@ class PostgresMemoryRepository(MemoryRepository):
         content: str,
         memory_type: str,
         salience: float,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         if self._embedding_model is None:
             raise RuntimeError(
@@ -452,7 +451,7 @@ class PostgresMemoryRepository(MemoryRepository):
         )
         return actual_id
 
-    async def load(self, memory_id: str) -> Optional[Dict[str, Any]]:
+    async def load(self, memory_id: str) -> dict[str, Any] | None:
         # The integration has no public "load by id"
         # method — recall is the only read path. We
         # return ``None`` for arbitrary ids (per the
@@ -470,9 +469,9 @@ class PostgresMemoryRepository(MemoryRepository):
     async def list_by_character(
         self,
         character_id: str,
-        memory_type: Optional[str] = None,
+        memory_type: str | None = None,
         min_salience: float = 0.0,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         # The integration's ``recall`` takes an
         # embedding; listing by character without a
         # query needs a different access pattern. We
@@ -583,12 +582,12 @@ class EmbeddingModel:
         self._model_name = model_name
         self._cache_size = int(cache_size)
         self._model: Any = None
-        self._model_lock: Optional[asyncio.Lock] = None
+        self._model_lock: asyncio.Lock | None = None
         # OrderedDict-based LRU cache. The dict
         # preserves insertion order; we move-to-end on
         # every hit. Eviction is on insert when len
         # exceeds ``_cache_size``.
-        self._cache: Dict[str, List[float]] = {}
+        self._cache: dict[str, list[float]] = {}
 
     # ---- internal helpers ----
     def _content_hash(self, content: str) -> str:
@@ -642,7 +641,7 @@ class EmbeddingModel:
             )
             return self._model
 
-    def _cache_get(self, key: str) -> Optional[List[float]]:
+    def _cache_get(self, key: str) -> list[float] | None:
         """LRU get — moves the entry to the end on hit."""
         if key not in self._cache:
             return None
@@ -650,7 +649,7 @@ class EmbeddingModel:
         self._cache[key] = value  # re-insert at end
         return value
 
-    def _cache_put(self, key: str, value: List[float]) -> None:
+    def _cache_put(self, key: str, value: list[float]) -> None:
         """LRU put — evicts the oldest entry on overflow."""
         if key in self._cache:
             self._cache.pop(key)
@@ -663,7 +662,7 @@ class EmbeddingModel:
     # ---- public API ----
     async def encode(
         self, content: str, force_reembed: bool = False
-    ) -> List[float]:
+    ) -> list[float]:
         """Encode a single string to a 384-dim float vector.
 
         Parameters
@@ -703,7 +702,7 @@ class EmbeddingModel:
         # ``list[float]`` so the rest of the codebase
         # never has to import numpy.
         try:
-            vector_list: List[float] = [float(x) for x in vector]
+            vector_list: list[float] = [float(x) for x in vector]
         except TypeError as exc:
             raise TypeError(
                 f"EmbeddingModel.encode: model returned non-iterable "
@@ -731,7 +730,7 @@ def get_repository(
     *,
     sqlite_palace: Any = None,
     postgres_integration: Any = None,
-    embedding_model: Optional[EmbeddingModel] = None,
+    embedding_model: EmbeddingModel | None = None,
 ) -> MemoryRepository:
     """Factory for the two concrete repositories.
 

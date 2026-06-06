@@ -42,7 +42,6 @@ import warnings
 
 import pytest
 
-
 # Ensure the project root is on sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)))
 
@@ -55,6 +54,7 @@ class TestDemoModeCaching:
         monkeypatch.setenv("DEMO_MODE", "true")
         # Reload so module-level DEMO_MODE_FLAG is recomputed
         import importlib
+
         from backend import demo_mode
         importlib.reload(demo_mode)
 
@@ -77,6 +77,7 @@ class TestDemoModeCaching:
         """DEMO_MODE=false: no DB probe, no warning."""
         monkeypatch.setenv("DEMO_MODE", "false")
         import importlib
+
         from backend import demo_mode
         importlib.reload(demo_mode)
 
@@ -102,6 +103,7 @@ class TestDemoModeCaching:
         """
         monkeypatch.setenv("DEMO_MODE", "auto")
         import importlib
+
         from backend import demo_mode
         importlib.reload(demo_mode)
 
@@ -134,6 +136,7 @@ class TestDemoModeCaching:
         rely on this behavior (monkeypatch + importlib.reload).
         """
         import importlib
+
         from backend import demo_mode
 
         # First, populate the cache via "auto" (which probes)
@@ -278,6 +281,7 @@ class TestDemoModeConcurrency:
         Python process), but the contract should be visible.
         """
         import importlib
+
         from backend import demo_mode
 
         monkeypatch.setenv("DEMO_MODE", "auto")
@@ -317,6 +321,7 @@ class TestPytestWarningsSummary:
         via TestClient must not produce the coroutine warning.
         """
         from fastapi.testclient import TestClient
+
         from backend.main import app
 
         client = TestClient(app)

@@ -67,10 +67,10 @@ import logging
 import os
 import sqlite3
 import uuid
-from dataclasses import dataclass, field, asdict
-from datetime import datetime, timezone
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 # Phase C2 imports (kept at module level; only triggered when
 # MemoryPalaceIntegration is actually instantiated).
@@ -93,7 +93,7 @@ from .vector_store import EMBEDDING_DIM, VectorStore
 
 logger = logging.getLogger(__name__)
 
-UTC = timezone.utc
+UTC = UTC
 
 # ============================================
 # Enums (locked contract from WAVE2 design)
@@ -125,8 +125,8 @@ class MemorySource(str, enum.Enum):
 
 
 # Allowed set per source → sanity check (defense against future bug)
-ALLOWED_SOURCES: Set[str] = {s.value for s in MemorySource}
-ALLOWED_TYPES: Set[str] = {t.value for t in MemoryType}
+ALLOWED_SOURCES: set[str] = {s.value for s in MemorySource}
+ALLOWED_TYPES: set[str] = {t.value for t in MemoryType}
 
 
 # ============================================
@@ -152,10 +152,10 @@ class MemoryFragment:
     created_at: str
     last_accessed_at: str
     access_count: int
-    tags: List[str] = field(default_factory=list)
-    linked_memories: List[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
+    linked_memories: list[str] = field(default_factory=list)
     decay_rate: float = 0.05
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
     archived: bool = False
 
     def __post_init__(self) -> None:
@@ -179,7 +179,7 @@ class MemoryFragment:
                 f"access_count must be >= 0, got {self.access_count}"
             )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to dict (for JSON storage)."""
         d = asdict(self)
         d["memory_type"] = self.memory_type.value
@@ -187,7 +187,7 @@ class MemoryFragment:
         return d
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "MemoryFragment":
+    def from_dict(cls, data: dict[str, Any]) -> MemoryFragment:
         """Deserialize from dict (for JSON storage)."""
         d = dict(data)
         d["memory_type"] = MemoryType(d["memory_type"])
@@ -268,7 +268,7 @@ class MemoryPalace:
 
     def __init__(self, db_path: str | os.PathLike):
         self.db_path = str(db_path)
-        self._lock: Optional[Any] = None  # lazily initialized in async context
+        self._lock: Any | None = None  # lazily initialized in async context
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         self.initialize_storage()
 
@@ -313,9 +313,9 @@ class MemoryPalace:
         memory_type: MemoryType | str,
         source: MemorySource | str,
         salience: float = 0.5,
-        tags: Optional[List[str]] = None,
+        tags: list[str] | None = None,
         decay_rate: float = 0.05,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """
         Add a new memory fragment to the palace.
@@ -380,10 +380,10 @@ class MemoryPalace:
         self,
         character_id: str,
         limit: int = 50,
-        memory_type: Optional[MemoryType | str] = None,
-        min_salience: Optional[float] = None,
+        memory_type: MemoryType | str | None = None,
+        min_salience: float | None = None,
         include_archived: bool = False,
-    ) -> List[MemoryFragment]:
+    ) -> list[MemoryFragment]:
         """
         Retrieve memories for a character, sorted by salience (desc).
 
@@ -393,7 +393,7 @@ class MemoryPalace:
             raise ValueError("limit must be >= 1")
 
         where = ["character_id = ?"]
-        params: List[Any] = [character_id]
+        params: list[Any] = [character_id]
 
         if not include_archived:
             where.append("archived = 0")
@@ -420,7 +420,7 @@ class MemoryPalace:
         finally:
             conn.close()
 
-    async def get_memory(self, memory_id: str) -> Optional[MemoryFragment]:
+    async def get_memory(self, memory_id: str) -> MemoryFragment | None:
         """
         Retrieve a single memory by ID, incrementing its access count.
         Returns None if not found.
@@ -456,7 +456,7 @@ class MemoryPalace:
         character_id: str,
         query_text: str,
         top_k: int = 10,
-    ) -> List[MemoryFragment]:
+    ) -> list[MemoryFragment]:
         """
         Phase A keyword search: SQL LIKE on content + tags.
         Returns memories containing the query text, sorted by salience.
@@ -515,7 +515,7 @@ class MemoryPalace:
         character_id: str,
         query: str,
         top_k: int = 5,
-    ) -> List[MemoryFragment]:
+    ) -> list[MemoryFragment]:
         """
         Semantic search via vector embeddings.
 
@@ -593,7 +593,7 @@ class MemoryPalace:
 
     async def traverse_links(
         self, memory_id: str, max_depth: int = 3
-    ) -> List[MemoryFragment]:
+    ) -> list[MemoryFragment]:
         """
         BFS traversal of the memory graph starting from memory_id.
         Returns all reachable memories (excluding the start).
@@ -601,9 +601,9 @@ class MemoryPalace:
         if max_depth < 0:
             raise ValueError("max_depth must be >= 0")
 
-        visited: Set[str] = set()
-        frontier: List[tuple] = [(memory_id, 0)]
-        result_ids: List[str] = []
+        visited: set[str] = set()
+        frontier: list[tuple] = [(memory_id, 0)]
+        result_ids: list[str] = []
 
         while frontier:
             current_id, depth = frontier.pop(0)
@@ -669,7 +669,7 @@ class MemoryPalace:
                 "SELECT id, salience, decay_rate FROM memory_entries WHERE character_id = ? AND archived = 0",
                 (character_id,),
             ).fetchall()
-            updates: List[tuple] = []
+            updates: list[tuple] = []
             for row in rows:
                 new_sal = row["salience"] * math.exp(
                     -row["decay_rate"] * days_elapsed
@@ -716,7 +716,7 @@ class MemoryPalace:
             raise ValueError("page_size must be >= 1")
 
         # Step 1: Paginated read (memory-side cursor, no hard truncation)
-        all_memories: List[MemoryFragment] = []
+        all_memories: list[MemoryFragment] = []
         offset = 0
         conn = self._connect()
         try:
@@ -740,11 +740,11 @@ class MemoryPalace:
                 return 0
 
             # Step 2: Memory-side similarity computation (zero DB I/O)
-            def words(s: str) -> Set[str]:
+            def words(s: str) -> set[str]:
                 return set(s.lower().split())
 
-            to_archive: List[str] = []
-            skip: Set[str] = set()
+            to_archive: list[str] = []
+            skip: set[str] = set()
             for i, m1 in enumerate(all_memories):
                 if m1.id in skip:
                     continue
@@ -829,7 +829,7 @@ class MemoryPalace:
         # Step 2: Decide which to transfer (in memory)
         import random
         now = _now_iso()
-        inserts: List[tuple] = []
+        inserts: list[tuple] = []
         for row in rows:
             mt = row["memory_type"]
             # semantic + procedural always keep; episodic/emotional sampled
@@ -887,7 +887,7 @@ class MemoryPalace:
         finally:
             conn.close()
 
-    async def export_state(self, character_id: str) -> Dict[str, Any]:
+    async def export_state(self, character_id: str) -> dict[str, Any]:
         """Export all memories for a character as a JSON-serializable dict."""
         memories = await self.get_memories(character_id, limit=10000, include_archived=True)
         return {

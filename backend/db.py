@@ -6,15 +6,16 @@ Implements the API contract for Q6 three-step decoupled transactions.
 Uses SQLAlchemy 2.0 async + asyncpg.
 Connection string built from POSTGRES_* env vars (matches .env.example).
 """
-import os
+import asyncio
 import logging
+import os
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Optional, Dict, Any, AsyncIterator
-from datetime import datetime
+from typing import Any
 
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import declarative_base
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import declarative_base
 
 logger = logging.getLogger(__name__)
 
@@ -99,10 +100,9 @@ async def transaction() -> AsyncIterator[AsyncSession]:
 # ============================================
 # Schema (placeholder — load from schema.sql on startup)
 # ============================================
-import asyncio
 
 # Init lock + flag for race-safe idempotent initialization
-_init_lock: Optional[asyncio.Lock] = None
+_init_lock: asyncio.Lock | None = None
 _init_done: bool = False
 
 

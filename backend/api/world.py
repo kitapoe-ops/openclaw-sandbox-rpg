@@ -16,9 +16,9 @@ DB mode:
   Unchanged — uses async SQLAlchemy session against the World/WorldParameterState
   models.
 """
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import yaml
 from fastapi import APIRouter, HTTPException
@@ -49,7 +49,7 @@ router = APIRouter()
 _WORLDS_DIR = Path(__file__).resolve().parent.parent.parent / "worlds"
 
 
-def _resolve_world_yaml(world_id: str) -> Optional[Path]:
+def _resolve_world_yaml(world_id: str) -> Path | None:
     """
     Map a world_id to a YAML file inside `worlds/`.
 
@@ -65,7 +65,7 @@ def _resolve_world_yaml(world_id: str) -> Optional[Path]:
     if _WORLDS_DIR.exists():
         for yaml_file in _WORLDS_DIR.glob("*.yaml"):
             try:
-                with open(yaml_file, "r", encoding="utf-8") as f:
+                with open(yaml_file, encoding="utf-8") as f:
                     head = f.read(4096)
                 if f"id: \"{world_id}\"" in head or f"id: '{world_id}'" in head:
                     return yaml_file
@@ -74,23 +74,23 @@ def _resolve_world_yaml(world_id: str) -> Optional[Path]:
     return None
 
 
-def _load_yaml_world(world_id: str) -> Optional[Dict[str, Any]]:
+def _load_yaml_world(world_id: str) -> dict[str, Any] | None:
     """Read a world YAML directly (cheap one-shot, no lazy loader required)."""
     yaml_path = _resolve_world_yaml(world_id)
     if yaml_path is None:
         return None
-    with open(yaml_path, "r", encoding="utf-8") as f:
+    with open(yaml_path, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
-def _demo_list_worlds() -> List[Dict[str, Any]]:
+def _demo_list_worlds() -> list[dict[str, Any]]:
     """List worlds from the `worlds/` directory for demo mode."""
     if not _WORLDS_DIR.exists():
         return []
-    out: List[Dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
     for yaml_file in sorted(_WORLDS_DIR.glob("*.yaml")):
         try:
-            with open(yaml_file, "r", encoding="utf-8") as f:
+            with open(yaml_file, encoding="utf-8") as f:
                 head = f.read(2048)
             world_id = yaml_file.stem
             # Cheap metadata extraction (avoids full YAML parse)
@@ -125,7 +125,7 @@ def _demo_list_worlds() -> List[Dict[str, Any]]:
     return out
 
 
-def _demo_world_state(world_id: str) -> Dict[str, Any]:
+def _demo_world_state(world_id: str) -> dict[str, Any]:
     """
     Build the same shape as DB-mode /state for demo mode, sourced from YAML.
     """
@@ -164,7 +164,7 @@ def _demo_world_state(world_id: str) -> Dict[str, Any]:
     }
 
 
-def _demo_world_parameters(world_id: str) -> Dict[str, Any]:
+def _demo_world_parameters(world_id: str) -> dict[str, Any]:
     """Return the `world_parameters` list from YAML, with current_level defaults."""
     data = _load_yaml_world(world_id)
     if data is None:
@@ -182,14 +182,14 @@ def _demo_world_parameters(world_id: str) -> Dict[str, Any]:
     }
 
 
-def _demo_etl(world_id: str) -> Dict[str, Any]:
+def _demo_etl(world_id: str) -> dict[str, Any]:
     """Stub ETL trigger for demo mode (no real work, just acknowledge)."""
     return {
         "world_id": world_id,
         "status": "queued",
         "mode": "demo",
         "message": "Demo mode: ETL is a no-op. Use DB mode to trigger real ETL.",
-        "queued_at": datetime.now(timezone.utc).isoformat(),
+        "queued_at": datetime.now(UTC).isoformat(),
     }
 
 
@@ -198,19 +198,20 @@ def _demo_etl(world_id: str) -> Dict[str, Any]:
 # ============================================
 
 @router.get("/")
-async def list_worlds() -> Dict[str, Any]:
+async def list_worlds() -> dict[str, Any]:
     """List all available worlds (demo mode: from `worlds/`, DB mode: from PostgreSQL)."""
     if is_demo_mode():
         return {"worlds": _demo_list_worlds(), "mode": "demo"}
 
     # DB mode — original v3.6 behavior
+    from sqlalchemy import select
+
     from ..db import get_db_session
     from ..models import World
-    from sqlalchemy import select
 
     async with get_db_session() as session:
         result = await session.execute(
-            select(World).where(World.is_active == True)
+            select(World).where(World.is_active.is_(True))
         )
         worlds = result.scalars().all()
         return {
@@ -227,15 +228,16 @@ async def list_worlds() -> Dict[str, Any]:
 
 
 @router.get("/{world_id}/state")
-async def get_world_state(world_id: str) -> Dict[str, Any]:
+async def get_world_state(world_id: str) -> dict[str, Any]:
     """Get current world state (parameters, events, etc.)."""
     if is_demo_mode():
         return _demo_world_state(world_id)
 
     # DB mode — original v3.6 behavior
+    from sqlalchemy import select
+
     from ..db import get_db_session
     from ..models import World, WorldParameterState
-    from sqlalchemy import select
 
     async with get_db_session() as session:
         world = await session.get(World, world_id)
@@ -264,7 +266,7 @@ async def get_world_state(world_id: str) -> Dict[str, Any]:
 
 
 @router.get("/{world_id}/parameters")
-async def get_world_parameters(world_id: str) -> Dict[str, Any]:
+async def get_world_parameters(world_id: str) -> dict[str, Any]:
     """Get all world parameters and their current levels."""
     if is_demo_mode():
         return _demo_world_parameters(world_id)
@@ -273,7 +275,7 @@ async def get_world_parameters(world_id: str) -> Dict[str, Any]:
 
 
 @router.post("/{world_id}/etl")
-async def trigger_daily_etl(world_id: str) -> Dict[str, Any]:
+async def trigger_daily_etl(world_id: str) -> dict[str, Any]:
     """Manually trigger daily ETL (admin only)."""
     if is_demo_mode():
         return _demo_etl(world_id)

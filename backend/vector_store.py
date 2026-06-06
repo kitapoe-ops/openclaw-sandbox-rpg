@@ -56,7 +56,6 @@ import asyncio
 import logging
 import math
 import os
-import time
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -93,7 +92,7 @@ def _detect_lancedb() -> Any:
 def _dot(a: list[float], b: list[float]) -> float:
     """Dot product of two equal-length vectors. Pure-Python, no numpy."""
     s = 0.0
-    for x, y in zip(a, b):
+    for x, y in zip(a, b, strict=False):
         s += x * y
     return s
 
@@ -364,7 +363,6 @@ class VectorStore:
         results: list[dict] = []
         for row in rows:
             row_id = row.get("id", "")
-            vector = row.get("vector", query_embedding)
             # LanceDB distance defaults to L2. We map back to a
             # similarity-style score by re-computing cosine from the
             # stored vector. (Cheaper than carrying a parallel column.)

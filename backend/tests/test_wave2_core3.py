@@ -5,9 +5,9 @@ from __future__ import annotations
 
 import asyncio
 import os
-import sys
-import sqlite3
 import random
+import sqlite3
+import sys
 from pathlib import Path
 
 import pytest

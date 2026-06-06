@@ -18,10 +18,10 @@ Public Cache Invalidation API (Phase E5, replaces importlib.reload hack):
       timestamp of the last reset_demo_mode_cache() call (None if never reset
       in this process, or if the cache was only populated via _test_db_connection()).
 """
+import logging
 import os
 import time as _time_module
-import logging
-from typing import Optional, Dict, Any
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ DEMO_MODE_FLAG = os.getenv("DEMO_MODE", "auto").lower()
 #      exercises via an anyio BlockingPortal).
 # Cache is also crucial because the DB probe is async — it cannot be
 # re-run safely from within a running event loop.
-_db_reachable_cache: Optional[bool] = None
+_db_reachable_cache: bool | None = None
 
 # Unix timestamp (float, seconds since epoch) of the last successful call to
 # reset_demo_mode_cache(). None if the cache has never been reset in this
@@ -48,7 +48,7 @@ _db_reachable_cache: Optional[bool] = None
 # explicit reset function. This separation lets callers distinguish between a
 # fresh process (no reset, no probe yet) and a process that has been reset and
 # is awaiting re-probe (reset happened, but cache is None again until next probe).
-_last_reset_ts: Optional[float] = None
+_last_reset_ts: float | None = None
 
 
 def reset_demo_mode_cache() -> None:
@@ -76,7 +76,7 @@ def reset_demo_mode_cache() -> None:
     _last_reset_ts = _time_module.time()
 
 
-def cache_status() -> Dict[str, Any]:
+def cache_status() -> dict[str, Any]:
     """
     Return current cache state for observability/debugging.
 
@@ -154,8 +154,8 @@ def _test_db_connection() -> bool:
         pass
 
     try:
-        from sqlalchemy.ext.asyncio import create_async_engine
         from sqlalchemy import text
+        from sqlalchemy.ext.asyncio import create_async_engine
 
         async def check():
             engine = create_async_engine(

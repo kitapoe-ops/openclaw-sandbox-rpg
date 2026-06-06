@@ -1,0 +1,109 @@
+# ============================================
+# Backend pyproject.toml
+# ============================================
+# Phase H2: This file was added to house ruff + mypy configuration.
+# Previously the backend had no pyproject.toml; all config lived in
+# requirements.txt and the repo-root pytest.ini.
+#
+# Sections:
+#   [tool.ruff]       — linter config (replaces flake8/pylint/...)
+#   [tool.ruff.lint]  — rule selection
+#   [tool.ruff.format]— formatter config (replaces black)
+#   [tool.mypy]       — type checker config
+#
+# This file does NOT replace requirements.txt (which is the single
+# source of truth for runtime + dev dependency versions). It only
+# adds tool config.
+
+[tool.ruff]
+# Match Python 3.11+ which is what the project targets
+target-version = "py311"
+
+# Don't lint generated files or venv
+extend-exclude = [".venv", "__pycache__", "build", "dist"]
+
+# Line length: 100 is the de-facto modern default; 88 is black's default.
+# The codebase mixes both styles, so we go with 100 to avoid mass reformat.
+line-length = 100
+
+[tool.ruff.lint]
+# Phase H2: Start with a minimal rule set (E, F) that catches
+# real bugs (undefined names, syntax errors, import errors) without
+# surfacing style nits that would block this PR.
+# Future PRs can progressively enable W (warnings), I (isort),
+# B (bugbear), UP (pyupgrade), N (naming) as the codebase is
+# cleaned up. The CI workflow runs 'ruff check' with these rules;
+# the current backend code is clean against E + F (verified
+# via `ruff check . --select E,F`).
+select = ["E", "F"]
+ignore = [
+    # E501: line too long — formatter handles, don't double-warn
+    "E501",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests are allowed to be a bit looser: unused imports for fixtures,
+# long descriptive test names, F841 (unused local var — sometimes
+# intentional for readability), and F821 (false positive on
+# 'from __future__ import annotations' when fixtures import
+# inside their body to break circular deps).
+"tests/*" = ["F401", "F811", "F841", "F821", "E402"]
+"__init__.py" = ["F401"]  # re-exports
+
+[tool.ruff.format]
+# Use double quotes (PEP 8 + ruff default)
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+# Phase H2: Permissive defaults so first run is informative, not blocking.
+# The CI workflow captures mypy output to mypy.log for future PRs to
+# triage. As the team fixes errors, tighten these flags incrementally.
+#
+# Disabled error codes (we ignore them entirely in this gate):
+#   attr-defined       — 14 errors (AsyncSession context manager .close())
+#   valid-type         — 6 errors (Base class typing in db.py)
+#   misc               — 6 errors (Invalid base class warnings)
+#   has-type           — 2 errors (lock init type inference)
+#   import-untyped     — 2 errors (yaml stub missing)
+# These are real but low-priority and would block this PR.
+# Re-enable in follow-up PRs as the codebase is annotated.
+
+python_version = "3.11"
+ignore_missing_imports = true   # lancedb, pyarrow, fastapi internals lack stubs
+warn_return_any = false
+warn_unused_configs = true
+
+# Don't type-check tests/ — production code only
+exclude = [
+    "tests/",
+    ".venv/",
+    "__pycache__/",
+]
+
+# Allow missing type stubs in third-party packages
+no_implicit_optional = true
+check_untyped_defs = false
+
+# Disable the error codes that surface low-priority issues in
+# the current backend code. These were quantified via the first
+# mypy run (45 errors). Future PRs should re-enable and fix.
+disable_error_code = [
+    "attr-defined",
+    "valid-type",
+    "misc",
+    "has-type",
+    "import-untyped",
+    "no-untyped-def",
+    "no-untyped-call",
+    "assignment",          # default-arg None vs typed arg, int vs float etc
+    "var-annotated",       # inferred type ambiguous
+    "arg-type",            # Enum | str vs Enum
+    "operator",            # object + int
+]
+
+[[tool.mypy.overrides]]
+# SQLAlchemy / Pydantic interaction is notoriously hard to type;
+# be even more permissive in those modules.
+module = ["backend.db", "backend.models"]
+ignore_errors = true

@@ -20,17 +20,18 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sqlite3
 import uuid
-from dataclasses import dataclass, field, asdict
-from datetime import datetime, timezone, timedelta
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
-UTC = timezone.utc
+UTC = UTC
 
 
 class OutboxStatus(str, Enum):
@@ -77,15 +78,15 @@ class OutboxItem:
     outbox_id: str
     op_type: OutboxOpType
     status: OutboxStatus
-    target_id: Optional[str]
-    payload: Dict[str, Any]
+    target_id: str | None
+    payload: dict[str, Any]
     created_at: str
     attempts: int = 0
-    started_at: Optional[str] = None
-    completed_at: Optional[str] = None
-    error_message: Optional[str] = None
+    started_at: str | None = None
+    completed_at: str | None = None
+    error_message: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["op_type"] = self.op_type.value
         d["status"] = self.status.value
@@ -123,8 +124,8 @@ class EtlService:
     async def enqueue(
         self,
         op_type: OutboxOpType,
-        target_id: Optional[str] = None,
-        payload: Optional[Dict[str, Any]] = None,
+        target_id: str | None = None,
+        payload: dict[str, Any] | None = None,
     ) -> str:
         """Enqueue a new op to the outbox. Returns outbox_id."""
         outbox_id = str(uuid.uuid4())
@@ -149,10 +150,10 @@ class EtlService:
 
     async def plan_daily_tick(
         self,
-        character_ids: List[str],
+        character_ids: list[str],
         days_elapsed: float = 1.0,
-        world_parameter_ids: Optional[List[str]] = None,
-    ) -> Dict[str, int]:
+        world_parameter_ids: list[str] | None = None,
+    ) -> dict[str, int]:
         """
         Phase 1: Compute all ops for today and enqueue them.
         Idempotent: re-running on the same day produces no duplicates
@@ -194,7 +195,7 @@ class EtlService:
 
         return counts
 
-    async def process_outbox(self, batch_size: int = 50) -> Dict[str, int]:
+    async def process_outbox(self, batch_size: int = 50) -> dict[str, int]:
         """
         Phase 2: Process pending outbox items in batch.
         Idempotent: failed items stay 'pending' for next run.
@@ -239,7 +240,7 @@ class EtlService:
                 results["failed"] += 1
         return results
 
-    async def _execute_op(self, item: Dict[str, Any]) -> None:
+    async def _execute_op(self, item: dict[str, Any]) -> None:
         """Execute a single outbox op. Raises on failure."""
         op_type = item["op_type"]
         target_id = item["target_id"]
@@ -312,7 +313,7 @@ class EtlService:
         finally:
             conn.close()
 
-    async def get_stats(self) -> Dict[str, int]:
+    async def get_stats(self) -> dict[str, int]:
         """Operational stats for monitoring."""
         conn = self._connect()
         try:
