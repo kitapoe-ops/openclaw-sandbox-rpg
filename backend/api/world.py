@@ -37,7 +37,16 @@ router = APIRouter()
 # Demo mode helpers
 # ============================================
 
-_WORLDS_DIR = Path("worlds")
+# Resolve the worlds/ directory relative to this file, not to the process
+# working directory. The CI workflow runs `cd backend && pytest`, which
+# would otherwise resolve "worlds" to a non-existent `backend/worlds/`.
+# The actual worlds/ dir lives at the repo root: <repo>/worlds/.
+# This file is at <repo>/backend/api/world.py, so:
+#   __file__ -> backend/api/
+#   .parent  -> backend/
+#   .parent  -> <repo>/
+#   / "worlds" -> <repo>/worlds/
+_WORLDS_DIR = Path(__file__).resolve().parent.parent.parent / "worlds"
 
 
 def _resolve_world_yaml(world_id: str) -> Optional[Path]:
