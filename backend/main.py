@@ -38,6 +38,23 @@ async def lifespan(app: FastAPI):
 
     # Detect mode
     demo = is_demo_mode()
+
+    # Phase L2-B: production safety guard (2026-06-07)
+    # When ENV=production, demo mode is FORBIDDEN. This prevents
+    # silent fallback to in-memory demo data if DATABASE_URL is
+    # misconfigured. Per user explicit decision (B): demo mode
+    # remains an opt-in for development, but production MUST hit
+    # the real DB or refuse to start (fail-loud).
+    env = os.getenv("ENV", "development").lower()
+    if env == "production" and demo:
+        raise RuntimeError(
+            "PRODUCTION SAFETY: ENV=production requires DATABASE_URL to be reachable. "
+            "Demo mode is opt-in for development only. "
+            "Set ENV=development to explicitly opt in, or fix your DB connection. "
+            "(backend/demo_mode.py)"
+        )
+    logger.info(f"[Env] ENV={env}, mode={'demo' if demo else 'full'}")
+
     if demo:
         logger.info("[Mode] DEMO MODE — no DB required")
         logger.info(f"[Demo] Character: {DEMO_STARTER['character_id']}")
