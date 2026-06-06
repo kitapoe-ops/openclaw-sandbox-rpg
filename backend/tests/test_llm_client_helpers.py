@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import pytest
 
-from llm_client import (
+from backend.llm_client import (
     _extract_state_mutations_dict,
     _parse_json_response,
     build_few_shots,

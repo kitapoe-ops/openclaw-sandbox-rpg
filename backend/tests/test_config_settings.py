@@ -28,7 +28,7 @@ import pytest
 # the .coveragerc `source = .` so coverage tracks this module.
 # Same import works in the rest of the codebase because the
 # backend/ directory is on sys.path via the test runner.
-from config import Settings
+from backend.config import Settings
 
 # Pydantic v1 vs v2 compatibility shim
 # Pydantic v2 (locally used: 2.13.4 + pydantic-settings 2.14.1) accepts
