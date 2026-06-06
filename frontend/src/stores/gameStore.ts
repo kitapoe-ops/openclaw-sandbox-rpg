@@ -52,7 +52,15 @@ export const useGameStore = defineStore('game', () => {
   const isRoundUrgent = computed(() => remainingSeconds.value < 60 && remainingSeconds.value > 0)
   const isRoundExpired = computed(() => remainingSeconds.value === 0)
 
-  async initialize(characterIdParam: string) {
+  function setCharacterState(state: CharacterState) {
+    characterState.value = state
+  }
+
+  function setCurrentScene(scene: SceneOutput) {
+    currentScene.value = scene
+  }
+
+  async function initialize(characterIdParam: string) {
     characterId.value = characterIdParam
     setupWSHandlers()
 
@@ -264,6 +272,8 @@ export const useGameStore = defineStore('game', () => {
     isProcessing,
 
     // Actions
+    setCharacterState,
+    setCurrentScene,
     initialize,
     submitChoice,
     clearTaskError,

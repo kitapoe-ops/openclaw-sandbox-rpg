@@ -19,6 +19,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.yourdomai
 export type WSMessageType =
   | 'connection_ack'
   | 'action_accepted'
+  | 'action_submit'
   | 'task_status'
   | 'scene_update'
   | 'state_change'

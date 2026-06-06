@@ -53,7 +53,8 @@ export interface SceneOutput {
   choices: Array<{
     id: string
     lore_source: string
-    text: string
+    vignette: string
+    direction_hint: string
     intent_category: string
     attitude_options: Array<{
       dimension: string

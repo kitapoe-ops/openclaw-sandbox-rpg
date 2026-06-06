@@ -91,7 +91,7 @@ const canConfirm = computed(() => Object.keys(selectedAttitudes.value).length > 
     </div>
 
     <!-- Expandable: direction hint + attitude options -->
-    <details class="attitude-section" @toggle="isExpanded = $event.target.open">
+    <details class="attitude-section" @toggle="isExpanded = ($event.target as HTMLDetailsElement).open">
       <summary>選擇態度 (1-2個)</summary>
       <div v-if="isExpanded" class="attitude-options">
         <p class="direction-hint">
