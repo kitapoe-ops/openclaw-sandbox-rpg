@@ -67,8 +67,8 @@ MINIMAX_BASE_URL = os.getenv("MINIMAX_BASE_URL", "https://api.minimax.chat/v1")
 MINIMAX_MODEL = os.getenv("MINIMAX_MODEL", "MiniMax-M3")
 
 # Strict timeouts to prevent death-window in FastAPI background tasks.
-DEFAULT_TIMEOUT_CONNECT = 5.0     # 5s to establish connection
-DEFAULT_TIMEOUT_READ = 30.0       # 30s for LLM response (cloud)
+DEFAULT_TIMEOUT_CONNECT = 5.0  # 5s to establish connection
+DEFAULT_TIMEOUT_READ = 30.0  # 30s for LLM response (cloud)
 DEFAULT_TIMEOUT_WRITE = 10.0
 DEFAULT_TIMEOUT_POOL = 10.0
 
@@ -79,8 +79,8 @@ DEFAULT_MAX_TOKENS = 4000
 
 # Retry policy (addresses R1 finding CRITICAL #1 + #2).
 DEFAULT_MAX_RETRIES = 3
-DEFAULT_BACKOFF_BASE = 1.0        # 1s, 2s, 4s, 8s, ...
-DEFAULT_BACKOFF_CAP = 30.0        # never sleep more than 30s
+DEFAULT_BACKOFF_BASE = 1.0  # 1s, 2s, 4s, 8s, ...
+DEFAULT_BACKOFF_CAP = 30.0  # never sleep more than 30s
 DEFAULT_RETRYABLE_STATUS = {408, 409, 425, 429, 500, 502, 503, 504}
 
 # Response cache (addresses R1 finding CRITICAL #3).
@@ -233,8 +233,7 @@ def _make_cache_key(
         "temperature": round(float(temperature), 4),
         "max_tokens": int(max_tokens),
         "messages": sorted(
-            ({"role": m.get("role", ""), "content": m.get("content", "")}
-             for m in messages),
+            ({"role": m.get("role", ""), "content": m.get("content", "")} for m in messages),
             key=lambda m: (m["role"], m["content"]),
         ),
     }
@@ -673,7 +672,7 @@ class MiniMaxM3Client(LLMClient):
             '    "target": "self" | "other",\n'
             '    "character_id": "<id>",\n'
             '    "add_state": ["<tag1>", ...],            // max 7 tags, '
-            'each CJK-only and <=15 chars\n'
+            "each CJK-only and <=15 chars\n"
             '    "remove_state": ["<tag2>", ...],\n'
             '    "stamina": "<descriptor>" | null,\n'
             '    "health": "<descriptor>" | null,\n'
@@ -727,13 +726,12 @@ class MiniMaxM3Client(LLMClient):
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
-                    "generate_with_state_contract: LLM call failed "
-                    "(attempt %d/%d): %s",
-                    attempt_idx + 1, total_attempts, exc,
+                    "generate_with_state_contract: LLM call failed " "(attempt %d/%d): %s",
+                    attempt_idx + 1,
+                    total_attempts,
+                    exc,
                 )
-                last_error = (
-                    f"llm_call_failed: {type(exc).__name__}: {exc}"
-                )[:300]
+                last_error = (f"llm_call_failed: {type(exc).__name__}: {exc}")[:300]
                 last_result = {
                     "narrative": "",
                     "mutation": None,
@@ -771,9 +769,10 @@ class MiniMaxM3Client(LLMClient):
                 }
             # Validation failed; log and continue if we have retries.
             logger.info(
-                "generate_with_state_contract: validation failed on "
-                "attempt %d/%d: %s",
-                attempt_idx + 1, total_attempts, error,
+                "generate_with_state_contract: validation failed on " "attempt %d/%d: %s",
+                attempt_idx + 1,
+                total_attempts,
+                error,
             )
             # Loop continues → inject error on next attempt.
 
@@ -870,11 +869,13 @@ class MiniMaxM3Client(LLMClient):
 
                 if r.status_code not in DEFAULT_RETRYABLE_STATUS:
                     # Non-retryable status (4xx other than the ones above).
-                    logger.error("MiniMax-M3 non-retryable HTTP %s: %s",
-                                 r.status_code, r.text[:300])
+                    logger.error(
+                        "MiniMax-M3 non-retryable HTTP %s: %s", r.status_code, r.text[:300]
+                    )
                     raise httpx.HTTPStatusError(
                         f"HTTP {r.status_code}: {r.text[:300]}",
-                        request=r.request, response=r,
+                        request=r.request,
+                        response=r,
                     )
 
                 # Retryable status. Decide whether to retry or give up.
@@ -898,7 +899,10 @@ class MiniMaxM3Client(LLMClient):
 
                 logger.warning(
                     "MiniMax-M3 transient HTTP %s (attempt %s/%s); sleeping %.2fs",
-                    r.status_code, attempt + 1, self.max_retries + 1, sleep_s,
+                    r.status_code,
+                    attempt + 1,
+                    self.max_retries + 1,
+                    sleep_s,
                 )
                 self.retry_count += 1
                 await asyncio.sleep(sleep_s)
@@ -908,12 +912,18 @@ class MiniMaxM3Client(LLMClient):
             except (httpx.TimeoutException, httpx.NetworkError) as e:
                 last_exc = e
                 if attempt >= self.max_retries:
-                    logger.error("MiniMax-M3 network error after %s retries: %s",
-                                 self.max_retries, e)
+                    logger.error(
+                        "MiniMax-M3 network error after %s retries: %s", self.max_retries, e
+                    )
                     raise
                 sleep_s = self._backoff(attempt)
-                logger.warning("MiniMax-M3 network error (attempt %s/%s); sleeping %.2fs: %s",
-                               attempt + 1, self.max_retries + 1, sleep_s, e)
+                logger.warning(
+                    "MiniMax-M3 network error (attempt %s/%s); sleeping %.2fs: %s",
+                    attempt + 1,
+                    self.max_retries + 1,
+                    sleep_s,
+                    e,
+                )
                 self.retry_count += 1
                 await asyncio.sleep(sleep_s)
                 attempt += 1
@@ -926,7 +936,7 @@ class MiniMaxM3Client(LLMClient):
 
     def _backoff(self, attempt: int) -> float:
         """Exponential backoff: base, 2*base, 4*base, ... capped at backoff_cap."""
-        return min(self.backoff_base * (2 ** attempt), self.backoff_cap)
+        return min(self.backoff_base * (2**attempt), self.backoff_cap)
 
     @staticmethod
     def _parse_response(data: dict[str, Any], retries: int) -> tuple[str, dict[str, Any]]:
@@ -1028,7 +1038,7 @@ class MockLLMClient(LLMClient):
         """
         del system_prompt  # unused in mock
         del current_state  # unused in mock
-        del user_message   # unused in mock
+        del user_message  # unused in mock
 
         # Phase G1: allow list-of-responses to drive multi-attempt
         # scenarios. We pop the head of the list on each call so
@@ -1113,7 +1123,9 @@ def get_llm_client(provider: str | None = None) -> LLMClient:
 
     Pass `provider` explicitly to override the env var (used in tests).
     """
-    chosen = (provider if provider is not None else os.getenv("LLM_PROVIDER", DEFAULT_LLM_PROVIDER)).lower()
+    chosen = (
+        provider if provider is not None else os.getenv("LLM_PROVIDER", DEFAULT_LLM_PROVIDER)
+    ).lower()
 
     if chosen in ("mock", "mockllm", "mock-llm", "mock_llm"):
         return MockLLMClient()
@@ -1131,9 +1143,7 @@ def get_llm_client(provider: str | None = None) -> LLMClient:
             model=os.getenv("MINIMAX_MODEL", MINIMAX_MODEL),
         )
 
-    raise ValueError(
-        f"Unknown LLM_PROVIDER={chosen!r}. Expected 'mock' or 'minimax'."
-    )
+    raise ValueError(f"Unknown LLM_PROVIDER={chosen!r}. Expected 'mock' or 'minimax'.")
 
 
 # ============================================

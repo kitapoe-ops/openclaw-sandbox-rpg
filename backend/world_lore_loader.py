@@ -42,6 +42,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class WorldMetadata:
     """Lightweight metadata loaded at startup."""
+
     world_id: str
     name: str
     version: str
@@ -97,7 +98,9 @@ class WorldLoreLoader:
                     self._metadata[world_id] = metadata
                     self._locks[world_id] = asyncio.Lock()
                     count += 1
-                    logger.info(f"[WorldLoreLoader] Registered: {world_id} ({yaml_file.stat().st_size} bytes)")
+                    logger.info(
+                        f"[WorldLoreLoader] Registered: {world_id} ({yaml_file.stat().st_size} bytes)"
+                    )
                 except Exception as e:
                     logger.exception(f"[WorldLoreLoader] Failed to register {yaml_file}: {e}")
             return count

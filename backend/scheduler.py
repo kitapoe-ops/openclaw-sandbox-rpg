@@ -43,6 +43,7 @@ try:
     from apscheduler.jobstores.memory import MemoryJobStore
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     from apscheduler.triggers.cron import CronTrigger
+
     _APSCHEDULER_AVAILABLE = True
 except ImportError:  # pragma: no cover - exercised only when dep missing
     AsyncIOScheduler = None  # type: ignore[assignment]
@@ -66,7 +67,7 @@ JOB_HEARTBEAT = "heartbeat"
 # Schedules (cron expressions) — kept here so tests can reference them.
 SCHED_SENTINEL_DAILY = {"hour": 9, "minute": 0, "timezone": "Asia/Shanghai"}
 SCHED_DASHBOARD_REFRESH = {"minute": 0}  # 0 */4 * * * — every 4h on the hour
-SCHED_HEARTBEAT = {"minute": "*/10"}      # */10 * * * * — every 10 minutes
+SCHED_HEARTBEAT = {"minute": "*/10"}  # */10 * * * * — every 10 minutes
 
 
 # ============================================
@@ -196,6 +197,7 @@ async def _scheduler_lifespan(app: FastAPI):
         # call_soon_threadsafe, which is unnecessary here and would leave
         # `running` returning True until the next loop tick.
         from apscheduler.schedulers.base import BaseScheduler
+
         BaseScheduler.shutdown(scheduler, wait=False)
 
 

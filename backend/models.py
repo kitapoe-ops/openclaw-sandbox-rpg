@@ -37,8 +37,9 @@ class World(Base):
     config = Column(JSONB, nullable=False)
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow,
-                        onupdate=datetime.utcnow)
+    updated_at = Column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
 
 class Scene(Base):
@@ -54,8 +55,9 @@ class Scene(Base):
     atmosphere = Column(String(32), nullable=False, default="peaceful")
     is_dynamic = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow,
-                        onupdate=datetime.utcnow)
+    updated_at = Column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
 
 class CharacterState(Base):
@@ -69,8 +71,9 @@ class CharacterState(Base):
     is_npc_mode = Column(Boolean, nullable=False, default=False)
     is_alive = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow,
-                        onupdate=datetime.utcnow)
+    updated_at = Column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
 
 class ActionHistory(Base):
@@ -81,8 +84,11 @@ class ActionHistory(Base):
     scene_id = Column(String(128), ForeignKey("scenes.id"), nullable=False)
     round_number = Column(Integer, nullable=False)
     player_choice = Column(JSONB, nullable=False)
-    execution_status = Column(Enum(ExecutionStatus, name="execution_status"),
-                              nullable=False, default=ExecutionStatus.PENDING)
+    execution_status = Column(
+        Enum(ExecutionStatus, name="execution_status"),
+        nullable=False,
+        default=ExecutionStatus.PENDING,
+    )
     submitted_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
     started_at = Column(DateTime(timezone=True))
     completed_at = Column(DateTime(timezone=True))

@@ -81,8 +81,13 @@ def cjk_seven_tag_state() -> SemanticState:
     return SemanticState(
         character_id="wukong",
         tags=[
-            "金箍棒", "筋斗雲", "火眼金睛", "七十二變",
-            "不死之身", "頭部金剛", "銅皮鐵骨",
+            "金箍棒",
+            "筋斗雲",
+            "火眼金睛",
+            "七十二變",
+            "不死之身",
+            "頭部金剛",
+            "銅皮鐵骨",
         ],
     )
 
@@ -125,9 +130,7 @@ def mock_palace():
 # ============================================
 
 
-def test_build_includes_state_at_top(
-    no_palace_builder, basic_state, basic_action_context
-) -> None:
+def test_build_includes_state_at_top(no_palace_builder, basic_state, basic_action_context) -> None:
     """The state section appears within the first MAX_STATE_SECTION_LENGTH
     chars of the system prompt (i.e. at the top, not buried after memory)."""
     import asyncio
@@ -146,8 +149,7 @@ def test_build_includes_state_at_top(
     # and the state section should sit in the top half of the prompt.
     header_idx = prompt.find("角色當前狀態")
     assert 0 <= header_idx < state_idx < 600, (
-        f"state section should be at the top; "
-        f"header={header_idx}, tag={state_idx}"
+        f"state section should be at the top; " f"header={header_idx}, tag={state_idx}"
     )
 
 
@@ -175,9 +177,7 @@ def test_build_uses_5_critical_template_sections(
         assert header in prompt, f"Missing template section: {header!r}"
 
 
-def test_state_section_bounded_length(
-    no_palace_builder, basic_action_context
-) -> None:
+def test_state_section_bounded_length(no_palace_builder, basic_action_context) -> None:
     """A 100-tag state is truncated to MAX_STATE_SECTION_LENGTH.
 
     Note: the real ``SemanticState`` constructor caps tags at
@@ -196,8 +196,10 @@ def test_state_section_bounded_length(
     mock_state = MagicMock(spec=SemanticState)
     # 100 short CJK-flavored tags. We use the spec so isinstance()
     # returns True for SemanticState.
-    mock_state.tags = [f"標第{['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'][i % 10]}個"
-                       for i in range(100)]
+    mock_state.tags = [
+        f"標第{['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'][i % 10]}個"
+        for i in range(100)
+    ]
 
     # Bypass isinstance by setting the spec class directly.
     # MagicMock(spec=SemanticState) makes isinstance(mock, SemanticState)
@@ -257,9 +259,7 @@ def test_memory_section_uses_memory_palace_recall(
     assert "Fought a goblin" in prompt
 
 
-def test_memory_section_handles_palace_failure(
-    basic_state, basic_action_context
-) -> None:
+def test_memory_section_handles_palace_failure(basic_state, basic_action_context) -> None:
     """When the mock palace raises, the section says '(Memory Palace 查詢失敗)'."""
     import asyncio
 
@@ -281,9 +281,7 @@ def test_memory_section_handles_palace_failure(
     assert "「右手骨折」" in prompt
 
 
-def test_action_context_includes_verb_and_target(
-    no_palace_builder, basic_state
-) -> None:
+def test_action_context_includes_verb_and_target(no_palace_builder, basic_state) -> None:
     """The action context section formats verb and target correctly."""
     import asyncio
 
@@ -329,12 +327,8 @@ def test_state_always_above_memory_in_prompt(
     assert memory_idx >= 0
     assert action_idx >= 0
     # The order must be: state < memory < action.
-    assert state_idx < memory_idx, (
-        f"state at {state_idx} should be above memory at {memory_idx}"
-    )
-    assert memory_idx < action_idx, (
-        f"memory at {memory_idx} should be above action at {action_idx}"
-    )
+    assert state_idx < memory_idx, f"state at {state_idx} should be above memory at {memory_idx}"
+    assert memory_idx < action_idx, f"memory at {memory_idx} should be above action at {action_idx}"
 
 
 def test_chinese_cjk_state_handled(
@@ -357,9 +351,7 @@ def test_chinese_cjk_state_handled(
     assert " | " in prompt
 
 
-def test_invalid_state_falls_back_gracefully(
-    no_palace_builder, basic_action_context
-) -> None:
+def test_invalid_state_falls_back_gracefully(no_palace_builder, basic_action_context) -> None:
     """A state at MAX_TAGS_PER_CHARACTER (8) renders without crashing.
 
     The SemanticState constructor enforces the 8-tag cap; we build

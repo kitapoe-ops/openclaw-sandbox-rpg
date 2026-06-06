@@ -38,9 +38,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 # Ensure repo root on sys.path so ``backend.*`` imports resolve.
-_REPO_ROOT = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)
-)
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
@@ -90,9 +88,9 @@ class TestHTTPECHOUI:
         signals to power users that the action was a no-op.
         """
         src = DEMO_HTML.read_text(encoding="utf-8")
-        assert "'HTTP_ECHO'" in src or '"HTTP_ECHO"' in src, (
-            "demo.html is not using a dedicated 'HTTP_ECHO' history status."
-        )
+        assert (
+            "'HTTP_ECHO'" in src or '"HTTP_ECHO"' in src
+        ), "demo.html is not using a dedicated 'HTTP_ECHO' history status."
 
 
 # ============================================
@@ -116,15 +114,14 @@ class TestListCharactersEndpoint:
 
     @pytest.mark.asyncio
     async def test_list_characters_endpoint_works(
-        self, list_endpoint_client: AsyncClient,
+        self,
+        list_endpoint_client: AsyncClient,
     ) -> None:
         """The endpoint exists, returns 200, and returns a list of
         dicts with the contract the frontend picker expects.
         """
         # 1. Route is registered on the composed app.
-        paths = sorted(
-            r.path for r in composed_app.routes if hasattr(r, "path")
-        )
+        paths = sorted(r.path for r in composed_app.routes if hasattr(r, "path"))
         assert "/api/character-list/" in paths, (
             f"/api/character-list/ is not a route on the composed app. "
             f"Available /api/* paths: {[p for p in paths if p.startswith('/api')]!r}"
@@ -142,22 +139,26 @@ class TestListCharactersEndpoint:
         # 4. Each entry has the picker contract.
         for entry in body:
             for required in (
-                "character_id", "name", "world_id", "current_scene_id",
-                "is_alive", "is_npc_mode", "source",
+                "character_id",
+                "name",
+                "world_id",
+                "current_scene_id",
+                "is_alive",
+                "is_npc_mode",
+                "source",
             ):
-                assert required in entry, (
-                    f"Character entry missing {required!r}: {entry!r}"
-                )
+                assert required in entry, f"Character entry missing {required!r}: {entry!r}"
 
         # 5. The hardcoded demo starter is present.
         ids = {e["character_id"] for e in body}
-        assert "char_demo_player" in ids, (
-            f"Demo starter 'char_demo_player' missing from list: {ids!r}"
-        )
+        assert (
+            "char_demo_player" in ids
+        ), f"Demo starter 'char_demo_player' missing from list: {ids!r}"
 
     @pytest.mark.asyncio
     async def test_list_characters_includes_demo_starter_with_source(
-        self, list_endpoint_client: AsyncClient,
+        self,
+        list_endpoint_client: AsyncClient,
     ) -> None:
         """Specifically assert the demo starter is tagged with source='demo'.
 
@@ -170,9 +171,9 @@ class TestListCharactersEndpoint:
         body = resp.json()
         demo_entries = [e for e in body if e["source"] in ("demo", "demo-fallback")]
         assert demo_entries, f"No demo-sourced entries in {body!r}"
-        assert demo_entries[0]["source"] == "demo", (
-            f"Expected source='demo' (in demo mode), got {demo_entries[0]['source']!r}"
-        )
+        assert (
+            demo_entries[0]["source"] == "demo"
+        ), f"Expected source='demo' (in demo mode), got {demo_entries[0]['source']!r}"
 
 
 # ============================================
@@ -216,9 +217,9 @@ class TestServeDemoScript:
         asks for, with one extra safety: we don't fail if 5173 is in
         use — we just pick another port and adapt the assertion.
         """
-        assert SERVE_DEMO_SCRIPT.exists(), (
-            f"{SERVE_DEMO_SCRIPT} missing — Step 3 (CORS) not implemented."
-        )
+        assert (
+            SERVE_DEMO_SCRIPT.exists()
+        ), f"{SERVE_DEMO_SCRIPT} missing — Step 3 (CORS) not implemented."
 
         # The script must be importable so we can re-use its handler.
         sys.path.insert(0, str(REPO_ROOT / "backend"))
@@ -279,9 +280,7 @@ class TestServeDemoScript:
                 time.sleep(0.1)
                 url = f"http://127.0.0.1:{port}/demo.html"
                 with urllib.request.urlopen(url, timeout=2.0) as resp:
-                    assert resp.status == 200, (
-                        f"GET {url} returned {resp.status}"
-                    )
+                    assert resp.status == 200, f"GET {url} returned {resp.status}"
                     body = resp.read().decode("utf-8", errors="replace")
                     # Sanity-check: the served file is actually our
                     # demo.html (look for the unique title).
@@ -291,9 +290,7 @@ class TestServeDemoScript:
                     )
                     # CORS header must be present on the response.
                     acao = resp.headers.get("Access-Control-Allow-Origin")
-                    assert acao == "*", (
-                        f"Missing/wrong Access-Control-Allow-Origin: {acao!r}"
-                    )
+                    assert acao == "*", f"Missing/wrong Access-Control-Allow-Origin: {acao!r}"
             finally:
                 httpd.shutdown()
                 httpd.server_close()
@@ -357,9 +354,9 @@ class TestPollingFallbackRemoved:
             "users have no way to recover from a WS failure."
         )
         # The Vue template must actually call it from a button:
-        assert "@click=\"manualReconnect\"" in src, (
-            "demo.html has manualReconnect defined but no @click binding."
-        )
+        assert (
+            '@click="manualReconnect"' in src
+        ), "demo.html has manualReconnect defined but no @click binding."
 
 
 # ============================================
@@ -380,10 +377,8 @@ class TestXSSSafeAfterChanges:
         no_block_comments = re.sub(r"/\*.*?\*/", "", src, flags=re.DOTALL)
         no_line_comments = re.sub(r"//[^\n]*", "", no_block_comments)
         # Also strip <!-- ... --> HTML comments.
-        no_html_comments = re.sub(
-            r"<!--.*?-->", "", no_line_comments, flags=re.DOTALL
-        )
+        no_html_comments = re.sub(r"<!--.*?-->", "", no_line_comments, flags=re.DOTALL)
         for token in ("v-html", "innerHTML", "outerHTML", "document.write"):
-            assert token not in no_html_comments, (
-                f"demo.html contains forbidden XSS vector: {token!r}"
-            )
+            assert (
+                token not in no_html_comments
+            ), f"demo.html contains forbidden XSS vector: {token!r}"

@@ -15,6 +15,7 @@ from typing import Any
 # Default Semantic Levels
 # ============================================
 
+
 class StaminaLevel(str, Enum):
     FRESH = "fresh"
     SLIGHT_BREATH = "slight_breath"
@@ -43,6 +44,7 @@ class MoraleLevel(str, Enum):
 # Semantic Gradient Class
 # ============================================
 
+
 @dataclass
 class SemanticGradient:
     """
@@ -55,6 +57,7 @@ class SemanticGradient:
         stamina = SemanticGradient([...], current="fresh")
         stamina.shift(-1, environment="unsafe")  # fresh → slight_breath
     """
+
     levels: list[str]
     current: str
     max_shift_per_round: int = 1
@@ -106,9 +109,11 @@ class SemanticGradient:
 # State Change Calculator
 # ============================================
 
+
 @dataclass
 class StateChange:
     """Result of a state calculation."""
+
     character_id: str
     stamina_old: str
     stamina_new: str
@@ -199,7 +204,9 @@ class StateChangeCalculator:
         env = location.get("environment", "neutral") if isinstance(location, dict) else "neutral"
 
         # Step 4: Apply shifts with ±max_shift clamping
-        stamina_new = self._apply_axis(stamina_old, stamina_delta, list(StaminaLevel), "stamina", env)
+        stamina_new = self._apply_axis(
+            stamina_old, stamina_delta, list(StaminaLevel), "stamina", env
+        )
         health_new = self._apply_axis(health_old, health_delta, list(HealthLevel), "health", env)
         morale_new = self._apply_axis(morale_old, morale_delta, list(MoraleLevel), "morale", env)
 

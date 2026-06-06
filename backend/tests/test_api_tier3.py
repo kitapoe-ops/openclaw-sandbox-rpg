@@ -1,4 +1,4 @@
-﻿"""
+"""
 Tier 3 API endpoint tests for v3.7 main.
 
 Tests the FastAPI routes via TestClient. These verify that:
@@ -39,6 +39,7 @@ class TestCharacterApi:
         import importlib
 
         from backend import demo_mode
+
         importlib.reload(demo_mode)
         client = TestClient(app)
         r = client.get("/api/character/char_demo_player")
@@ -58,6 +59,7 @@ class TestCharacterApi:
         import importlib
 
         from backend import demo_mode
+
         importlib.reload(demo_mode)
         client = TestClient(app)
         r = client.get("/api/character/nonexistent_12345")
@@ -92,6 +94,7 @@ class TestWorldApi:
         import importlib
 
         from backend import demo_mode
+
         importlib.reload(demo_mode)
         client = TestClient(app)
         r = client.get("/api/world/dnd_5e_forgotten_realms/state")
@@ -114,6 +117,7 @@ class TestWorldApi:
         import importlib
 
         from backend import demo_mode
+
         importlib.reload(demo_mode)
         client = TestClient(app)
         r = client.get("/api/world/")
@@ -129,6 +133,7 @@ class TestWorldApi:
         import importlib
 
         from backend import demo_mode
+
         importlib.reload(demo_mode)
         client = TestClient(app)
         r = client.get("/api/world/dnd_5e_forgotten_realms/parameters")
@@ -149,6 +154,7 @@ class TestWorldApi:
         import importlib
 
         from backend import demo_mode
+
         importlib.reload(demo_mode)
         client = TestClient(app)
         r = client.post("/api/world/dnd_5e_forgotten_realms/etl")
@@ -164,6 +170,7 @@ class TestWorldApi:
         import importlib
 
         from backend import demo_mode
+
         importlib.reload(demo_mode)
         client = TestClient(app)
         r = client.get("/api/world/this_world_does_not_exist_xyz/state")

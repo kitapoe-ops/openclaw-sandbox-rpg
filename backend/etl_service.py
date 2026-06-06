@@ -137,8 +137,7 @@ class EtlService:
                 (outbox_id, op_type, status, target_id, payload_json, created_at, attempts)
                 VALUES (?, ?, 'pending', ?, ?, ?, 0)
                 """,
-                (outbox_id, op_type.value, target_id,
-                 json.dumps(payload or {}), _now_iso()),
+                (outbox_id, op_type.value, target_id, json.dumps(payload or {}), _now_iso()),
             )
             conn.commit()
         except Exception:
@@ -185,7 +184,7 @@ class EtlService:
             counts["consolidate"] += 1
 
         # 3. Enqueue world parameter fluctuation
-        for wp_id in (world_parameter_ids or []):
+        for wp_id in world_parameter_ids or []:
             await self.enqueue(
                 op_type=OutboxOpType.WORLD_PARAM_FLUCTUATE,
                 target_id=wp_id,

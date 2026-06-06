@@ -13,9 +13,7 @@ from pathlib import Path
 import pytest
 import pytest_asyncio
 
-_PROJECT_ROOT = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)
-)
+_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
@@ -28,6 +26,7 @@ if _PROJECT_ROOT not in sys.path:
 @pytest_asyncio.fixture
 async def turn_system(tmp_path):
     from backend.turn_system import TurnSystem
+
     yield TurnSystem(db_path=str(tmp_path / "turns.db"))
 
 
@@ -41,6 +40,7 @@ class TestTurnSystem:
     async def test_submit_and_advance(self, turn_system):
         """Submit a turn, then advance to claim it."""
         from backend.turn_system import TurnStatus
+
         tid = await turn_system.submit_turn(
             "char_aria",
             {"choice": {"option_id": "opt_01"}},
@@ -68,6 +68,7 @@ class TestTurnSystem:
     async def test_complete_turn_clears_active(self, turn_system):
         """After complete_turn, the active_turn is gone."""
         from backend.turn_system import TurnStatus
+
         tid = await turn_system.submit_turn("c1", {})
         await turn_system.advance_turn("c1")
         assert await turn_system.get_active_turn("c1") is not None
@@ -97,17 +98,13 @@ class TestTurnSystem:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_concurrent_advance_only_one_wins_per_character(
-        self, turn_system
-    ):
+    async def test_concurrent_advance_only_one_wins_per_character(self, turn_system):
         """
         5 concurrent advance_turn() calls for the same character.
         Only ONE should win (atomic claim), the others get None.
         """
         await turn_system.submit_turn("c1", {})
-        results = await asyncio.gather(*[
-            turn_system.advance_turn("c1") for _ in range(5)
-        ])
+        results = await asyncio.gather(*[turn_system.advance_turn("c1") for _ in range(5)])
         # Exactly 1 winner
         winners = [r for r in results if r is not None]
         losers = [r for r in results if r is None]
@@ -124,6 +121,7 @@ class TestTurnSystem:
         assert expired == 1
         turn = await turn_system.get_turn(tid)
         from backend.turn_system import TurnStatus
+
         assert turn.status == TurnStatus.EXPIRED
 
     @pytest.mark.asyncio
@@ -146,6 +144,7 @@ class TestTurnSystem:
 @pytest_asyncio.fixture
 async def etl_service(tmp_path):
     from backend.etl_service import EtlService
+
     yield EtlService(db_path=str(tmp_path / "etl.db"))
 
 
@@ -159,8 +158,10 @@ class TestEtlService:
     async def test_enqueue_and_process(self, etl_service):
         """Basic enqueue + process_outbox flow."""
         from backend.etl_service import OutboxOpType
+
         oid = await etl_service.enqueue(
-            OutboxOpType.APPLY_DECAY, target_id="char_a",
+            OutboxOpType.APPLY_DECAY,
+            target_id="char_a",
             payload={"days_elapsed": 1.0},
         )
         assert isinstance(oid, str)
@@ -187,6 +188,7 @@ class TestEtlService:
     async def test_process_outbox_batch_size(self, etl_service):
         """batch_size limits how many ops are processed in one call."""
         from backend.etl_service import OutboxOpType
+
         for i in range(10):
             await etl_service.enqueue(OutboxOpType.APPLY_DECAY, target_id=f"c{i}")
         # batch_size=3 \u2192 process 3
@@ -199,10 +201,13 @@ class TestEtlService:
     async def test_failed_op_stays_pending_for_retry(self, etl_service, monkeypatch):
         """Failed ops return to pending status with error_message set."""
         from backend.etl_service import OutboxOpType
+
         oid = await etl_service.enqueue(OutboxOpType.APPLY_DECAY, target_id="c1")
+
         # Force _execute_op to fail
         async def failing_execute(item):
             raise ValueError("simulated downstream failure")
+
         monkeypatch.setattr(etl_service, "_execute_op", failing_execute)
         result = await etl_service.process_outbox()
         assert result["failed"] == 1
@@ -212,11 +217,10 @@ class TestEtlService:
         assert await etl_service.get_failed_count() == 1
 
     @pytest.mark.asyncio
-    async def test_concurrent_process_outbox_no_double_execution(
-        self, etl_service
-    ):
+    async def test_concurrent_process_outbox_no_double_execution(self, etl_service):
         """Two concurrent process_outbox calls must not double-process."""
         from backend.etl_service import OutboxOpType
+
         for i in range(5):
             await etl_service.enqueue(OutboxOpType.APPLY_DECAY, target_id=f"c{i}")
         # Two concurrent process calls (each with batch_size=10)
@@ -234,6 +238,7 @@ class TestEtlService:
     async def test_get_stats(self, etl_service):
         """Stats show counts by status."""
         from backend.etl_service import OutboxOpType
+
         await etl_service.enqueue(OutboxOpType.APPLY_DECAY, "c1")
         await etl_service.enqueue(OutboxOpType.APPLY_DECAY, "c2")
         await etl_service.enqueue(OutboxOpType.CONSOLIDATE, "c1")
@@ -268,6 +273,7 @@ class TestEtlService:
     async def test_failure_then_retry_succeeds(self, etl_service, monkeypatch):
         """Op that fails first time should succeed on second attempt."""
         from backend.etl_service import OutboxOpType
+
         await etl_service.enqueue(OutboxOpType.APPLY_DECAY, "c1")
         # First call: force failure
         fail_count = {"n": 0}

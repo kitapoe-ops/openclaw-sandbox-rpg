@@ -47,9 +47,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 # Ensure repo root on sys.path.
-_REPO_ROOT = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)
-)
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
@@ -115,6 +113,7 @@ async def client(tmp_path: Path) -> AsyncIterator[AsyncClient]:
     # Capture the previous singleton so we can restore it on
     # teardown — this keeps the test file hermetic.
     import backend.memory_palace_integration_endpoint as ep_mod
+
     prev = ep_mod._integration
     set_integration(integration)
 
@@ -147,6 +146,7 @@ def fresh_demo_scheduler():
         # the intent clear.
         if scheduler.running:
             from apscheduler.schedulers.base import BaseScheduler
+
             BaseScheduler.shutdown(scheduler, wait=False)
 
 
@@ -166,18 +166,12 @@ class TestWireUp:
         """
         paths = _route_paths(composed_app)
         # All 4 Phase C2 routes are present.
-        assert "/memory/remember" in paths, (
-            f"/memory/remember missing; got {paths}"
-        )
-        assert "/memory/recall" in paths, (
-            f"/memory/recall missing; got {paths}"
-        )
-        assert "/memory/{character_id}/{memory_id}" in paths, (
-            f"/memory/{{character_id}}/{{memory_id}} missing; got {paths}"
-        )
-        assert "/memory/health" in paths, (
-            f"/memory/health missing; got {paths}"
-        )
+        assert "/memory/remember" in paths, f"/memory/remember missing; got {paths}"
+        assert "/memory/recall" in paths, f"/memory/recall missing; got {paths}"
+        assert (
+            "/memory/{character_id}/{memory_id}" in paths
+        ), f"/memory/{{character_id}}/{{memory_id}} missing; got {paths}"
+        assert "/memory/health" in paths, f"/memory/health missing; got {paths}"
         # Sanity: the Wave 2 production routes are still there
         # (we didn't accidentally shadow them).
         assert "/health" in paths
@@ -189,7 +183,8 @@ class TestMemoryEndpointsLive:
 
     @pytest.mark.asyncio
     async def test_memory_remember_endpoint_live(
-        self, client: AsyncClient,
+        self,
+        client: AsyncClient,
     ) -> None:
         """POST /memory/remember on the composed app returns a uuid4."""
         resp = await client.post(
@@ -211,7 +206,8 @@ class TestMemoryEndpointsLive:
 
     @pytest.mark.asyncio
     async def test_memory_recall_endpoint_live(
-        self, client: AsyncClient,
+        self,
+        client: AsyncClient,
     ) -> None:
         """Two remembers + one recall returns >= 1 hit through the composed app."""
         # Seed two memories for char_alice on different axes.
@@ -239,9 +235,7 @@ class TestMemoryEndpointsLive:
         body = resp.json()
         assert "results" in body
         assert isinstance(body["results"], list)
-        assert len(body["results"]) >= 1, (
-            f"expected >= 1 recall result, got {body['results']!r}"
-        )
+        assert len(body["results"]) >= 1, f"expected >= 1 recall result, got {body['results']!r}"
         # Top hit should be the axis-3 memory (cosine = 1.0).
         top = body["results"][0]
         assert top["content"] == "memory-on-axis-3"
@@ -249,7 +243,8 @@ class TestMemoryEndpointsLive:
 
     @pytest.mark.asyncio
     async def test_memory_forget_endpoint_live(
-        self, client: AsyncClient,
+        self,
+        client: AsyncClient,
     ) -> None:
         """remember → forget → recall returns zero hits for that memory."""
         # Seed.
@@ -293,13 +288,12 @@ class TestMemoryEndpointsLive:
         )
         assert post.status_code == 200
         post_ids = {item["memory_id"] for item in post.json()["results"]}
-        assert memory_id not in post_ids, (
-            f"forgotten memory {memory_id} still surfaces: {post_ids}"
-        )
+        assert memory_id not in post_ids, f"forgotten memory {memory_id} still surfaces: {post_ids}"
 
     @pytest.mark.asyncio
     async def test_memory_health_endpoint_live(
-        self, client: AsyncClient,
+        self,
+        client: AsyncClient,
     ) -> None:
         """GET /memory/health returns 200 with both backends True."""
         resp = await client.get("/memory/health")
@@ -315,16 +309,17 @@ class TestSchedulerDemoJob:
     """Tests for the demo scheduler wire-up (Deliverable 2)."""
 
     def test_scheduler_demo_job_registered(
-        self, fresh_demo_scheduler,
+        self,
+        fresh_demo_scheduler,
     ) -> None:
         """build_demo_scheduler registers exactly one job with the
         canonical id, with an interval trigger."""
         scheduler = fresh_demo_scheduler
         jobs = scheduler.get_jobs()
         ids = [j.id for j in jobs]
-        assert ids == [JOB_MEMORY_HEALTH_MINUTE], (
-            f"expected exactly [{JOB_MEMORY_HEALTH_MINUTE!r}], got {ids}"
-        )
+        assert ids == [
+            JOB_MEMORY_HEALTH_MINUTE
+        ], f"expected exactly [{JOB_MEMORY_HEALTH_MINUTE!r}], got {ids}"
 
         # Verify the job references the real coroutine.
         job = jobs[0]
@@ -351,7 +346,8 @@ class TestEndToEndCron:
 
     @pytest.mark.asyncio
     async def test_job_memory_health_minute_records_result(
-        self, tmp_path: Path,
+        self,
+        tmp_path: Path,
     ) -> None:
         """Manually call job_memory_health_minute; check rolling buffer."""
         # Build a real integration so /memory/health returns True.

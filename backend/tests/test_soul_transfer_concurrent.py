@@ -28,9 +28,7 @@ from typing import Any, Dict, List, Optional
 import pytest
 import pytest_asyncio
 
-_PROJECT_ROOT = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)
-)
+_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
@@ -43,6 +41,7 @@ if _PROJECT_ROOT not in sys.path:
 @pytest_asyncio.fixture
 async def engine(tmp_path):
     from backend.soul_transfer import SemanticSoulTransfer
+
     return SemanticSoulTransfer(soul_db_path=":memory:")
 
 
@@ -85,7 +84,8 @@ class TestConcurrentTransfers:
 
     @pytest.mark.asyncio
     async def test_v1_concurrent_transfers_have_independent_degradations(
-        self, engine,
+        self,
+        engine,
     ):
         """
         V1.5: Concurrent transfers to the SAME vessel must produce
@@ -105,6 +105,7 @@ class TestConcurrentTransfers:
         records = await asyncio.gather(*tasks)
         picks = [r.downgraded_to for r in records]
         from backend.soul_transfer import TIER_DOWNGRADES
+
         valid_picks = TIER_DOWNGRADES["非常健康"]
         # All picks are from the tier list
         for p in picks:
@@ -121,14 +122,18 @@ class TestConcurrentTransfers:
 class TestCrashMidTransfer:
     @pytest.mark.asyncio
     async def test_v2_persist_failure_leaves_no_partial_record(
-        self, engine, monkeypatch,
+        self,
+        engine,
+        monkeypatch,
     ):
         """
         V2: force _persist() to fail mid-transfer. The entire
         transfer must roll back — no partial soul_transfers row.
         """
+
         def boom(record):
             raise RuntimeError("simulated commit failure")
+
         monkeypatch.setattr(engine, "_persist", boom)
 
         with pytest.raises(RuntimeError, match="simulated commit failure"):
@@ -144,7 +149,9 @@ class TestCrashMidTransfer:
 
     @pytest.mark.asyncio
     async def test_v2_concurrent_transfers_with_one_failing(
-        self, engine, monkeypatch,
+        self,
+        engine,
+        monkeypatch,
     ):
         """
         V2.5: 5 concurrent transfers, 1 of them forced to fail.
@@ -191,7 +198,8 @@ class TestCrashMidTransfer:
 class TestConcurrentApply:
     @pytest.mark.asyncio
     async def test_v3_two_concurrent_apply_transfer_only_one_succeeds(
-        self, engine,
+        self,
+        engine,
     ):
         """
         V3: Two callers race to apply the same transfer record.
@@ -212,9 +220,10 @@ class TestConcurrentApply:
         )
         # Exactly one should have rows_updated=1, the other 0
         row_updates = [r["rows_updated"] for r in results]
-        assert sorted(row_updates) == [0, 1], (
-            f"Expected [0, 1] from concurrent apply, got {row_updates}"
-        )
+        assert sorted(row_updates) == [
+            0,
+            1,
+        ], f"Expected [0, 1] from concurrent apply, got {row_updates}"
         # Verify final state: applied=1
         retrieved = await engine.get_transfer(record.transfer_id)
         assert retrieved.applied is True
@@ -231,7 +240,8 @@ class TestConcurrentApply:
 class TestConcurrentComputeDegradation:
     @pytest.mark.asyncio
     async def test_v4_concurrent_degradations_produce_unique_results(
-        self, engine,
+        self,
+        engine,
     ):
         """
         V4: 10 concurrent compute_degradation calls (different
@@ -239,6 +249,7 @@ class TestConcurrentComputeDegradation:
         valid tier-list picks.
         """
         from backend.soul_transfer import TIER_DOWNGRADES
+
         tasks = [
             engine.compute_degradation(
                 source_state=["健康"],
@@ -263,6 +274,7 @@ class TestConcurrentComputeDegradation:
         (never repeats consecutively).
         """
         from backend.soul_transfer import TIER_DOWNGRADES
+
         # Reset _last_result by using a fresh engine? No — let's
         # test the actual behavior: with 100 transfers to one
         # vessel, no two consecutive picks should be equal.

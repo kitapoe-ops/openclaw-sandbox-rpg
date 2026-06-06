@@ -46,9 +46,7 @@ import pytest
 import pytest_asyncio
 
 # Ensure repo root is on sys.path (mirrors existing test convention).
-_REPO_ROOT = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)
-)
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
@@ -96,12 +94,16 @@ def test_abstract_class_cannot_instantiate() -> None:
     msg = str(exc_info.value)
     # All 6 abstract methods should be named in the error.
     for method in (
-        "save", "load", "delete", "list_by_character",
-        "count", "health", "close",
+        "save",
+        "load",
+        "delete",
+        "list_by_character",
+        "count",
+        "health",
+        "close",
     ):
         assert method in msg, (
-            f"Abstract method {method!r} should appear in the "
-            f"TypeError message; got: {msg!r}"
+            f"Abstract method {method!r} should appear in the " f"TypeError message; got: {msg!r}"
         )
 
 
@@ -154,6 +156,7 @@ def mock_embedding_model() -> EmbeddingModel:
     from the model handle.
     """
     em = EmbeddingModel(model_name="mock-model", cache_size=16)
+
     # Use a one-hot encoder that returns the same vector for
     # the same content. This is more honest than a MagicMock
     # because it exercises the encode() path end-to-end.
@@ -164,6 +167,7 @@ def mock_embedding_model() -> EmbeddingModel:
             return [0.0] * EMBEDDING_DIM
         idx = ord(text[0]) % EMBEDDING_DIM
         return _one_hot(idx, EMBEDDING_DIM)
+
     em._model = MagicMock()
     em._model.encode = _fake_encode
     return em
@@ -175,9 +179,7 @@ async def pg_repo(
     mock_embedding_model: EmbeddingModel,
 ) -> PostgresMemoryRepository:
     """Yield a fresh ``PostgresMemoryRepository`` per test."""
-    return PostgresMemoryRepository(
-        pg_palace, embedding_model=mock_embedding_model
-    )
+    return PostgresMemoryRepository(pg_palace, embedding_model=mock_embedding_model)
 
 
 # ============================================
@@ -351,6 +353,7 @@ async def test_delete_removes_from_sqlite(
     cid = "char_delete_sqlite"
     # Manually write a row so we have a known id to delete.
     import sqlite3 as _sqlite3
+
     conn = _sqlite3.connect(sqlite_repo._palace.db_path)
     try:
         conn.execute(
@@ -363,10 +366,20 @@ async def test_delete_removes_from_sqlite(
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                "delete-me-001", cid, "episodic",
-                "to be deleted", "world_event", 0.5,
-                "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z",
-                0, "[]", "[]", 0.05, "{}", 0,
+                "delete-me-001",
+                cid,
+                "episodic",
+                "to be deleted",
+                "world_event",
+                0.5,
+                "2026-01-01T00:00:00Z",
+                "2026-01-01T00:00:00Z",
+                0,
+                "[]",
+                "[]",
+                0.05,
+                "{}",
+                0,
             ),
         )
         conn.commit()
@@ -494,8 +507,7 @@ async def test_embedding_content_hash_cache() -> None:
     # is NOT called again.
     v2 = await em.encode("alpha")
     assert call_count["n"] == 1, (
-        f"second encode of the same content should be a cache hit; "
-        f"call_count={call_count['n']}"
+        f"second encode of the same content should be a cache hit; " f"call_count={call_count['n']}"
     )
     assert v1 == v2
 
@@ -513,9 +525,7 @@ async def test_embedding_content_hash_cache() -> None:
     # LRU eviction: fill past cache_size, oldest goes.
     for c in ["x", "y", "z", "w", "v"]:  # 5 unique > cache_size=4
         await em.encode(c)
-    assert em.cache_size() == 4, (
-        f"cache should be bounded at 4 entries, got {em.cache_size()}"
-    )
+    assert em.cache_size() == 4, f"cache should be bounded at 4 entries, got {em.cache_size()}"
     # The "alpha" entry was the first inserted after the
     # initial 2, but we then re-inserted "alpha" via
     # force_reembed which moved it to the end. The

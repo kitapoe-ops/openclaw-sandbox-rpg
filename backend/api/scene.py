@@ -50,7 +50,9 @@ async def get_current_scene(character_id: str) -> dict[str, Any]:
 
             scene = await session.get(Scene, char.current_scene_id)
             if not scene:
-                raise HTTPException(status_code=404, detail=f"Scene {char.current_scene_id} not found")
+                raise HTTPException(
+                    status_code=404, detail=f"Scene {char.current_scene_id} not found"
+                )
 
             return {
                 "round": 1,

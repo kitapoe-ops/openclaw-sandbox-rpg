@@ -25,9 +25,7 @@ import pytest
 import pytest_asyncio
 
 # Ensure repo root is on sys.path (mirrors test_db_race.py convention)
-_REPO_ROOT = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)
-)
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
@@ -71,6 +69,7 @@ async def pg(sqlite_url: str):
                 cursor.execute("PRAGMA foreign_keys=ON")
             finally:
                 cursor.close()
+
         yield adapter
     finally:
         await adapter.close()
@@ -87,9 +86,7 @@ class TestGetPersistenceMode:
         monkeypatch.delenv("PERSISTENCE_MODE", raising=False)
         assert get_persistence_mode() == "memory"
 
-    def test_get_persistence_mode_postgres(
-        self, monkeypatch: pytest.MonkeyPatch
-    ):
+    def test_get_persistence_mode_postgres(self, monkeypatch: pytest.MonkeyPatch):
         """PERSISTENCE_MODE=postgres → 'postgres'."""
         monkeypatch.setenv("PERSISTENCE_MODE", "postgres")
         assert get_persistence_mode() == "postgres"
@@ -125,9 +122,7 @@ class TestCharacterRoundtrip:
         await pg.delete_character(cid)
         assert await pg.load_character(cid) is None
 
-    async def test_save_character_overwrites_payload(
-        self, pg: PostgresPersistence
-    ):
+    async def test_save_character_overwrites_payload(self, pg: PostgresPersistence):
         """Re-saving the same id replaces the payload (upsert behaviour)."""
         cid = "char-003"
         await pg.save_character(cid, {"hp": 10})
@@ -157,9 +152,7 @@ class TestSceneRoundtrip:
         assert loaded is not None
         assert loaded == scene_payload
 
-    async def test_save_scene_fk_violation_raises(
-        self, pg: PostgresPersistence
-    ):
+    async def test_save_scene_fk_violation_raises(self, pg: PostgresPersistence):
         """Saving a scene with non-existent character_id must raise IntegrityError.
 
         This guards the FK constraint declared on scenes.character_id:
@@ -172,16 +165,12 @@ class TestSceneRoundtrip:
         # Negative-control: parent does NOT exist (we never call save_character).
         # The adapter must refuse the orphan scene rather than silently insert.
         with pytest.raises(IntegrityError):
-            await pg.save_scene(
-                "scene_99", "char_does_not_exist", {"foo": "bar"}
-            )
+            await pg.save_scene("scene_99", "char_does_not_exist", {"foo": "bar"})
 
 
 @pytest.mark.asyncio
 class TestHealth:
-    async def test_health_returns_true_after_init(
-        self, pg: PostgresPersistence
-    ):
+    async def test_health_returns_true_after_init(self, pg: PostgresPersistence):
         """health() must return True once the adapter is usable, and
         must perform the lazy schema bootstrap along the way."""
         assert await pg.health() is True

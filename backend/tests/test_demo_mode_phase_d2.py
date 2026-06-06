@@ -56,6 +56,7 @@ class TestDemoModeCaching:
         import importlib
 
         from backend import demo_mode
+
         importlib.reload(demo_mode)
 
         with warnings.catch_warnings(record=True) as ws:
@@ -64,10 +65,7 @@ class TestDemoModeCaching:
                 assert demo_mode.is_demo_mode() is True
 
         # No RuntimeWarning about unawaited coroutines should be fired
-        coroutine_warnings = [
-            w for w in ws
-            if "never awaited" in str(w.message)
-        ]
+        coroutine_warnings = [w for w in ws if "never awaited" in str(w.message)]
         assert coroutine_warnings == [], (
             f"Got {len(coroutine_warnings)} never-awaited coroutine "
             f"warning(s): {[str(w.message) for w in coroutine_warnings]}"
@@ -79,6 +77,7 @@ class TestDemoModeCaching:
         import importlib
 
         from backend import demo_mode
+
         importlib.reload(demo_mode)
 
         with warnings.catch_warnings(record=True) as ws:
@@ -86,10 +85,7 @@ class TestDemoModeCaching:
             for _ in range(5):
                 assert demo_mode.is_demo_mode() is False
 
-        coroutine_warnings = [
-            w for w in ws
-            if "never awaited" in str(w.message)
-        ]
+        coroutine_warnings = [w for w in ws if "never awaited" in str(w.message)]
         assert coroutine_warnings == [], (
             f"Got {len(coroutine_warnings)} never-awaited coroutine "
             f"warning(s): {[str(w.message) for w in coroutine_warnings]}"
@@ -105,6 +101,7 @@ class TestDemoModeCaching:
         import importlib
 
         from backend import demo_mode
+
         importlib.reload(demo_mode)
 
         # First call: probes DB. This may internally use asyncio.run
@@ -119,10 +116,7 @@ class TestDemoModeCaching:
                 result = demo_mode.is_demo_mode()
                 assert result == first, "Cache must be stable within a process"
 
-        coroutine_warnings = [
-            w for w in ws
-            if "never awaited" in str(w.message)
-        ]
+        coroutine_warnings = [w for w in ws if "never awaited" in str(w.message)]
         assert coroutine_warnings == [], (
             f"After cache warm, {len(coroutine_warnings)} "
             f"never-awaited coroutine warning(s) fired: "
@@ -173,8 +167,10 @@ class TestDemoModeRunningLoopSafety:
         """
         import asyncio
         import importlib
+
         monkeypatch.setenv("DEMO_MODE", "auto")
         from backend import demo_mode
+
         importlib.reload(demo_mode)
 
         async def _check_inside_loop():
@@ -197,8 +193,10 @@ class TestDemoModeRunningLoopSafety:
         """
         import asyncio
         import importlib
+
         monkeypatch.setenv("DEMO_MODE", "auto")
         from backend import demo_mode
+
         importlib.reload(demo_mode)
 
         async def _trigger():
@@ -209,12 +207,10 @@ class TestDemoModeRunningLoopSafety:
             asyncio.run(_trigger())
             # Force GC to surface any pending coroutine warnings
             import gc
+
             gc.collect()
 
-        coroutine_warnings = [
-            w for w in ws
-            if "never awaited" in str(w.message)
-        ]
+        coroutine_warnings = [w for w in ws if "never awaited" in str(w.message)]
         assert coroutine_warnings == [], (
             f"Got {len(coroutine_warnings)} never-awaited coroutine "
             f"warning(s) from running loop path: "
@@ -242,8 +238,10 @@ class TestDemoModeConcurrency:
         """
         import asyncio
         import importlib
+
         monkeypatch.setenv("DEMO_MODE", "auto")
         from backend import demo_mode
+
         importlib.reload(demo_mode)
 
         async def _concurrent_probe():
@@ -256,16 +254,15 @@ class TestDemoModeConcurrency:
             warnings.simplefilter("always")
             results = asyncio.run(_concurrent_probe())
             import gc
+
             gc.collect()
 
         # All 20 callers must agree
-        assert all(r == results[0] for r in results), (
-            f"Concurrent calls returned mixed results: {set(results)}"
-        )
+        assert all(
+            r == results[0] for r in results
+        ), f"Concurrent calls returned mixed results: {set(results)}"
         # And no coroutine warnings
-        coroutine_warnings = [
-            w for w in ws if "never awaited" in str(w.message)
-        ]
+        coroutine_warnings = [w for w in ws if "never awaited" in str(w.message)]
         assert coroutine_warnings == [], (
             f"Concurrent access fired {len(coroutine_warnings)} "
             f"coroutine warning(s): "
@@ -330,10 +327,7 @@ class TestPytestWarningsSummary:
             r = client.get("/health")
             assert r.status_code == 200
 
-        coroutine_warnings = [
-            w for w in ws
-            if "never awaited" in str(w.message)
-        ]
+        coroutine_warnings = [w for w in ws if "never awaited" in str(w.message)]
         assert coroutine_warnings == [], (
             f"/health still triggers {len(coroutine_warnings)} "
             f"coroutine warning(s): "

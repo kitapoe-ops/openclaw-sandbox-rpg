@@ -48,6 +48,7 @@ def fresh_demo_mode():
     import importlib
 
     from backend import demo_mode
+
     importlib.reload(demo_mode)
     yield demo_mode
     # Teardown: reset cache so subsequent tests start clean
@@ -169,9 +170,9 @@ class TestCacheStatus:
         assert status["value"] is None
         assert isinstance(status["last_reset"], float)
         # last_reset should be within [before, after] (the reset call window)
-        assert before <= status["last_reset"] <= after, (
-            f"last_reset {status['last_reset']} not in [{before}, {after}]"
-        )
+        assert (
+            before <= status["last_reset"] <= after
+        ), f"last_reset {status['last_reset']} not in [{before}, {after}]"
 
 
 class TestResetTriggersReprobe:
@@ -237,9 +238,9 @@ class TestResetTriggersReprobe:
         assert r3 is True
         # Each call entered the probe body (no cache short-circuit),
         # because reset_demo_mode_cache() had cleared the cache.
-        assert call_counter["n"] == 3, (
-            f"Expected 3 probe calls after reset, got {call_counter['n']}"
-        )
+        assert (
+            call_counter["n"] == 3
+        ), f"Expected 3 probe calls after reset, got {call_counter['n']}"
 
     def test_reset_clears_corrupted_cache(self, fresh_demo_mode):
         """

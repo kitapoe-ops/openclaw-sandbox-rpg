@@ -23,8 +23,7 @@ DEMO_SCENE: dict[str, Any] = {
         {
             "id": "choice_1",
             "vignette": (
-                "你將缺口嘅匕首放低喺吧台，老鐵匠嘅視線停喺上面，"
-                "佢粗糙嘅手微微抖咗一下。"
+                "你將缺口嘅匕首放低喺吧台，老鐵匠嘅視線停喺上面，" "佢粗糙嘅手微微抖咗一下。"
             ),
             "intent_category": "character_growth",
             "lore_source": "npc:npc_tharden_rockseeker",
@@ -46,7 +45,11 @@ DEMO_SCENE: dict[str, Any] = {
             "direction_hint": "呢個方向會揭示世界嘅地理變化 — 可能同戰後領土變動有關",
             "attitude_options": [
                 {"dimension": "caution", "level": "careful", "effect": "默默記住差異，唔出聲"},
-                {"dimension": "curiosity", "level": "eager", "effect": "走向學者，指住地圖問呢個符號"},
+                {
+                    "dimension": "curiosity",
+                    "level": "eager",
+                    "effect": "走向學者，指住地圖問呢個符號",
+                },
             ],
         },
         {
@@ -76,7 +79,11 @@ DEMO_SCENE: dict[str, Any] = {
             "attitude_options": [
                 {"dimension": "caution", "level": "careful", "effect": "保持距離，觀察佢嘅下一步"},
                 {"dimension": "curiosity", "level": "eager", "effect": "走近佢，假裝要幫忙"},
-                {"dimension": "curiosity", "level": "reserved", "effect": "同老闆點酒，唔動聲色問旅人嘅事"},
+                {
+                    "dimension": "curiosity",
+                    "level": "reserved",
+                    "effect": "同老闆點酒，唔動聲色問旅人嘅事",
+                },
             ],
         },
     ],

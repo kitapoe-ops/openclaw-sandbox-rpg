@@ -75,12 +75,8 @@ class CharacterRow(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class SceneRow(Base):
@@ -89,13 +85,9 @@ class SceneRow(Base):
     __tablename__ = "scenes"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
-    character_id: Mapped[str] = mapped_column(
-        String, ForeignKey("characters.id"), nullable=False
-    )
+    character_id: Mapped[str] = mapped_column(String, ForeignKey("characters.id"), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     __table_args__ = (
         # Index FK lookups (scenes by character_id is a hot path).
@@ -160,9 +152,7 @@ class PostgresPersistence:
             expire_on_commit=False,
         )
         self._schema_ready: bool = False
-        logger.debug(
-            "PostgresPersistence initialized for %s", _redact_url(database_url)
-        )
+        logger.debug("PostgresPersistence initialized for %s", _redact_url(database_url))
 
     # --------------------------------------------------------
     # Lifecycle
@@ -282,9 +272,7 @@ class PostgresPersistence:
     # --------------------------------------------------------
     # Scene CRUD
     # --------------------------------------------------------
-    async def save_scene(
-        self, scene_id: str, character_id: str, payload: dict
-    ) -> None:
+    async def save_scene(self, scene_id: str, character_id: str, payload: dict) -> None:
         """Insert a scene row referencing ``character_id``.
 
         Note: this is a SKELETON — scenes are inserted fresh; no

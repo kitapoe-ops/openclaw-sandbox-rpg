@@ -41,13 +41,15 @@ async def websocket_endpoint(
 
     try:
         await registry.register(character_id, connection_id, websocket)
-        await websocket.send_json({
-            "type": "connection_ack",
-            "connection_id": connection_id,
-            "character_id": character_id,
-            "timestamp": datetime.utcnow().isoformat(),
-            "message": "Connected. Server controls scene_id.",
-        })
+        await websocket.send_json(
+            {
+                "type": "connection_ack",
+                "connection_id": connection_id,
+                "character_id": character_id,
+                "timestamp": datetime.utcnow().isoformat(),
+                "message": "Connected. Server controls scene_id.",
+            }
+        )
 
         while True:
             try:
@@ -58,34 +60,38 @@ async def websocket_endpoint(
             try:
                 msg = json.loads(raw)
             except json.JSONDecodeError:
-                await websocket.send_json({
-                    "type": "error",
-                    "code": "invalid_json",
-                    "message": "Message must be valid JSON",
-                })
+                await websocket.send_json(
+                    {
+                        "type": "error",
+                        "code": "invalid_json",
+                        "message": "Message must be valid JSON",
+                    }
+                )
                 continue
 
             msg_type = msg.get("type")
 
             if msg_type == "ping":
-                await websocket.send_json({
-                    "type": "pong",
-                    "ts": datetime.utcnow().isoformat(),
-                })
+                await websocket.send_json(
+                    {
+                        "type": "pong",
+                        "ts": datetime.utcnow().isoformat(),
+                    }
+                )
                 continue
 
             if msg_type == "action_submit":
                 # Non-blocking dispatch (Q7 in-memory check is inside _process_action)
-                asyncio.create_task(
-                    _process_action(websocket, character_id, msg, connection_id)
-                )
+                asyncio.create_task(_process_action(websocket, character_id, msg, connection_id))
                 continue
 
-            await websocket.send_json({
-                "type": "error",
-                "code": "unknown_message_type",
-                "message": f"Unknown message type: {msg_type}",
-            })
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "code": "unknown_message_type",
+                    "message": f"Unknown message type: {msg_type}",
+                }
+            )
 
     except WebSocketDisconnect:
         logger.info(f"[WS {connection_id}] Client disconnected")
@@ -117,12 +123,14 @@ async def _process_action(
     # === Validate basic payload ===
     if "choice" not in msg and "player_input" not in msg:
         try:
-            await websocket.send_json({
-                "type": "error",
-                "code": "invalid_action",
-                "task_id": task_id,
-                "message": "Missing choice or player_input",
-            })
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "code": "invalid_action",
+                    "task_id": task_id,
+                    "message": "Missing choice or player_input",
+                }
+            )
         except Exception:
             pass
         return
@@ -133,12 +141,14 @@ async def _process_action(
     if not registry.try_acquire_inflight(character_id):
         logger.warning(f"[Q7] Burst rejected for {character_id} — already in-flight")
         try:
-            await websocket.send_json({
-                "type": "error",
-                "code": "already_inflight",
-                "task_id": task_id,
-                "message": "Another action is already processing. Please wait.",
-            })
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "code": "already_inflight",
+                    "task_id": task_id,
+                    "message": "Another action is already processing. Please wait.",
+                }
+            )
         except Exception:
             pass
         return  # REJECT immediately — no DB call, no LLM call
@@ -152,20 +162,28 @@ async def _process_action(
         try:
             character_state = await db_session.get_character_state(character_id)
             if not character_state:
-                await _send_error(websocket, character_id, {
-                    "type": "error",
-                    "code": "character_not_found",
-                    "task_id": task_id,
-                })
+                await _send_error(
+                    websocket,
+                    character_id,
+                    {
+                        "type": "error",
+                        "code": "character_not_found",
+                        "task_id": task_id,
+                    },
+                )
                 return
 
             if not character_state.get("is_alive", True):
-                await _send_error(websocket, character_id, {
-                    "type": "error",
-                    "code": "character_dead",
-                    "task_id": task_id,
-                    "message": "Character is dead. Use soul transfer to continue.",
-                })
+                await _send_error(
+                    websocket,
+                    character_id,
+                    {
+                        "type": "error",
+                        "code": "character_dead",
+                        "task_id": task_id,
+                        "message": "Character is dead. Use soul transfer to continue.",
+                    },
+                )
                 return
 
             authoritative_scene_id = character_state["current_scene_id"]
@@ -177,13 +195,17 @@ async def _process_action(
                     f"[Security] scene_id mismatch for {character_id}: "
                     f"client={client_claimed_scene_id}, server={authoritative_scene_id}"
                 )
-                await _send_error(websocket, character_id, {
-                    "type": "error",
-                    "code": "state_mismatch",
-                    "task_id": task_id,
-                    "client_scene_id": client_claimed_scene_id,
-                    "server_scene_id": authoritative_scene_id,
-                })
+                await _send_error(
+                    websocket,
+                    character_id,
+                    {
+                        "type": "error",
+                        "code": "state_mismatch",
+                        "task_id": task_id,
+                        "client_scene_id": client_claimed_scene_id,
+                        "server_scene_id": authoritative_scene_id,
+                    },
+                )
                 return
 
             # ============================================================
@@ -202,15 +224,17 @@ async def _process_action(
 
         # Send action_accepted immediately
         try:
-            await websocket.send_json({
-                "type": "action_accepted",
-                "task_id": task_id,
-                "action_id": action_id,
-                "character_id": character_id,
-                "scene_id": authoritative_scene_id,
-                "status": "processing",
-                "message": "Action accepted, generating scene...",
-            })
+            await websocket.send_json(
+                {
+                    "type": "action_accepted",
+                    "task_id": task_id,
+                    "action_id": action_id,
+                    "character_id": character_id,
+                    "scene_id": authoritative_scene_id,
+                    "status": "processing",
+                    "message": "Action accepted, generating scene...",
+                }
+            )
         except Exception:
             pass  # WS may be closed
 
@@ -254,13 +278,16 @@ async def _process_action(
                     )
                     # Notify client
                     try:
-                        await registry.broadcast(character_id, {
-                            "type": "task_status",
-                            "task_id": task_id,
-                            "action_id": action_id,
-                            "status": "interrupted",
-                            "message": "Action was interrupted (e.g., server restart). Please re-submit.",
-                        })
+                        await registry.broadcast(
+                            character_id,
+                            {
+                                "type": "task_status",
+                                "task_id": task_id,
+                                "action_id": action_id,
+                                "status": "interrupted",
+                                "message": "Action was interrupted (e.g., server restart). Please re-submit.",
+                            },
+                        )
                     except Exception:
                         pass
                     return
@@ -315,13 +342,16 @@ async def _process_action(
         except Exception as e:
             logger.exception(f"[Task {task_id}] Failed: {e}")
             try:
-                await registry.broadcast(character_id, {
-                    "type": "task_status",
-                    "task_id": task_id,
-                    "action_id": action_id,
-                    "status": "failed",
-                    "error": str(e),
-                })
+                await registry.broadcast(
+                    character_id,
+                    {
+                        "type": "task_status",
+                        "task_id": task_id,
+                        "action_id": action_id,
+                        "status": "failed",
+                        "error": str(e),
+                    },
+                )
             except Exception:
                 pass
             return  # Don't broadcast scene_update
@@ -329,18 +359,21 @@ async def _process_action(
         # ============================================================
         # Q6 STEP 4: Broadcast result (outside all transactions)
         # ============================================================
-        await registry.broadcast(character_id, {
-            "type": "scene_update",
-            "task_id": task_id,
-            "action_id": action_id,
-            "round": scene_output.get("round"),
-            "scene_id": authoritative_scene_id,
-            "narrative": scene_output.get("narrative"),
-            "choices": scene_output.get("choices"),
-            "state_changes": scene_output.get("state_changes"),
-            "minor_event": scene_output.get("minor_event"),
-            "timestamp": datetime.utcnow().isoformat(),
-        })
+        await registry.broadcast(
+            character_id,
+            {
+                "type": "scene_update",
+                "task_id": task_id,
+                "action_id": action_id,
+                "round": scene_output.get("round"),
+                "scene_id": authoritative_scene_id,
+                "narrative": scene_output.get("narrative"),
+                "choices": scene_output.get("choices"),
+                "state_changes": scene_output.get("state_changes"),
+                "minor_event": scene_output.get("minor_event"),
+                "timestamp": datetime.utcnow().isoformat(),
+            },
+        )
 
     finally:
         # ============================================================
@@ -387,9 +420,7 @@ async def _call_cloud_llm(
                 "lore_source": "item:dummy",
                 "text": "[行动] 继续探索",
                 "intent_category": "environment",
-                "attitude_options": [
-                    {"dimension": "caution", "level": "careful"}
-                ]
+                "attitude_options": [{"dimension": "caution", "level": "careful"}],
             }
         ],
         "state_changes": {},

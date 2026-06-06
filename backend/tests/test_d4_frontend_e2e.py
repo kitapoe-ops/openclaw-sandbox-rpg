@@ -46,9 +46,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 # Ensure repo root on sys.path.
-_REPO_ROOT = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)
-)
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
@@ -68,25 +66,23 @@ FRONTEND_CHARACTER_ID = "char_demo_player"
 # If you change one, change the other — this test enforces the
 # contract.
 FRONTEND_URLS = {
-    "character_get":  f"/api/character/{FRONTEND_CHARACTER_ID}",
-    "scene_get":      f"/api/scene/{FRONTEND_CHARACTER_ID}",
-    "memory_health":  "/memory/health",
-    "action_submit":  "/api/action/submit",
+    "character_get": f"/api/character/{FRONTEND_CHARACTER_ID}",
+    "scene_get": f"/api/scene/{FRONTEND_CHARACTER_ID}",
+    "memory_health": "/memory/health",
+    "action_submit": "/api/action/submit",
 }
 # The corresponding route *templates* (what the app actually registers).
 # FastAPI uses {param} placeholders, not literal character IDs.
 FRONTEND_ROUTE_TEMPLATES = {
-    "character_get":  "/api/character/{character_id}",
-    "scene_get":      "/api/scene/{character_id}",
-    "memory_health":  "/memory/health",
-    "action_submit":  "/api/action/submit",
+    "character_get": "/api/character/{character_id}",
+    "scene_get": "/api/scene/{character_id}",
+    "memory_health": "/memory/health",
+    "action_submit": "/api/action/submit",
 }
 
 
 def _route_paths(application) -> list[str]:
-    return sorted({
-        r.path for r in application.routes if hasattr(r, "path")
-    })
+    return sorted({r.path for r in application.routes if hasattr(r, "path")})
 
 
 @pytest_asyncio.fixture
@@ -103,6 +99,7 @@ async def client(tmp_path: Path) -> AsyncIterator[AsyncClient]:
     integration = MemoryPalaceIntegration(persistence, vector_store)
 
     import backend.memory_palace_integration_endpoint as ep_mod
+
     prev = ep_mod._integration
     set_integration(integration)
 
@@ -131,7 +128,8 @@ class TestFrontendWireUp:
 
     @pytest.mark.asyncio
     async def test_frontend_can_list_characters(
-        self, client: AsyncClient,
+        self,
+        client: AsyncClient,
     ) -> None:
         """GET /api/character/{id} returns the shape ``loadCharacter()`` expects.
 
@@ -162,13 +160,12 @@ class TestFrontendWireUp:
         assert body.get("character_id"), "character_id missing"
         assert body.get("name"), "name missing"
         # Demo mode marker — the UI surfaces it in the character card.
-        assert body.get("mode") == "demo", (
-            f"Expected demo mode, got mode={body.get('mode')!r}"
-        )
+        assert body.get("mode") == "demo", f"Expected demo mode, got mode={body.get('mode')!r}"
 
     @pytest.mark.asyncio
     async def test_frontend_can_create_scene(
-        self, client: AsyncClient,
+        self,
+        client: AsyncClient,
     ) -> None:
         """GET /api/scene/{id} returns narrative + choices the UI renders.
 
@@ -193,29 +190,30 @@ class TestFrontendWireUp:
         body = resp.json()
         assert isinstance(body, dict)
         assert body.get("scene_id")
-        assert isinstance(body.get("narrative"), str) and body["narrative"], (
-            "narrative must be a non-empty string the UI can render"
-        )
+        assert (
+            isinstance(body.get("narrative"), str) and body["narrative"]
+        ), "narrative must be a non-empty string the UI can render"
         choices = body.get("choices")
-        assert isinstance(choices, list) and len(choices) > 0, (
-            f"expected >= 1 choice, got {choices!r}"
-        )
+        assert (
+            isinstance(choices, list) and len(choices) > 0
+        ), f"expected >= 1 choice, got {choices!r}"
         # Each choice needs the fields the vignette card binds to.
         for c in choices:
             assert c.get("id"), f"choice missing id: {c!r}"
             assert c.get("vignette"), f"choice missing vignette: {c!r}"
             assert c.get("intent_category"), f"choice missing intent_category: {c!r}"
             atts = c.get("attitude_options")
-            assert isinstance(atts, list) and len(atts) > 0, (
-                f"choice {c.get('id')!r} must have >=1 attitude_option: {c!r}"
-            )
+            assert (
+                isinstance(atts, list) and len(atts) > 0
+            ), f"choice {c.get('id')!r} must have >=1 attitude_option: {c!r}"
             for a in atts:
                 assert a.get("dimension"), f"attitude missing dimension: {a!r}"
                 assert a.get("level"), f"attitude missing level: {a!r}"
 
     @pytest.mark.asyncio
     async def test_frontend_can_submit_action(
-        self, client: AsyncClient,
+        self,
+        client: AsyncClient,
     ) -> None:
         """POST /api/action/submit accepts the HTTP-fallback payload.
 
@@ -246,9 +244,9 @@ class TestFrontendWireUp:
             "free_text": "我向鐵匠舉起匕首",
         }
         resp = await client.post(FRONTEND_URLS["action_submit"], json=payload)
-        assert resp.status_code == 200, (
-            f"submitViaHTTP should succeed; got {resp.status_code}: {resp.text}"
-        )
+        assert (
+            resp.status_code == 200
+        ), f"submitViaHTTP should succeed; got {resp.status_code}: {resp.text}"
         body = resp.json()
         assert body.get("received") == payload, (
             f"echo mismatch — frontend will display wrong text. "
@@ -259,7 +257,8 @@ class TestFrontendWireUp:
 
     @pytest.mark.asyncio
     async def test_frontend_handles_backend_down(
-        self, client: AsyncClient,
+        self,
+        client: AsyncClient,
     ) -> None:
         """When the backend raises, the error body must be JSON-shaped.
 
@@ -291,9 +290,9 @@ class TestFrontendWireUp:
                 f"show a useful message. body={body!r}"
             )
             # And the detail must be a non-empty string.
-            assert isinstance(body["detail"], str) and body["detail"], (
-                f"detail field must be a non-empty string, got {body['detail']!r}"
-            )
+            assert (
+                isinstance(body["detail"], str) and body["detail"]
+            ), f"detail field must be a non-empty string, got {body['detail']!r}"
 
         # Also verify the *character* endpoint doesn't blow up on a
         # malformed character_id (frontend passes user-controlled IDs
@@ -304,13 +303,15 @@ class TestFrontendWireUp:
             # httpx will URL-encode the path for us; the endpoint
             # should still 200 in demo mode (fallback to demo player).
         )
-        assert resp2.status_code in (200, 404), (
-            f"unexpected status for weird id: {resp2.status_code} {resp2.text!r}"
-        )
+        assert resp2.status_code in (
+            200,
+            404,
+        ), f"unexpected status for weird id: {resp2.status_code} {resp2.text!r}"
 
     @pytest.mark.asyncio
     async def test_frontend_health_check(
-        self, client: AsyncClient,
+        self,
+        client: AsyncClient,
     ) -> None:
         """GET /memory/health returns {postgres, vector_store} booleans.
 
@@ -362,10 +363,7 @@ class TestFrontendURLContract:
         isn't required — only the template.
         """
         paths = _route_paths(composed_app)
-        missing = [
-            name for name, tmpl in FRONTEND_ROUTE_TEMPLATES.items()
-            if tmpl not in paths
-        ]
+        missing = [name for name, tmpl in FRONTEND_ROUTE_TEMPLATES.items() if tmpl not in paths]
         assert not missing, (
             f"demo.html fetches URLs that don't exist on the backend: "
             f"{missing!r}. Either the frontend is wrong (fix demo.html) "
@@ -383,6 +381,7 @@ class TestFrontendURLContract:
         # We use a simple in-process ASGI check.
         transport = ASGITransport(app=composed_app)
         import asyncio
+
         async def _check() -> None:
             async with AsyncClient(transport=transport, base_url="http://test") as ac:
                 r1 = await ac.get(FRONTEND_URLS["character_get"])
@@ -392,9 +391,9 @@ class TestFrontendURLContract:
                 )
                 r2 = await ac.get(FRONTEND_URLS["scene_get"])
                 assert r2.status_code == 200, (
-                    f"GET {FRONTEND_URLS['scene_get']} returned "
-                    f"{r2.status_code}: {r2.text!r}"
+                    f"GET {FRONTEND_URLS['scene_get']} returned " f"{r2.status_code}: {r2.text!r}"
                 )
+
         asyncio.run(_check())
 
     def test_websocket_route_present(self) -> None:
@@ -404,8 +403,7 @@ class TestFrontendURLContract:
         # template, not the resolved path, because WebSocket routes
         # only have the template on the router.
         ws_templates = [
-            r.path for r in composed_app.routes
-            if hasattr(r, "path") and r.path.startswith("/ws/")
+            r.path for r in composed_app.routes if hasattr(r, "path") and r.path.startswith("/ws/")
         ]
         assert "/ws/game/{character_id}" in ws_templates, (
             f"WebSocket route missing; demo.html's connectWS() will "
@@ -424,6 +422,7 @@ class TestFrontendURLContract:
         import os
 
         from starlette.middleware.cors import CORSMiddleware
+
         # Inspect the *actual* middleware list on the composed app
         # (which inherits main.app's middleware).
         origins_env = os.getenv(

@@ -35,9 +35,7 @@ import pytest
 import pytest_asyncio
 
 # Ensure repo root on sys.path (same idiom as other backend tests).
-_REPO_ROOT = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)
-)
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
@@ -124,9 +122,7 @@ async def test_connect_returns_false_when_scene_full(manager):
 
     # State check
     assert manager.get_total_connection_count() == 4
-    assert sorted(manager.get_connected_players("scene_1")) == sorted(
-        player_ids[:4]
-    )
+    assert sorted(manager.get_connected_players("scene_1")) == sorted(player_ids[:4])
 
     # Lifetime counter: only the 4 successful connects counted
     assert manager.health()["lifetime"]["total_connects"] == 4
@@ -293,9 +289,9 @@ async def test_concurrent_connects_serialized(manager):
         manager.connect("scene_race", "racer_b", ws_b),
     )
     winners = [res_a, res_b]
-    assert winners.count(True) == 1, (
-        f"Expected exactly 1 winner in the race, got {winners.count(True)}"
-    )
+    assert (
+        winners.count(True) == 1
+    ), f"Expected exactly 1 winner in the race, got {winners.count(True)}"
     assert winners.count(False) == 1
 
     # Scene should be at 4/4 exactly

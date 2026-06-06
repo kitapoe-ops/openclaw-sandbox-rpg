@@ -111,9 +111,7 @@ class MultiplayerConnectionManager:
 
     def __init__(self, max_players_per_scene: int = 4) -> None:
         if max_players_per_scene < 1:
-            raise ValueError(
-                f"max_players_per_scene must be >= 1, got {max_players_per_scene}"
-            )
+            raise ValueError(f"max_players_per_scene must be >= 1, got {max_players_per_scene}")
         self._max_players = max_players_per_scene
         # scene_id -> {player_id -> WebSocket}
         self._scenes: dict[str, dict[str, WebSocket]] = {}
@@ -187,9 +185,7 @@ class MultiplayerConnectionManager:
             never contend on the global lock.
         """
         if not scene_id or not player_id or websocket is None:
-            raise ValueError(
-                "scene_id, player_id, websocket are all required"
-            )
+            raise ValueError("scene_id, player_id, websocket are all required")
 
         async with self._global_lock:
             await self._ensure_scene(scene_id)
@@ -244,8 +240,7 @@ class MultiplayerConnectionManager:
                 del scene[player_id]
                 self._total_disconnects += 1
                 logger.info(
-                    f"[Multiplayer] {player_id} left scene {scene_id} "
-                    f"({len(scene)} remaining)"
+                    f"[Multiplayer] {player_id} left scene {scene_id} " f"({len(scene)} remaining)"
                 )
             # Garbage-collect empty scenes (no longer need the lock
             # because each scene is owned by exactly one per-scene lock;
@@ -280,9 +275,7 @@ class MultiplayerConnectionManager:
             scene = self._scenes.get(scene_id)
             if not scene:
                 return 0
-            snapshot = [
-                (pid, ws) for pid, ws in scene.items() if pid != exclude
-            ]
+            snapshot = [(pid, ws) for pid, ws in scene.items() if pid != exclude]
 
         sent = 0
         self._total_broadcasts += 1
@@ -294,10 +287,7 @@ class MultiplayerConnectionManager:
                 # Stale / dead socket — log + skip. Caller can decide
                 # whether to GC the player via disconnect() on a
                 # subsequent loop iteration.
-                logger.warning(
-                    f"[Multiplayer] Broadcast to {pid} in {scene_id} "
-                    f"failed: {exc}"
-                )
+                logger.warning(f"[Multiplayer] Broadcast to {pid} in {scene_id} " f"failed: {exc}")
         self._total_broadcast_recipients += sent
         return sent
 
@@ -331,8 +321,7 @@ class MultiplayerConnectionManager:
             return True
         except Exception as exc:  # noqa: BLE001
             logger.warning(
-                f"[Multiplayer] send_to_player({scene_id}, {player_id}) "
-                f"failed: {exc}"
+                f"[Multiplayer] send_to_player({scene_id}, {player_id}) " f"failed: {exc}"
             )
             return False
 
@@ -446,9 +435,7 @@ async def multiplayer_ws_endpoint(
         active = mgr.get_connected_players(scene_id)
         reason = "duplicate" if player_id in active else "scene_full"
         try:
-            await websocket.send_json(
-                {"event": "error", "reason": reason, "scene_id": scene_id}
-            )
+            await websocket.send_json({"event": "error", "reason": reason, "scene_id": scene_id})
         except Exception:  # noqa: BLE001
             pass
         await websocket.close()
@@ -470,18 +457,11 @@ async def multiplayer_ws_endpoint(
             # Echo receipt — E6b will route this into the action
             # pipeline (turn system + LLM) and replace the echo
             # with the actual scene event broadcast.
-            await websocket.send_json(
-                {"event": "received", "from": player_id, "data": data}
-            )
+            await websocket.send_json({"event": "received", "from": player_id, "data": data})
     except WebSocketDisconnect:
-        logger.info(
-            f"[Multiplayer] WS disconnect for {player_id} in {scene_id}"
-        )
+        logger.info(f"[Multiplayer] WS disconnect for {player_id} in {scene_id}")
     except Exception as exc:  # noqa: BLE001
-        logger.exception(
-            f"[Multiplayer] WS loop error for {player_id} in "
-            f"{scene_id}: {exc}"
-        )
+        logger.exception(f"[Multiplayer] WS loop error for {player_id} in " f"{scene_id}: {exc}")
     finally:
         await mgr.disconnect(scene_id, player_id)
 

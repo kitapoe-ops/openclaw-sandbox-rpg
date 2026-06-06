@@ -43,9 +43,11 @@ def test_build_scheduler_has_3_jobs():
 
     job_ids = {job.id for job in sched.get_jobs()}
 
-    assert job_ids == {JOB_SENTINEL_DAILY, JOB_DASHBOARD_REFRESH, JOB_HEARTBEAT}, (
-        f"Expected the 3 cron job IDs, got {job_ids}"
-    )
+    assert job_ids == {
+        JOB_SENTINEL_DAILY,
+        JOB_DASHBOARD_REFRESH,
+        JOB_HEARTBEAT,
+    }, f"Expected the 3 cron job IDs, got {job_ids}"
 
     # Sanity: each job has a cron trigger
     for job in sched.get_jobs():
@@ -74,8 +76,7 @@ def test_scheduler_not_started_at_build_time():
 def test_job_functions_are_async():
     for fn in (job_sentinel_daily, job_dashboard_refresh, job_heartbeat):
         assert inspect.iscoroutinefunction(fn), (
-            f"{fn.__name__} must be `async def` (coroutine function), "
-            f"got {type(fn).__name__}"
+            f"{fn.__name__} must be `async def` (coroutine function), " f"got {type(fn).__name__}"
         )
 
 
@@ -115,8 +116,7 @@ async def test_create_app_with_scheduler_lifespan():
             body = resp.json()
             assert body["status"] == "ok"
             assert body["running"] is True, (
-                "Scheduler should be running while the app is up; "
-                f"got body={body}"
+                "Scheduler should be running while the app is up; " f"got body={body}"
             )
             assert {j["id"] for j in body["jobs"]} == {
                 JOB_SENTINEL_DAILY,
@@ -125,6 +125,6 @@ async def test_create_app_with_scheduler_lifespan():
             }
 
     # After exiting the lifespan context, shutdown should have stopped it
-    assert app.state.scheduler.running is False, (
-        "Scheduler should be stopped after the lifespan context exits"
-    )
+    assert (
+        app.state.scheduler.running is False
+    ), "Scheduler should be stopped after the lifespan context exits"

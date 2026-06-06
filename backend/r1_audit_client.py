@@ -118,9 +118,7 @@ class R1AuditClient:
             },
         )
         if r.status_code != 200:
-            raise RuntimeError(
-                f"R1 returned HTTP {r.status_code}: {r.text[:200]}"
-            )
+            raise RuntimeError(f"R1 returned HTTP {r.status_code}: {r.text[:200]}")
         data = r.json()
         choice = data["choices"][0]
         return choice["message"]["content"]
@@ -159,26 +157,30 @@ class R1AuditClient:
                 content = p.read_text(encoding="utf-8", errors="replace")
                 lines = content.split("\n")
                 if len(lines) > 100:
-                    content = "\n".join(lines[:100]) + f"\n... [truncated; {len(lines)-100} more lines]"
+                    content = (
+                        "\n".join(lines[:100]) + f"\n... [truncated; {len(lines)-100} more lines]"
+                    )
                 file_contents[f] = content
             else:
                 file_contents[f] = "[FILE NOT FOUND]"
 
         # Use a SHORT system prompt to preserve context for the actual content
-        system_prompt = "You are R1, an architecture auditor. Output JSON in the user's required format."
+        system_prompt = (
+            "You are R1, an architecture auditor. Output JSON in the user's required format."
+        )
 
         user_message = (
             "Perform an architecture audit of the following files. "
             "These are real production code paths.\n\n"
             "## Target Files\n\n"
-            + "\n\n".join(
-                f"### `{f}`\n```\n{file_contents[f]}\n```"
-                for f in target_files
-            )
+            + "\n\n".join(f"### `{f}`\n```\n{file_contents[f]}\n```" for f in target_files)
             + "\n\n## Specific Concerns to Audit\n\n"
             + "\n".join(f"{i+1}. {c}" for i, c in enumerate(concerns))
-            + (f"\n\n## Additional Context\n\n```json\n{json.dumps(context, indent=2, ensure_ascii=False)}\n```"
-               if context else "")
+            + (
+                f"\n\n## Additional Context\n\n```json\n{json.dumps(context, indent=2, ensure_ascii=False)}\n```"
+                if context
+                else ""
+            )
             + "\n\n## Required Report Format\n\n"
             "Respond with a JSON block (no other text outside the JSON):\n"
             "```json\n"
@@ -186,7 +188,7 @@ class R1AuditClient:
             '  "verdict": "PASS" | "CONDITIONAL" | "FAIL" | "BLOCK",\n'
             '  "reasoning_summary": "<one-paragraph reasoning>",\n'
             '  "findings": [\n'
-            '    {\n'
+            "    {\n"
             '      "severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFO",\n'
             '      "concern_index": <int, 1-based>,\n'
             '      "issue": "<short title>",\n'
@@ -207,7 +209,7 @@ class R1AuditClient:
         json_end = raw.rfind("}")
         if json_start >= 0 and json_end > json_start:
             try:
-                parsed = json.loads(raw[json_start:json_end+1])
+                parsed = json.loads(raw[json_start : json_end + 1])
                 verdict = parsed.get("verdict", "UNKNOWN")
                 findings = parsed.get("findings", [])
             except json.JSONDecodeError:

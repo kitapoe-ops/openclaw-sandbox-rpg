@@ -230,13 +230,9 @@ class MultiplayerScene:
         if not scene_id:
             raise ValueError("scene_id must be a non-empty string")
         if max_players < 1:
-            raise ValueError(
-                f"max_players must be >= 1, got {max_players}"
-            )
+            raise ValueError(f"max_players must be >= 1, got {max_players}")
         if max_npcs < 1:
-            raise ValueError(
-                f"max_npcs must be >= 1, got {max_npcs}"
-            )
+            raise ValueError(f"max_npcs must be >= 1, got {max_npcs}")
         self.scene_id = scene_id
         self.max_players = max_players
         self.max_npcs = max_npcs
@@ -250,9 +246,7 @@ class MultiplayerScene:
     # Player management
     # ============================================
 
-    async def add_player(
-        self, player_id: str, character_id: str
-    ) -> bool:
+    async def add_player(self, player_id: str, character_id: str) -> bool:
         """Add a player to the scene.
 
         Returns ``True`` on success, ``False`` if:
@@ -266,14 +260,11 @@ class MultiplayerScene:
             seats in the same scene)
         """
         if not player_id or not character_id:
-            raise ValueError(
-                "player_id and character_id are both required"
-            )
+            raise ValueError("player_id and character_id are both required")
         async with self._lock:
             if player_id in self._players:
                 logger.info(
-                    f"[Scene] {player_id} already in scene "
-                    f"{self.scene_id}; rejecting duplicate"
+                    f"[Scene] {player_id} already in scene " f"{self.scene_id}; rejecting duplicate"
                 )
                 return False
             if len(self._players) >= self.max_players:
@@ -348,9 +339,7 @@ class MultiplayerScene:
     # NPC management
     # ============================================
 
-    async def add_npc(
-        self, npc_id: str, character_id: str, location: str
-    ) -> bool:
+    async def add_npc(self, npc_id: str, character_id: str, location: str) -> bool:
         """Add an NPC. Returns ``False`` if scene is at the NPC cap.
 
         NPCs are shared between all players in the scene (no
@@ -359,9 +348,7 @@ class MultiplayerScene:
         re-issued after a network hiccup).
         """
         if not npc_id or not character_id or not location:
-            raise ValueError(
-                "npc_id, character_id, and location are all required"
-            )
+            raise ValueError("npc_id, character_id, and location are all required")
         async with self._lock:
             if npc_id in self._npcs:
                 return False
@@ -391,9 +378,7 @@ class MultiplayerScene:
     # Turn queue
     # ============================================
 
-    async def enqueue_action(
-        self, actor_id: str, action: dict[str, Any]
-    ) -> str:
+    async def enqueue_action(self, actor_id: str, action: dict[str, Any]) -> str:
         """Submit an action to the turn queue.
 
         ``actor_id`` can be a ``player_id`` or an ``npc_id`` —
@@ -403,9 +388,7 @@ class MultiplayerScene:
         correlate receipts with the queue.
         """
         if not actor_id or not isinstance(action, dict):
-            raise ValueError(
-                "actor_id is required and action must be a dict"
-            )
+            raise ValueError("actor_id is required and action must be a dict")
         async with self._lock:
             ticket = TurnTicket(
                 ticket_id=str(uuid.uuid4()),
@@ -482,9 +465,7 @@ class MultiplayerScene:
     # Memory isolation
     # ============================================
 
-    def can_read_memory(
-        self, requester_id: str, target_character_id: str
-    ) -> bool:
+    def can_read_memory(self, requester_id: str, target_character_id: str) -> bool:
         """Authorise a memory read.
 
         Rules:
@@ -510,17 +491,12 @@ class MultiplayerScene:
             return True
         # NPC — check both npc_id and the NPC's character_id
         for npc in self._npcs.values():
-            if (
-                npc.npc_id == target_character_id
-                or npc.character_id == target_character_id
-            ):
+            if npc.npc_id == target_character_id or npc.character_id == target_character_id:
                 return True
         # Anything else: denied.
         return False
 
-    def can_write_memory(
-        self, requester_id: str, target_character_id: str
-    ) -> bool:
+    def can_write_memory(self, requester_id: str, target_character_id: str) -> bool:
         """Authorise a memory write.
 
         Memory writes are **stricter** than reads: only the
@@ -574,9 +550,7 @@ class SceneRegistry:
             raise ValueError("scene_id must be a non-empty string")
         async with self._lock:
             if scene_id not in self._scenes:
-                self._scenes[scene_id] = self._create_scene(
-                    scene_id, max_players, max_npcs
-                )
+                self._scenes[scene_id] = self._create_scene(scene_id, max_players, max_npcs)
             return self._scenes[scene_id]
 
     def _create_scene(
@@ -586,9 +560,7 @@ class SceneRegistry:
         max_npcs: int,
     ) -> MultiplayerScene:
         """Factory hook for subclasses (e.g. a future PG-backed one)."""
-        return MultiplayerScene(
-            scene_id, max_players=max_players, max_npcs=max_npcs
-        )
+        return MultiplayerScene(scene_id, max_players=max_players, max_npcs=max_npcs)
 
     async def destroy(self, scene_id: str) -> bool:
         """Remove a scene. Returns True if it was present."""

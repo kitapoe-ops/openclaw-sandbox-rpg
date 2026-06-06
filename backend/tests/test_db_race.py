@@ -31,9 +31,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 # Ensure repo root is on sys.path (mirrors test_api_tier3.py convention)
-_REPO_ROOT = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)
-)
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
@@ -95,9 +93,9 @@ class TestInitDbRaceSafety:
 
         # First call: should invoke create_all
         await db.init_db()
-        assert spy.call_count == 1, (
-            f"First init_db() should invoke create_all once, got {spy.call_count}"
-        )
+        assert (
+            spy.call_count == 1
+        ), f"First init_db() should invoke create_all once, got {spy.call_count}"
 
         # Second call: should early-return via _init_done flag
         await db.init_db()
@@ -130,8 +128,7 @@ class TestInitDbRaceSafety:
         # None should have raised
         errors = [r for r in results if isinstance(r, BaseException)]
         assert not errors, (
-            f"Concurrent init_db() raised {len(errors)} errors: "
-            f"{[repr(e) for e in errors]}"
+            f"Concurrent init_db() raised {len(errors)} errors: " f"{[repr(e) for e in errors]}"
         )
 
     async def test_init_db_actually_initializes_once(self, patched_init_env):
@@ -179,9 +176,7 @@ class TestInitDbRaceSafety:
             f"Expected 2 total calls, got {spy.call_count}"
         )
 
-    async def test_init_db_under_lock_does_not_deadlock(
-        self, patched_init_env, monkeypatch
-    ):
+    async def test_init_db_under_lock_does_not_deadlock(self, patched_init_env, monkeypatch):
         """
         The asyncio.Lock should SERIALIZE concurrent calls — not
         DEADLOCK them. We give create_all a small artificial delay and
@@ -221,8 +216,7 @@ class TestInitDbRaceSafety:
 
         # Assertions
         assert call_count["n"] == 1, (
-            f"create_all should still be called exactly once under load, "
-            f"got {call_count['n']}"
+            f"create_all should still be called exactly once under load, " f"got {call_count['n']}"
         )
 
         # Concurrent should NOT be 10x slower (that would mean no

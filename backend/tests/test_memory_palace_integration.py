@@ -40,9 +40,7 @@ import pytest
 import pytest_asyncio
 
 # Ensure repo root is on sys.path (mirrors existing test convention).
-_REPO_ROOT = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)
-)
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
@@ -158,7 +156,8 @@ class TestRecall:
 
     @pytest.mark.asyncio
     async def test_recall_returns_top_k_by_similarity(
-        self, palace: MemoryPalaceIntegration,
+        self,
+        palace: MemoryPalaceIntegration,
     ) -> None:
         """With 3 orthogonal embeddings, querying with one of them
         returns that memory as the top hit (cosine sim == 1.0)."""
@@ -194,7 +193,8 @@ class TestRecall:
 
     @pytest.mark.asyncio
     async def test_recall_filters_by_character_id(
-        self, palace: MemoryPalaceIntegration,
+        self,
+        palace: MemoryPalaceIntegration,
     ) -> None:
         """memories stored under char_B must not leak into char_A's recall."""
         # char_B has a memory that *should not* appear in char_A's
@@ -239,13 +239,12 @@ class TestRecall:
         # And for alice — bob's perfect-hit is filtered out, so
         # we get back at most alice's own memory (sim == 0.0
         # against bob's axis).
-        assert all(
-            r["similarity"] == pytest.approx(0.0, abs=1e-9) for r in results
-        )
+        assert all(r["similarity"] == pytest.approx(0.0, abs=1e-9) for r in results)
 
     @pytest.mark.asyncio
     async def test_recall_filters_by_memory_type(
-        self, palace: MemoryPalaceIntegration,
+        self,
+        palace: MemoryPalaceIntegration,
     ) -> None:
         """Filtering by memory_type restricts results to that type only."""
         # Two memories on the same axis but different types.
@@ -299,7 +298,8 @@ class TestRecall:
 
     @pytest.mark.asyncio
     async def test_recall_filters_by_min_salience(
-        self, palace: MemoryPalaceIntegration,
+        self,
+        palace: MemoryPalaceIntegration,
     ) -> None:
         """min_salience excludes low-salience rows from results."""
         high_id = await palace.remember(
@@ -338,7 +338,8 @@ class TestForget:
 
     @pytest.mark.asyncio
     async def test_forget_removes_from_both_backends(
-        self, palace: MemoryPalaceIntegration,
+        self,
+        palace: MemoryPalaceIntegration,
     ) -> None:
         """forget() removes the row from PG AND the embedding from VS."""
         mem_id = await palace.remember(
@@ -360,7 +361,8 @@ class TestForget:
 
     @pytest.mark.asyncio
     async def test_forget_rejects_other_characters_memory(
-        self, palace: MemoryPalaceIntegration,
+        self,
+        palace: MemoryPalaceIntegration,
     ) -> None:
         """char_A cannot delete char_B's memory — must return False."""
         bob_mem = await palace.remember(
@@ -384,7 +386,8 @@ class TestHealth:
 
     @pytest.mark.asyncio
     async def test_health_reports_both_backends(
-        self, palace: MemoryPalaceIntegration,
+        self,
+        palace: MemoryPalaceIntegration,
     ) -> None:
         """A healthy integration reports both backends True."""
         h = await palace.health()
@@ -404,7 +407,8 @@ class TestInputValidation:
 
     @pytest.mark.asyncio
     async def test_salience_out_of_range_raises(
-        self, palace: MemoryPalaceIntegration,
+        self,
+        palace: MemoryPalaceIntegration,
     ) -> None:
         """salience > 1.0 raises SalienceOutOfRangeError."""
         with pytest.raises(SalienceOutOfRangeError):
@@ -417,7 +421,8 @@ class TestInputValidation:
 
     @pytest.mark.asyncio
     async def test_wrong_embedding_dim_raises(
-        self, palace: MemoryPalaceIntegration,
+        self,
+        palace: MemoryPalaceIntegration,
     ) -> None:
         """Wrong-dim embedding raises ValueError BEFORE touching PG."""
         with pytest.raises(ValueError):

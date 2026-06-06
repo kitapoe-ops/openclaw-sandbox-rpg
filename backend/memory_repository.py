@@ -628,16 +628,15 @@ class EmbeddingModel:
                     f"Underlying error: {exc}"
                 ) from exc
             try:
-                self._model = await asyncio.to_thread(
-                    SentenceTransformer, self._model_name
-                )
+                self._model = await asyncio.to_thread(SentenceTransformer, self._model_name)
             except Exception as exc:
                 raise RuntimeError(
                     f"Failed to load embedding model {self._model_name!r}: {exc}"
                 ) from exc
             logger.info(
                 "EmbeddingModel: loaded %s (cache_size=%d)",
-                self._model_name, self._cache_size,
+                self._model_name,
+                self._cache_size,
             )
             return self._model
 
@@ -660,9 +659,7 @@ class EmbeddingModel:
             self._cache.pop(oldest)
 
     # ---- public API ----
-    async def encode(
-        self, content: str, force_reembed: bool = False
-    ) -> list[float]:
+    async def encode(self, content: str, force_reembed: bool = False) -> list[float]:
         """Encode a single string to a 384-dim float vector.
 
         Parameters
@@ -767,22 +764,15 @@ def get_repository(
     """
     if backend == "sqlite":
         if sqlite_palace is None:
-            raise ValueError(
-                "get_repository(backend='sqlite') requires sqlite_palace=..."
-            )
+            raise ValueError("get_repository(backend='sqlite') requires sqlite_palace=...")
         return SqliteMemoryRepository(sqlite_palace)
     if backend == "postgres":
         if postgres_integration is None:
             raise ValueError(
-                "get_repository(backend='postgres') requires "
-                "postgres_integration=..."
+                "get_repository(backend='postgres') requires " "postgres_integration=..."
             )
-        return PostgresMemoryRepository(
-            postgres_integration, embedding_model=embedding_model
-        )
-    raise ValueError(
-        f"Unknown backend {backend!r}; expected 'sqlite' or 'postgres'."
-    )
+        return PostgresMemoryRepository(postgres_integration, embedding_model=embedding_model)
+    raise ValueError(f"Unknown backend {backend!r}; expected 'sqlite' or 'postgres'.")
 
 
 __all__ = [

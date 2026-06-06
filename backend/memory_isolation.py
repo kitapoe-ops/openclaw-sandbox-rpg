@@ -85,9 +85,7 @@ class MemoryIsolationGuard:
     time and reuse across all requests.
     """
 
-    def __init__(
-        self, scene_registry: SceneRegistry | None = None
-    ) -> None:
+    def __init__(self, scene_registry: SceneRegistry | None = None) -> None:
         self._scenes = scene_registry or get_scene_registry()
 
     # ============================================
@@ -120,9 +118,7 @@ class MemoryIsolationGuard:
             return False
         scene = self._scenes.get(scene_id)
         if scene is None:
-            logger.warning(
-                f"[Isolation] authorize denied: scene {scene_id} not found"
-            )
+            logger.warning(f"[Isolation] authorize denied: scene {scene_id} not found")
             return False
         if op == "write":
             return scene.can_write_memory(requester_id, target_character_id)
@@ -215,9 +211,7 @@ class _IsolatedMemoryPalace:
 
     #: Method names we intercept. Conservative — anything not in
     #: this set is passed through unchanged.
-    _INTERCEPTED_READ: frozenset = frozenset(
-        {"recall", "get_memories", "search", "load"}
-    )
+    _INTERCEPTED_READ: frozenset = frozenset({"recall", "get_memories", "search", "load"})
     _INTERCEPTED_WRITE: frozenset = frozenset(
         {"remember", "add_memory", "save", "forget", "delete", "archive"}
     )
@@ -242,63 +236,43 @@ class _IsolatedMemoryPalace:
     # ============================================
 
     async def remember(self, character_id: str, *args, **kwargs):
-        self._guard.require(
-            self._requester_id, self._scene_id, character_id, op="write"
-        )
+        self._guard.require(self._requester_id, self._scene_id, character_id, op="write")
         return await self._inner.remember(character_id, *args, **kwargs)
 
     async def add_memory(self, character_id: str, *args, **kwargs):
-        self._guard.require(
-            self._requester_id, self._scene_id, character_id, op="write"
-        )
+        self._guard.require(self._requester_id, self._scene_id, character_id, op="write")
         return await self._inner.add_memory(character_id, *args, **kwargs)
 
     async def save(self, character_id: str, *args, **kwargs):
-        self._guard.require(
-            self._requester_id, self._scene_id, character_id, op="write"
-        )
+        self._guard.require(self._requester_id, self._scene_id, character_id, op="write")
         return await self._inner.save(character_id, *args, **kwargs)
 
     async def recall(self, character_id: str, *args, **kwargs):
-        self._guard.require(
-            self._requester_id, self._scene_id, character_id, op="read"
-        )
+        self._guard.require(self._requester_id, self._scene_id, character_id, op="read")
         return await self._inner.recall(character_id, *args, **kwargs)
 
     async def get_memories(self, character_id: str, *args, **kwargs):
-        self._guard.require(
-            self._requester_id, self._scene_id, character_id, op="read"
-        )
+        self._guard.require(self._requester_id, self._scene_id, character_id, op="read")
         return await self._inner.get_memories(character_id, *args, **kwargs)
 
     async def search(self, character_id: str, *args, **kwargs):
-        self._guard.require(
-            self._requester_id, self._scene_id, character_id, op="read"
-        )
+        self._guard.require(self._requester_id, self._scene_id, character_id, op="read")
         return await self._inner.search(character_id, *args, **kwargs)
 
     async def load(self, character_id: str, *args, **kwargs):
-        self._guard.require(
-            self._requester_id, self._scene_id, character_id, op="read"
-        )
+        self._guard.require(self._requester_id, self._scene_id, character_id, op="read")
         return await self._inner.load(character_id, *args, **kwargs)
 
     async def forget(self, character_id: str, *args, **kwargs):
-        self._guard.require(
-            self._requester_id, self._scene_id, character_id, op="write"
-        )
+        self._guard.require(self._requester_id, self._scene_id, character_id, op="write")
         return await self._inner.forget(character_id, *args, **kwargs)
 
     async def delete(self, character_id: str, *args, **kwargs):
-        self._guard.require(
-            self._requester_id, self._scene_id, character_id, op="write"
-        )
+        self._guard.require(self._requester_id, self._scene_id, character_id, op="write")
         return await self._inner.delete(character_id, *args, **kwargs)
 
     async def archive(self, character_id: str, *args, **kwargs):
-        self._guard.require(
-            self._requester_id, self._scene_id, character_id, op="write"
-        )
+        self._guard.require(self._requester_id, self._scene_id, character_id, op="write")
         return await self._inner.archive(character_id, *args, **kwargs)
 
     # ============================================

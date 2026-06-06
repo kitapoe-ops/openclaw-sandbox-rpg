@@ -99,12 +99,8 @@ def test_invariant_2_remove_status_tag(sm: SemanticStateMachine) -> None:
     """Status tags can be removed."""
     from backend.state_machine import StateMutation
 
-    sm.apply_mutations(
-        [StateMutation(character_id="c1", add_state=["右手骨折"], reason="受傷")]
-    )
-    sm.apply_mutations(
-        [StateMutation(character_id="c1", remove_state=["右手骨折"], reason="治癒")]
-    )
+    sm.apply_mutations([StateMutation(character_id="c1", add_state=["右手骨折"], reason="受傷")])
+    sm.apply_mutations([StateMutation(character_id="c1", remove_state=["右手骨折"], reason="治癒")])
     state = sm.get("c1")
     assert "右手骨折" not in state.tags
 
@@ -115,11 +111,7 @@ def test_invariant_3_remove_missing_noop(sm: SemanticStateMachine) -> None:
     from backend.state_machine import StateMutation
 
     report = sm.apply_mutations(
-        [
-            StateMutation(
-                character_id="c1", remove_state=["從未添加"], reason="typo"
-            )
-        ]
+        [StateMutation(character_id="c1", remove_state=["從未添加"], reason="typo")]
     )
     # Mutation still applied (its sub-effects were zero).
     assert len(report["applied"]) == 1
@@ -131,12 +123,8 @@ def test_invariant_4_re_add_idempotent(sm: SemanticStateMachine) -> None:
     """Re-adding a tag does NOT create a duplicate."""
     from backend.state_machine import StateMutation
 
-    sm.apply_mutations(
-        [StateMutation(character_id="c1", add_state=["恐懼"], reason="目睹慘劇")]
-    )
-    sm.apply_mutations(
-        [StateMutation(character_id="c1", add_state=["恐懼"], reason="再次目睹")]
-    )
+    sm.apply_mutations([StateMutation(character_id="c1", add_state=["恐懼"], reason="目睹慘劇")])
+    sm.apply_mutations([StateMutation(character_id="c1", add_state=["恐懼"], reason="再次目睹")])
     state = sm.get("c1")
     assert state.tags.count("恐懼") == 1
 
@@ -148,8 +136,14 @@ def test_invariant_5_max_tags_eviction(sm: SemanticStateMachine) -> None:
 
     # Fill to 8 tags. Use CJK tags with varied strings.
     tags_to_add = [
-        "狀態甲", "狀態乙", "狀態丙", "狀態丁",
-        "狀態戊", "狀態己", "狀態庚", "狀態辛",
+        "狀態甲",
+        "狀態乙",
+        "狀態丙",
+        "狀態丁",
+        "狀態戊",
+        "狀態己",
+        "狀態庚",
+        "狀態辛",
     ]
     for tag in tags_to_add:
         sm.apply_mutations(
@@ -234,11 +228,7 @@ def test_invariant_9_consume_partial(sm: SemanticStateMachine) -> None:
     """Item quantities are decremented; partially-consumed items persist."""
     from backend.state_machine import ItemConsumed, StateMutation
 
-    sm.register(
-        _state_with_inventory(
-            "c1", items=[{"item_id": "藥水", "quantity": 3}]
-        )
-    )
+    sm.register(_state_with_inventory("c1", items=[{"item_id": "藥水", "quantity": 3}]))
     sm.apply_mutations(
         [
             StateMutation(
@@ -259,11 +249,7 @@ def test_invariant_10_consume_last_removed(sm: SemanticStateMachine) -> None:
     """Quantity 0 ⇒ item is removed from inventory."""
     from backend.state_machine import ItemConsumed, StateMutation
 
-    sm.register(
-        _state_with_inventory(
-            "c1", items=[{"item_id": "藥水", "quantity": 1}]
-        )
-    )
+    sm.register(_state_with_inventory("c1", items=[{"item_id": "藥水", "quantity": 1}]))
     sm.apply_mutations(
         [
             StateMutation(
@@ -365,9 +351,7 @@ def test_invariant_15_invalid_relationship_accepted(sm: SemanticStateMachine) ->
         [
             StateMutation(
                 character_id="c1",
-                relationship_changes=[
-                    RelationshipChange(npc_id="npc_x", new_relationship="香蕉")
-                ],
+                relationship_changes=[RelationshipChange(npc_id="npc_x", new_relationship="香蕉")],
                 reason="LLM typo test",
             )
         ]
@@ -581,9 +565,14 @@ def test_state_to_memory_string_bounds_length() -> None:
 
     # 8 long tags (CJK only, no digits), joined → still capped.
     long_tags = [
-        "很長的狀態標籤甲", "很長的狀態標籤乙", "很長的狀態標籤丙",
-        "很長的狀態標籤丁", "很長的狀態標籤戊", "很長的狀態標籤己",
-        "很長的狀態標籤庚", "很長的狀態標籤辛",
+        "很長的狀態標籤甲",
+        "很長的狀態標籤乙",
+        "很長的狀態標籤丙",
+        "很長的狀態標籤丁",
+        "很長的狀態標籤戊",
+        "很長的狀態標籤己",
+        "很長的狀態標籤庚",
+        "很長的狀態標籤辛",
     ]
     state = SemanticState(character_id="c1", tags=long_tags)
     feed = state.to_memory_string()
@@ -600,9 +589,7 @@ def test_feed_memory_uses_tag_concatenation_not_narrative() -> None:
     from backend.state_machine import SemanticState, SemanticStateMachine
 
     sm = SemanticStateMachine(memory_palace=MockMemoryPalace())  # type: ignore[arg-type]
-    sm.register(
-        SemanticState(character_id="c1", tags=["右手骨折", "恐懼", "中毒"])
-    )
+    sm.register(SemanticState(character_id="c1", tags=["右手骨折", "恐懼", "中毒"]))
     # Set up an async wrapper
     palace = sm._memory_palace  # type: ignore[attr-defined]
     sm._memory_palace = palace  # already correct
@@ -635,22 +622,16 @@ def test_duplicate_tag_fuzzy_rejected() -> None:
     # '右手骨折' and '右手骨折x' share 4 of 5 unique chars → Jaccard 0.8.
     # '右手骨折' and '右手骨折啊' share 4 of 6 unique chars → Jaccard ~0.67.
     # We use tags that share most characters to push Jaccard > 0.85.
-    sm.apply_mutations(
-        [StateMutation(character_id="c1", add_state=["右手骨折"], reason="x")]
-    )
+    sm.apply_mutations([StateMutation(character_id="c1", add_state=["右手骨折"], reason="x")])
     # Adding '右手骨折' again is idempotent (invariant #4).
-    sm.apply_mutations(
-        [StateMutation(character_id="c1", add_state=["右手骨折"], reason="x")]
-    )
+    sm.apply_mutations([StateMutation(character_id="c1", add_state=["右手骨折"], reason="x")])
     state = sm.get("c1")
     assert state.tags == ["右手骨折"]
     # Now adding a near-duplicate that overlaps > 85% chars.
     # '右手骨折' = {右,手,骨,折}; we need a new tag with 4+ of those
     # characters in common. '骨折右手' = {骨,折,右,手} — same set!
     # Jaccard = 4/4 = 1.0 → must be rejected.
-    sm.apply_mutations(
-        [StateMutation(character_id="c1", add_state=["骨折右手"], reason="x")]
-    )
+    sm.apply_mutations([StateMutation(character_id="c1", add_state=["骨折右手"], reason="x")])
     state = sm.get("c1")
     # The duplicate was rejected, so only the original is present.
     assert state.tags == ["右手骨折"]
@@ -715,9 +696,7 @@ def test_updated_at_advances_on_apply() -> None:
     sm.register(SemanticState(character_id="c1"))
     t0 = sm.get("c1").updated_at()
     time.sleep(0.005)  # ensure clock advances
-    sm.apply_mutations(
-        [StateMutation(character_id="c1", stamina="微喘", reason="x")]
-    )
+    sm.apply_mutations([StateMutation(character_id="c1", stamina="微喘", reason="x")])
     t1 = sm.get("c1").updated_at()
     assert t1 > t0
 
@@ -727,14 +706,9 @@ def test_action_to_text_extraction() -> None:
     from backend.state_machine import SemanticStateMachine
 
     # Explicit text
-    assert (
-        SemanticStateMachine._action_to_text({"text": "揮劍斬敵"}) == "揮劍斬敵"
-    )
+    assert SemanticStateMachine._action_to_text({"text": "揮劍斬敵"}) == "揮劍斬敵"
     # Verb + target
-    assert (
-        SemanticStateMachine._action_to_text({"verb": "揮劍", "target": "敵人"})
-        == "揮劍 敵人"
-    )
+    assert SemanticStateMachine._action_to_text({"verb": "揮劍", "target": "敵人"}) == "揮劍 敵人"
     # Verb only
     assert SemanticStateMachine._action_to_text({"verb": "休息"}) == "休息"
     # Empty

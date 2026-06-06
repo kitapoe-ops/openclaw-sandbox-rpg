@@ -70,9 +70,7 @@ class ConnectionRegistry:
                 if not self._connections[character_id]:
                     del self._connections[character_id]
                     self._player_controlled[character_id] = False
-                    logger.info(
-                        f"[Registry] {character_id} fully disconnected -> NPC mode"
-                    )
+                    logger.info(f"[Registry] {character_id} fully disconnected -> NPC mode")
 
     async def is_player_controlled(self, character_id: str) -> bool:
         async with self._lock:

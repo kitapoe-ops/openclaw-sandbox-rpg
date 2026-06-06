@@ -62,8 +62,7 @@ class SceneLockManager:
             to_remove = [
                 scene_id
                 for scene_id, last_used in self._last_used.items()
-                if now - last_used > self._gc_after
-                and not self._locks[scene_id].locked()
+                if now - last_used > self._gc_after and not self._locks[scene_id].locked()
             ]
             for scene_id in to_remove:
                 del self._locks[scene_id]

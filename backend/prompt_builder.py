@@ -252,18 +252,14 @@ class PromptBuilder:
             ``LLMClient.generate(system_prompt=..., user_message=...)``.
         """
         if not isinstance(character_id, str) or not character_id.strip():
-            raise PromptBuilderError(
-                f"character_id must be a non-empty str, got {character_id!r}"
-            )
+            raise PromptBuilderError(f"character_id must be a non-empty str, got {character_id!r}")
         if not isinstance(current_state, SemanticState):
             raise PromptBuilderError(
-                f"current_state must be a SemanticState, got "
-                f"{type(current_state).__name__}"
+                f"current_state must be a SemanticState, got " f"{type(current_state).__name__}"
             )
         if not isinstance(action_context, dict):
             raise PromptBuilderError(
-                f"action_context must be a dict, got "
-                f"{type(action_context).__name__}"
+                f"action_context must be a dict, got " f"{type(action_context).__name__}"
             )
 
         state_section = self._format_state_section(current_state)
@@ -339,15 +335,16 @@ class PromptBuilder:
             # Real MemoryPalaceIntegration.recall is a coroutine; some
             # test doubles are sync. Handle both.
             import asyncio
+
             if asyncio.iscoroutine(rv):
                 memories = await rv
             else:
                 memories = rv
         except Exception as exc:  # noqa: BLE001
             logger.warning(
-                "PromptBuilder: Memory Palace recall failed for "
-                "character=%s: %s",
-                character_id, exc,
+                "PromptBuilder: Memory Palace recall failed for " "character=%s: %s",
+                character_id,
+                exc,
             )
             return "(Memory Palace 查詢失敗)"
 
@@ -373,9 +370,7 @@ class PromptBuilder:
             # Stringify args safely — never crash on weird payloads.
             try:
                 if isinstance(args, dict):
-                    args_str = ", ".join(
-                        f"{k}={v}" for k, v in args.items()
-                    )
+                    args_str = ", ".join(f"{k}={v}" for k, v in args.items())
                 else:
                     args_str = str(args)
                 lines.append(f"參數: {args_str}")

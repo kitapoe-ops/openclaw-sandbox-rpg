@@ -125,13 +125,41 @@ logger = logging.getLogger(__name__)
 # ``state_machine.py`` is frozen; a per-character dynamic gate can
 # be added later without changing the public interface. The
 # whitelist below is the *static* gate (D&D-style verbs).
-ALLOWED_VERBS: frozenset[str] = frozenset({
-    "look", "examine", "move", "go", "walk", "run", "flee",
-    "talk", "ask", "tell", "say", "negotiate", "intimidate",
-    "attack", "cast", "use", "drink", "eat", "take", "drop",
-    "open", "close", "search", "rest", "wait", "inventory",
-    "equip", "unequip", "buy", "sell", "trade",
-})
+ALLOWED_VERBS: frozenset[str] = frozenset(
+    {
+        "look",
+        "examine",
+        "move",
+        "go",
+        "walk",
+        "run",
+        "flee",
+        "talk",
+        "ask",
+        "tell",
+        "say",
+        "negotiate",
+        "intimidate",
+        "attack",
+        "cast",
+        "use",
+        "drink",
+        "eat",
+        "take",
+        "drop",
+        "open",
+        "close",
+        "search",
+        "rest",
+        "wait",
+        "inventory",
+        "equip",
+        "unequip",
+        "buy",
+        "sell",
+        "trade",
+    }
+)
 
 # Narrative prompt template — kept simple and provider-agnostic.
 # The full D6 prompt (with few-shots + JSON response_format) is the
@@ -303,9 +331,7 @@ class ActionProcessor:
         # test double that only implements the old interface), we
         # fall back to the legacy E1 ``generate()`` call. This keeps
         # the new constructor backward compatible.
-        self._llm_supports_state_contract = hasattr(
-            llm_client, "generate_with_state_contract"
-        )
+        self._llm_supports_state_contract = hasattr(llm_client, "generate_with_state_contract")
 
     # ---------------------- public API ----------------------
 
@@ -391,7 +417,8 @@ class ActionProcessor:
                 except Exception as exc:  # noqa: BLE001 — best-effort
                     logger.warning(
                         "scene_context_fn(%s) failed: %s; using empty context",
-                        character_id, exc,
+                        character_id,
+                        exc,
                     )
 
             # 5) Build the user-message prompt (legacy E1 template).
@@ -403,9 +430,7 @@ class ActionProcessor:
                 # Keep it human-readable; never include raw user
                 # data untruncated (D5 #2 lesson).
                 try:
-                    args_str = " with " + ", ".join(
-                        f"{k}={v}" for k, v in args.items()
-                    )
+                    args_str = " with " + ", ".join(f"{k}={v}" for k, v in args.items())
                 except Exception:
                     args_str = ""
             user_message = NARRATIVE_PROMPT_TEMPLATE.format(
@@ -472,8 +497,11 @@ class ActionProcessor:
                     "to produce a valid StateMutation after %d retries "
                     "(%s); narrative still returned, state unchanged. "
                     "last_error=%r",
-                    character_id, verb, retries_used,
-                    "max_retries exhausted" if max_retries is not None
+                    character_id,
+                    verb,
+                    retries_used,
+                    "max_retries exhausted"
+                    if max_retries is not None
                     else "default retries exhausted",
                     mutation_error,
                 )
@@ -491,9 +519,7 @@ class ActionProcessor:
             # others. We pass a single-item list here.
             if mutation is not None and self._state_machine is not None:
                 try:
-                    apply_report = self._state_machine.apply_mutations(
-                        [mutation]
-                    )
+                    apply_report = self._state_machine.apply_mutations([mutation])
                     side_effects.append(
                         {
                             "type": "state_mutation_applied",
@@ -503,9 +529,10 @@ class ActionProcessor:
                     )
                 except Exception as exc:  # noqa: BLE001 — defensive
                     logger.warning(
-                        "apply_mutations failed (non-fatal) for "
-                        "character=%s action=%s: %s",
-                        character_id, action_id, exc,
+                        "apply_mutations failed (non-fatal) for " "character=%s action=%s: %s",
+                        character_id,
+                        action_id,
+                        exc,
                     )
                     side_effects.append(
                         {
@@ -531,14 +558,13 @@ class ActionProcessor:
                         current_state=post_state,
                     )
                     if feed_id is not None:
-                        side_effects.append(
-                            {"type": "memory_fed", "feed_id": feed_id}
-                        )
+                        side_effects.append({"type": "memory_fed", "feed_id": feed_id})
                 except Exception as exc:  # noqa: BLE001
                     logger.warning(
-                        "feed_memory_palace failed (non-fatal) for "
-                        "character=%s action=%s: %s",
-                        character_id, action_id, exc,
+                        "feed_memory_palace failed (non-fatal) for " "character=%s action=%s: %s",
+                        character_id,
+                        action_id,
+                        exc,
                     )
                     side_effects.append(
                         {
@@ -551,11 +577,8 @@ class ActionProcessor:
             # palace's ``remember()`` if it is wired and not
             # already covered by the F3 feed above. This is a
             # no-op when the F3 path already produced a feed_id.
-            if (
-                self.memory_palace is not None
-                and not any(
-                    s.get("type") == "memory_fed" for s in side_effects
-                )
+            if self.memory_palace is not None and not any(
+                s.get("type") == "memory_fed" for s in side_effects
             ):
                 try:
                     # We don't await with strict ordering — a failed
@@ -570,19 +593,15 @@ class ActionProcessor:
                         action_id=action_id,
                     )
                     if memory_id is not None:
-                        side_effects.append(
-                            {"type": "memory_persisted", "memory_id": memory_id}
-                        )
+                        side_effects.append({"type": "memory_persisted", "memory_id": memory_id})
                 except Exception as exc:  # noqa: BLE001
                     logger.warning(
-                        "Memory persist failed (non-fatal) for "
-                        "character=%s action=%s: %s",
-                        character_id, action_id, exc,
+                        "Memory persist failed (non-fatal) for " "character=%s action=%s: %s",
+                        character_id,
+                        action_id,
+                        exc,
                     )
-                    side_effects.append(
-                        {"type": "memory_persist_failed",
-                         "error": str(exc)[:200]}
-                    )
+                    side_effects.append({"type": "memory_persist_failed", "error": str(exc)[:200]})
 
             # 12) Build the response.
             if mutation is not None:
@@ -647,6 +666,7 @@ class ActionProcessor:
             # module-load time (it would create an import cycle for
             # the legacy E1 callers that don't need it).
             from backend.state_machine import SemanticState
+
             return SemanticState(character_id=character_id)
         # The state machine exposes a get_or_create helper.
         get = getattr(self._state_machine, "get_or_create", None)
@@ -659,6 +679,7 @@ class ActionProcessor:
                 return existing
         # Fallback: a fresh empty state.
         from backend.state_machine import SemanticState
+
         return SemanticState(character_id=character_id)
 
     async def _build_system_prompt(
@@ -692,7 +713,8 @@ class ActionProcessor:
                 logger.warning(
                     "PromptBuilder.build() failed (non-fatal) for "
                     "character=%s: %s; using fallback prompt",
-                    character_id, exc,
+                    character_id,
+                    exc,
                 )
         # Fallback: a minimal system prompt with the state at the
         # top. Preserves the F4 "state is always at the top" rule.
@@ -706,8 +728,8 @@ class ActionProcessor:
             "# 角色當前狀態\n"
             f"{state_str}\n\n"
             "# 輸出格式要求\n"
-            "- 輸出 JSON：{\"narrative\": \"<narrative>\", "
-            "\"state_mutations\": <object> | null}\n"
+            '- 輸出 JSON：{"narrative": "<narrative>", '
+            '"state_mutations": <object> | null}\n'
         )
 
     async def _call_llm_with_state_contract(
@@ -751,12 +773,8 @@ class ActionProcessor:
                     "LLM generate() failed (legacy path) for system=%r",
                     system_prompt[:60],
                 )
-                raise LLMUnavailableError(
-                    f"LLM unavailable: {type(exc).__name__}: {exc}"
-                ) from exc
-            narrative = (raw or "").strip() or (
-                "你環顧四周，但沒有發生什麼特別的事。"
-            )
+                raise LLMUnavailableError(f"LLM unavailable: {type(exc).__name__}: {exc}") from exc
+            narrative = (raw or "").strip() or ("你環顧四周，但沒有發生什麼特別的事。")
             elapsed_ms = int((time.monotonic() - t0) * 1000)
             return narrative, None, "state_contract_not_supported", elapsed_ms
 
@@ -773,9 +791,7 @@ class ActionProcessor:
                 "LLM generate_with_state_contract() failed for system=%r",
                 system_prompt[:60],
             )
-            raise LLMUnavailableError(
-                f"LLM unavailable: {type(exc).__name__}: {exc}"
-            ) from exc
+            raise LLMUnavailableError(f"LLM unavailable: {type(exc).__name__}: {exc}") from exc
 
         narrative = (result.get("narrative") or "").strip() or (
             "你環顧四周，但沒有發生什麼特別的事。"

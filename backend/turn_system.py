@@ -127,7 +127,12 @@ class TurnSystem:
         turn_id = str(uuid.uuid4())
         now = _now_iso()
         from datetime import timedelta
-        deadline = (datetime.now(UTC) + timedelta(seconds=deadline_seconds)).isoformat().replace("+00:00", "Z")
+
+        deadline = (
+            (datetime.now(UTC) + timedelta(seconds=deadline_seconds))
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
 
         # Determine round number: max(round_number) + 1, or 1
         conn = self._connect()
@@ -144,8 +149,7 @@ class TurnSystem:
                  player_input_json, submitted_at, deadline)
                 VALUES (?, ?, ?, 'pending', ?, ?, ?)
                 """,
-                (turn_id, character_id, next_round,
-                 json.dumps(player_input), now, deadline),
+                (turn_id, character_id, next_round, json.dumps(player_input), now, deadline),
             )
             conn.commit()
         except Exception:
@@ -272,9 +276,7 @@ class TurnSystem:
         """Retrieve a single turn by ID."""
         conn = self._connect()
         try:
-            row = conn.execute(
-                "SELECT * FROM turns WHERE turn_id = ?", (turn_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM turns WHERE turn_id = ?", (turn_id,)).fetchone()
             return self._row_to_turn(row) if row else None
         finally:
             conn.close()

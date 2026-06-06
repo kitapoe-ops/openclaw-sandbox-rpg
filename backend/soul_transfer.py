@@ -70,18 +70,22 @@ _TAG_PATTERN = re.compile(r"^[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\- ]+$")
 # Source states that mean "the soul does not need to be transferred".
 # Inherits from the legacy invariant: you cannot transfer a perfectly
 # intact soul (or an anchored one). See ANTI_EXPLOIT_RULE_5.
-NON_TRANSFERABLE_TAGS = frozenset({
-    "完好無損",   # perfectly intact
-    "固著",       # anchored
-    "圓滿",       # complete / perfect
-})
+NON_TRANSFERABLE_TAGS = frozenset(
+    {
+        "完好無損",  # perfectly intact
+        "固著",  # anchored
+        "圓滿",  # complete / perfect
+    }
+)
 
 # Source states that mean "the soul is already lost".
-LOST_SOUL_TAGS = frozenset({
-    "死亡",       # dead
-    "魂飛魄散",   # soul destroyed
-    "永久消亡",   # permanently gone
-})
+LOST_SOUL_TAGS = frozenset(
+    {
+        "死亡",  # dead
+        "魂飛魄散",  # soul destroyed
+        "永久消亡",  # permanently gone
+    }
+)
 
 # Default LLM prompt for unknown-state downgrade.
 # The LLM is asked for ONE CJK tag, ≤15 chars, no Latin/punctuation.
@@ -92,7 +96,7 @@ DEFAULT_LLM_DOWNGRADE_PROMPT = (
     "1. 必須是純中文（不含英文字母、emoji、標點）\n"
     "2. 不超過 15 個字\n"
     "3. 比原狀態更差，但不會直接跳到「死亡」\n"
-    "4. 只需回傳 JSON：`{{\"degraded_state\": \"<tag>\"}}`\n"
+    '4. 只需回傳 JSON：`{{"degraded_state": "<tag>"}}`\n'
     "原狀態：{source_state}\n"
     "請輸出降級狀態："
 )
@@ -124,7 +128,6 @@ TIER_DOWNGRADES: dict[str, list[str]] = {
     "輕傷": ["中度傷", "骨折", "流血"],
     "中度傷": ["重傷", "骨折", "失血"],
     "重傷": ["濒死", "重伤昏迷", "大量失血"],
-
     # Limb / body part
     "右手骨折": ["右手重伤", "右手残废", "右手永久伤残"],
     "左臂骨折": ["左臂重伤", "左臂残废", "左臂永久伤残"],
@@ -132,14 +135,12 @@ TIER_DOWNGRADES: dict[str, list[str]] = {
     "雙腿骨折": ["雙腿重伤", "下身瘫痪", "輪椅依賴"],
     "失明": ["半盲", "重度弱視", "完全失明"],
     "聾啞": ["半聾", "重度聽障", "完全聾啞"],
-
     # Mental / morale
     "高興": ["平靜", "焦慮", "低落"],
     "平靜": ["焦慮", "低落", "恐懼"],
     "焦慮": ["恐懼", "崩潰", "絕望"],
     "恐懼": ["崩潰", "絕望", "驚慌失措"],
     "絕望": ["魂飛魄散", "瘋狂", "自我放棄"],
-
     # "Positive" / success states
     "完成": ["半成", "未竟", "失敗"],
     "勝利": ["慘勝", "平局", "失敗"],
@@ -161,7 +162,9 @@ ANTI_EXPLOIT_RULE_3 = "transfer takes one full turn (defer turn-system check to 
 ANTI_EXPLOIT_RULE_4 = "if the new vessel dies within 3 turns, the soul is destroyed"
 ANTI_EXPLOIT_RULE_5 = "source character must be in a transferable state (not NON_TRANSFERABLE_TAGS)"
 ANTI_EXPLOIT_RULE_6 = "anti-predictability: previous transfer result is NOT the new transfer result"
-ANTI_EXPLOIT_RULE_7 = "cross-character memory isolation: soul takes its own memories, not the vessel's"
+ANTI_EXPLOIT_RULE_7 = (
+    "cross-character memory isolation: soul takes its own memories, not the vessel's"
+)
 
 ANTI_EXPLOIT_RULES = (
     ANTI_EXPLOIT_RULE_1,
@@ -204,6 +207,7 @@ class SoulTransferRecord:
     numbers). The "degraded state" is a list of pure-text tags
     (inherited from `SemanticState.tags`).
     """
+
     transfer_id: str
     source_character_id: str
     target_vessel_id: str
@@ -286,13 +290,9 @@ def _validate_tag_strict(tag: str) -> str:
     if not tag.strip():
         raise ValueError("tag is empty or whitespace-only")
     if len(tag) > MAX_TAG_LENGTH:
-        raise ValueError(
-            f"tag too long: {len(tag)} > {MAX_TAG_LENGTH} chars ({tag!r})"
-        )
+        raise ValueError(f"tag too long: {len(tag)} > {MAX_TAG_LENGTH} chars ({tag!r})")
     if not _TAG_PATTERN.match(tag):
-        raise ValueError(
-            f"invalid characters in tag (CJK + space + hyphen only): {tag!r}"
-        )
+        raise ValueError(f"invalid characters in tag (CJK + space + hyphen only): {tag!r}")
     return tag
 
 
@@ -327,7 +327,7 @@ class SemanticSoulTransfer:
     def __init__(
         self,
         memory_palace: Any = None,  # MemoryPalace or None
-        llm_client: Any = None,     # LLMClient or None
+        llm_client: Any = None,  # LLMClient or None
         memory_isolation_guard: Any = None,  # MemoryIsolationGuard or None
         soul_db_path: str | None = None,
         rng_seed: int | None = None,
@@ -339,9 +339,7 @@ class SemanticSoulTransfer:
         self.memory_isolation_guard = memory_isolation_guard
         self.rng = random.Random(rng_seed)
         self.tier_downgrades: dict[str, list[str]] = dict(tier_downgrades or TIER_DOWNGRADES)
-        self.non_transferable_tags: frozenset = (
-            non_transferable_tags or NON_TRANSFERABLE_TAGS
-        )
+        self.non_transferable_tags: frozenset = non_transferable_tags or NON_TRANSFERABLE_TAGS
 
         # Anti-predictability: track last result per vessel_id.
         # vessel_id -> last_downgraded_to (str) or None
@@ -353,9 +351,7 @@ class SemanticSoulTransfer:
 
         # Storage path
         if soul_db_path is None and memory_palace is not None and hasattr(memory_palace, "db_path"):
-            soul_db_path = str(
-                Path(memory_palace.db_path).parent / "soul_transfers.db"
-            )
+            soul_db_path = str(Path(memory_palace.db_path).parent / "soul_transfers.db")
         elif soul_db_path is None:
             soul_db_path = ":memory:"
         self.soul_db_path = soul_db_path
@@ -442,15 +438,13 @@ class SemanticSoulTransfer:
         # assume it has a soul. The caller can pass an empty list
         # for a fresh vessel.
         vessel_active_tags = [
-            t for t in target_vessel_state
-            if t not in ("空容器", "無魂", "vessel_empty", "")
+            t for t in target_vessel_state if t not in ("空容器", "無魂", "vessel_empty", "")
         ]
         if vessel_active_tags:
             return {
                 "allowed": False,
                 "reason": (
-                    f"vessel already has an active soul "
-                    f"(tags: {vessel_active_tags[:3]})"
+                    f"vessel already has an active soul " f"(tags: {vessel_active_tags[:3]})"
                 ),
                 "rule": ANTI_EXPLOIT_RULE_2,
             }
@@ -460,17 +454,13 @@ class SemanticSoulTransfer:
             if tag in self.non_transferable_tags:
                 return {
                     "allowed": False,
-                    "reason": (
-                        f"source is in non-transferable state: {tag!r}"
-                    ),
+                    "reason": (f"source is in non-transferable state: {tag!r}"),
                     "rule": ANTI_EXPLOIT_RULE_5,
                 }
             if tag in LOST_SOUL_TAGS:
                 return {
                     "allowed": False,
-                    "reason": (
-                        f"source soul is already lost: {tag!r}"
-                    ),
+                    "reason": (f"source soul is already lost: {tag!r}"),
                     "rule": ANTI_EXPLOIT_RULE_5,
                 }
 
@@ -478,7 +468,8 @@ class SemanticSoulTransfer:
             "allowed": True,
             "reason": "all rules passed",
             "rules_checked": [
-                ANTI_EXPLOIT_RULE_1, ANTI_EXPLOIT_RULE_2,
+                ANTI_EXPLOIT_RULE_1,
+                ANTI_EXPLOIT_RULE_2,
                 ANTI_EXPLOIT_RULE_5,
             ],
         }
@@ -531,7 +522,8 @@ class SemanticSoulTransfer:
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "soul_transfer: LLM downgrade call failed for %r: %s",
-                source_tag, exc,
+                source_tag,
+                exc,
             )
             return None
 
@@ -551,7 +543,8 @@ class SemanticSoulTransfer:
         except ValueError as exc:
             logger.warning(
                 "soul_transfer: LLM returned invalid tag %r: %s",
-                candidate, exc,
+                candidate,
+                exc,
             )
             return None
 
@@ -670,10 +663,7 @@ class SemanticSoulTransfer:
         )
 
         # 3. Memory isolation check (rule 7)
-        if (
-            self.memory_isolation_guard is not None
-            and requester_id is not None
-        ):
+        if self.memory_isolation_guard is not None and requester_id is not None:
             try:
                 self.memory_isolation_guard.require(
                     requester_id=requester_id,
@@ -682,9 +672,7 @@ class SemanticSoulTransfer:
                     op="read",
                 )
             except Exception as exc:  # noqa: BLE001
-                raise SoulTransferNotAllowedError(
-                    f"memory isolation denied: {exc}"
-                ) from exc
+                raise SoulTransferNotAllowedError(f"memory isolation denied: {exc}") from exc
 
         carried = list(carried_memories or [])
 
@@ -704,8 +692,10 @@ class SemanticSoulTransfer:
                 "anti_exploit_check": check,
                 "degradation": degradation,
                 "rules_evaluated": [
-                    ANTI_EXPLOIT_RULE_1, ANTI_EXPLOIT_RULE_2,
-                    ANTI_EXPLOIT_RULE_5, ANTI_EXPLOIT_RULE_6,
+                    ANTI_EXPLOIT_RULE_1,
+                    ANTI_EXPLOIT_RULE_2,
+                    ANTI_EXPLOIT_RULE_5,
+                    ANTI_EXPLOIT_RULE_6,
                     ANTI_EXPLOIT_RULE_7,
                 ],
             },
@@ -891,8 +881,12 @@ __all__ = [
     "DEFAULT_LLM_DOWNGRADE_PROMPT",
     "TIER_DOWNGRADES",
     # Anti-exploit rules
-    "ANTI_EXPLOIT_RULE_1", "ANTI_EXPLOIT_RULE_2", "ANTI_EXPLOIT_RULE_3",
-    "ANTI_EXPLOIT_RULE_4", "ANTI_EXPLOIT_RULE_5", "ANTI_EXPLOIT_RULE_6",
+    "ANTI_EXPLOIT_RULE_1",
+    "ANTI_EXPLOIT_RULE_2",
+    "ANTI_EXPLOIT_RULE_3",
+    "ANTI_EXPLOIT_RULE_4",
+    "ANTI_EXPLOIT_RULE_5",
+    "ANTI_EXPLOIT_RULE_6",
     "ANTI_EXPLOIT_RULE_7",
     "ANTI_EXPLOIT_RULES",
     # Errors

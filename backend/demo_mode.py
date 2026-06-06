@@ -140,6 +140,7 @@ def _test_db_connection() -> bool:
     # default for the first call — subsequent calls hit the cache.
     try:
         import asyncio
+
         asyncio.get_running_loop()
         # Loop is running — cannot probe synchronously. Default to
         # "unreachable" (demo mode) and cache the result.
@@ -159,7 +160,10 @@ def _test_db_connection() -> bool:
 
         async def check():
             engine = create_async_engine(
-                os.getenv("DATABASE_URL", "postgresql+asyncpg://rpg_user:***password@localhost/sandbox_rpg"),
+                os.getenv(
+                    "DATABASE_URL",
+                    "postgresql+asyncpg://rpg_user:***password@localhost/sandbox_rpg",
+                ),
                 pool_pre_ping=False,
             )
             try:

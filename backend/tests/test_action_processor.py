@@ -53,9 +53,7 @@ from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 
 # Ensure repo root on sys.path (same idiom as other backend tests).
-_REPO_ROOT = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)
-)
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
@@ -81,10 +79,7 @@ def canned_narrative() -> str:
     ``{"narrative": str, "state_mutations": {...} | null}`` shape.
     Tests that exercise the narrative path get ``narrative`` and
     ``mutation=None`` (no state change)."""
-    return (
-        '{"narrative": "你環顧四周，鎮上空無一人，遠處傳來狼嚎。", '
-        '"state_mutations": null}'
-    )
+    return '{"narrative": "你環顧四周，鎮上空無一人，遠處傳來狼嚎。", ' '"state_mutations": null}'
 
 
 @pytest.fixture
@@ -104,9 +99,7 @@ def mock_palace() -> AsyncMock:
     memory_id string.
     """
     palace = AsyncMock()
-    palace.remember = AsyncMock(
-        side_effect=lambda **kwargs: f"mem_{uuid.uuid4().hex[:8]}"
-    )
+    palace.remember = AsyncMock(side_effect=lambda **kwargs: f"mem_{uuid.uuid4().hex[:8]}")
     return palace
 
 
@@ -121,9 +114,7 @@ def fresh_processor(mock_llm: MockLLMClient, mock_palace: AsyncMock) -> ActionPr
 
 
 @pytest_asyncio.fixture
-async def e1_client(
-    mock_llm: MockLLMClient, mock_palace: AsyncMock
-) -> AsyncIterator[AsyncClient]:
+async def e1_client(mock_llm: MockLLMClient, mock_palace: AsyncMock) -> AsyncIterator[AsyncClient]:
     """Yield an AsyncClient bound to the *composed* app.
 
     We monkey-patch the module-level ``_e1_processor`` so the
@@ -154,7 +145,8 @@ async def e1_client(
 
 @pytest.mark.asyncio
 async def test_process_simple_action_returns_narrative(
-    fresh_processor: ActionProcessor, canned_narrative: str,
+    fresh_processor: ActionProcessor,
+    canned_narrative: str,
 ) -> None:
     """POST a valid payload, get back a non-empty narrative string.
 
@@ -165,6 +157,7 @@ async def test_process_simple_action_returns_narrative(
     ``None`` and ``mutation_error`` is ``None``.
     """
     import json as _json
+
     parsed = _json.loads(canned_narrative)
     expected_narrative = parsed["narrative"]
 
@@ -196,7 +189,8 @@ async def test_process_simple_action_returns_narrative(
 
 @pytest.mark.asyncio
 async def test_process_persists_to_memory_palace(
-    fresh_processor: ActionProcessor, mock_palace: AsyncMock,
+    fresh_processor: ActionProcessor,
+    mock_palace: AsyncMock,
 ) -> None:
     """After a successful process(), the mock palace's remember() was called."""
     await fresh_processor.process(
@@ -264,8 +258,7 @@ async def test_process_missing_character_id_returns_422(
     # Pydantic surfaces the missing field.
     assert "detail" in body
     assert any(
-        "character_id" in str(err.get("loc", []))
-        for err in body["detail"]
+        "character_id" in str(err.get("loc", [])) for err in body["detail"]
     ), f"expected character_id error, got {body['detail']!r}"
 
 
@@ -276,7 +269,8 @@ async def test_process_missing_character_id_returns_422(
 
 @pytest.mark.asyncio
 async def test_process_uses_mock_llm_client(
-    fresh_processor: ActionProcessor, mock_llm: MockLLMClient,
+    fresh_processor: ActionProcessor,
+    mock_llm: MockLLMClient,
 ) -> None:
     """The processor delegates generation to the injected LLM client.
 
@@ -323,9 +317,7 @@ async def test_process_handles_llm_failure_gracefully(
     LLM call surfaces as ``LLMUnavailableError`` → 500.
     """
     failing_llm = AsyncMock()
-    failing_llm.generate = AsyncMock(
-        side_effect=RuntimeError("MiniMax-M3 timed out (simulated)")
-    )
+    failing_llm.generate = AsyncMock(side_effect=RuntimeError("MiniMax-M3 timed out (simulated)"))
     failing_llm.generate_with_state_contract = AsyncMock(
         side_effect=RuntimeError("MiniMax-M3 timed out (simulated)")
     )
@@ -392,19 +384,13 @@ async def test_process_concurrent_actions_serialized() -> None:
     # Slow LLM that records start time of each state-contract call.
     call_starts: list[float] = []
 
-    slow_canned = (
-        '{"narrative": "Slow narrative.", "state_mutations": null}'
-    )
+    slow_canned = '{"narrative": "Slow narrative.", "state_mutations": null}'
 
     class _SlowMock(MockLLMClient):
-        async def generate_with_state_contract(
-            self, *args: Any, **kwargs: Any
-        ) -> dict[str, Any]:
+        async def generate_with_state_contract(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
             call_starts.append(time.monotonic())
             await asyncio.sleep(0.1)  # 100ms — enough to overlap
-            return await super().generate_with_state_contract(
-                *args, **kwargs
-            )
+            return await super().generate_with_state_contract(*args, **kwargs)
 
     slow_llm = _SlowMock(canned_response=slow_canned)
     processor = ActionProcessor(
@@ -498,7 +484,9 @@ def test_process_action_request_validation() -> None:
 
     # With target + args.
     req2 = ProcessActionRequest(
-        character_id="c1", verb="attack", target="goblin",
+        character_id="c1",
+        verb="attack",
+        target="goblin",
         args={"weapon": "sword"},
     )
     assert req2.target == "goblin"
@@ -533,6 +521,7 @@ def test_build_default_processor_uses_mock_by_default(
     assert isinstance(proc.turn_system, InMemoryTurnSystem)
     # The default LLM client is MockLLMClient (no api key set).
     from backend.llm_client import MockLLMClient as _MLC
+
     assert isinstance(proc.llm_client, _MLC)
 
 
@@ -552,31 +541,21 @@ async def test_process_calls_prompt_builder_before_llm() -> None:
     call_order: list[str] = []
 
     class _OrderLLM(MockLLMClient):
-        async def generate_with_state_contract(
-            self, *args: Any, **kwargs: Any
-        ) -> dict[str, Any]:
+        async def generate_with_state_contract(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
             call_order.append("llm")
-            return await super().generate_with_state_contract(
-                *args, **kwargs
-            )
+            return await super().generate_with_state_contract(*args, **kwargs)
 
     class _OrderBuilder:
         def __init__(self) -> None:
             self.calls = 0
 
-        async def build(
-            self, character_id: str, current_state: Any, action_context: Any
-        ) -> str:
+        async def build(self, character_id: str, current_state: Any, action_context: Any) -> str:
             self.calls += 1
             call_order.append("builder")
             return "BUILDER_PROMPT"
 
     builder = _OrderBuilder()
-    llm = _OrderLLM(
-        canned_response=(
-            '{"narrative": "hi", "state_mutations": null}'
-        )
-    )
+    llm = _OrderLLM(canned_response=('{"narrative": "hi", "state_mutations": null}'))
     proc = ActionProcessor(
         llm_client=llm,
         memory_palace=None,
@@ -696,9 +675,7 @@ async def test_process_drops_invalid_mutation() -> None:
     # The character's state is UNCHANGED.
     state_after = sm.get("char_bob")
     assert state_after is not None
-    assert state_after.tags == ["健康"], (
-        f"state must be unchanged, got {state_after.tags!r}"
-    )
+    assert state_after.tags == ["健康"], f"state must be unchanged, got {state_after.tags!r}"
 
 
 @pytest.mark.asyncio
@@ -726,10 +703,7 @@ async def test_process_feeds_memory_palace_with_state_anchor() -> None:
 
     sm._memory_palace = palace_mock  # type: ignore[attr-defined]
 
-    canned = (
-        '{"narrative": "Carol walks into the forest.", '
-        '"state_mutations": null}'
-    )
+    canned = '{"narrative": "Carol walks into the forest.", ' '"state_mutations": null}'
     llm = MockLLMClient(canned_response=canned)
     proc = ActionProcessor(
         llm_client=llm,
@@ -748,13 +722,9 @@ async def test_process_feeds_memory_palace_with_state_anchor() -> None:
     kwargs = remember_mock.await_args.kwargs
     assert kwargs["character_id"] == "carol"
     feed = kwargs["content"]
-    assert feed.startswith("state="), (
-        f"feed must start with state= anchor, got {feed!r}"
-    )
+    assert feed.startswith("state="), f"feed must start with state= anchor, got {feed!r}"
     # Bounded length (F1 D3 cap: 127 chars).
-    assert len(feed) <= 127, (
-        f"feed length {len(feed)} exceeds 127-char cap: {feed!r}"
-    )
+    assert len(feed) <= 127, f"feed length {len(feed)} exceeds 127-char cap: {feed!r}"
     # The state tags appear in the anchor.
     assert "健康" in feed or "平靜" in feed
     # The narrative appears in the feed (truncated to 200 chars).

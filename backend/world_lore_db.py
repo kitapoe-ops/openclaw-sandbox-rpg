@@ -106,7 +106,9 @@ class WorldLoreDB:
         loc = self.get_location(location_id)
         if not loc:
             return []
-        return [self.items[item_id] for item_id in loc.get("items_present", []) if item_id in self.items]
+        return [
+            self.items[item_id] for item_id in loc.get("items_present", []) if item_id in self.items
+        ]
 
     def get_world_parameter(self, param_id: str) -> dict[str, Any] | None:
         return self.world_parameters.get(param_id)
@@ -187,9 +189,7 @@ class WorldLoreDB:
             "nearby_npcs": self.get_npcs_in_location(location_id),
             "nearby_items": self.get_items_in_location(location_id),
             "active_world_parameters": {
-                p["id"]: p
-                for p in self.world_parameters.values()
-                if p.get("current_level", 0) > 0
+                p["id"]: p for p in self.world_parameters.values() if p.get("current_level", 0) > 0
             },
             "eternal_rules": getattr(self, "eternal_rules", []),
         }

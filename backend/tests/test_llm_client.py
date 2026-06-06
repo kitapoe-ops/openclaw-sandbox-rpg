@@ -68,14 +68,14 @@ from backend.llm_client import (  # noqa: E402
 def test_abstract_class_cannot_instantiate():
     """LLMClient declares generate/chat/health as abstract; instantiating
     it directly must raise TypeError."""
-    assert hasattr(LLMClient, "__abstractmethods__"), (
-        "LLMClient should use abc.ABC + @abstractmethod"
-    )
+    assert hasattr(
+        LLMClient, "__abstractmethods__"
+    ), "LLMClient should use abc.ABC + @abstractmethod"
     # The set must include the 3 documented abstract methods.
     abstract = LLMClient.__abstractmethods__
-    assert {"generate", "chat", "health"}.issubset(abstract), (
-        f"LLMClient missing expected abstract methods; got {abstract}"
-    )
+    assert {"generate", "chat", "health"}.issubset(
+        abstract
+    ), f"LLMClient missing expected abstract methods; got {abstract}"
     with pytest.raises(TypeError):
         LLMClient()  # type: ignore[abstract]
 
@@ -291,9 +291,7 @@ async def test_retry_on_429(monkeypatch):
         client_mock.post = post_mock
         yield client_mock
 
-    monkeypatch.setattr(
-        "backend.llm_client.httpx.AsyncClient", fake_async_client_cm
-    )
+    monkeypatch.setattr("backend.llm_client.httpx.AsyncClient", fake_async_client_cm)
 
     text, meta = await client.chat_with_meta(
         messages=[{"role": "user", "content": "hi"}],
@@ -337,9 +335,7 @@ async def test_retry_exhausted_raises(monkeypatch):
         client_mock.post = post_mock
         yield client_mock
 
-    monkeypatch.setattr(
-        "backend.llm_client.httpx.AsyncClient", fake_async_client_cm
-    )
+    monkeypatch.setattr("backend.llm_client.httpx.AsyncClient", fake_async_client_cm)
 
     with pytest.raises(RuntimeError, match="failed after"):
         await client.chat_with_meta(
@@ -374,9 +370,7 @@ async def test_response_cache_hit_no_second_call(monkeypatch):
         client_mock.post = post_mock
         yield client_mock
 
-    monkeypatch.setattr(
-        "backend.llm_client.httpx.AsyncClient", fake_async_client_cm
-    )
+    monkeypatch.setattr("backend.llm_client.httpx.AsyncClient", fake_async_client_cm)
 
     messages = [{"role": "user", "content": "stable prompt"}]
     text1, meta1 = await client.chat_with_meta(messages, temperature=0.5, max_tokens=100)
@@ -395,7 +389,9 @@ async def test_response_cache_hit_no_second_call(monkeypatch):
     assert post_mock.await_count == 2
 
     # use_cache=False must skip the cache.
-    text4, meta4 = await client.chat_with_meta(messages, temperature=0.5, max_tokens=100, use_cache=False)
+    text4, meta4 = await client.chat_with_meta(
+        messages, temperature=0.5, max_tokens=100, use_cache=False
+    )
     assert meta4["cached"] is False
     assert post_mock.await_count == 3
 
@@ -447,9 +443,7 @@ async def test_minimax_handles_reasoning_content_separately(monkeypatch):
         client_mock.post = post_mock
         yield client_mock
 
-    monkeypatch.setattr(
-        "backend.llm_client.httpx.AsyncClient", fake_async_client_cm
-    )
+    monkeypatch.setattr("backend.llm_client.httpx.AsyncClient", fake_async_client_cm)
 
     text, meta = await client.chat_with_meta(
         messages=[{"role": "user", "content": "begin"}],
@@ -458,7 +452,9 @@ async def test_minimax_handles_reasoning_content_separately(monkeypatch):
 
     # (a) The returned text is exactly the visible content — no leak.
     assert text == visible_text
-    assert reasoning_text not in text, "reasoning_content must not be concatenated into the visible text"
+    assert (
+        reasoning_text not in text
+    ), "reasoning_content must not be concatenated into the visible text"
 
     # (b) Reasoning is surfaced via meta, separately.
     assert meta.get("reasoning_content") == reasoning_text
@@ -495,9 +491,7 @@ async def test_minimax_handles_missing_reasoning_content(monkeypatch):
         client_mock.post = post_mock
         yield client_mock
 
-    monkeypatch.setattr(
-        "backend.llm_client.httpx.AsyncClient", fake_async_client_cm
-    )
+    monkeypatch.setattr("backend.llm_client.httpx.AsyncClient", fake_async_client_cm)
 
     text, meta = await client.chat_with_meta(
         messages=[{"role": "user", "content": "hi"}],
@@ -568,9 +562,7 @@ async def test_generate_with_state_contract_invalid_json() -> None:
     )
     assert result["mutation"] is None
     assert result["error"] is not None
-    assert "no_state_mutations_json" in result["error"] or (
-        result["error"] is not None
-    )
+    assert "no_state_mutations_json" in result["error"] or (result["error"] is not None)
     # The raw response is preserved for debugging.
     assert result["raw"] == "The goblin runs away."
     # The validator returns the parsed dict (None on parse failure).
@@ -617,9 +609,7 @@ async def test_generate_with_state_contract_oversized_tag_rejected() -> None:
     # Sanity: verify the fixture is actually oversized. If a future
     # change relaxes the 15-char cap, this test will start failing
     # on the sanity check before it can prove the rejection path.
-    assert len(oversized_tag) > 15, (
-        f"fixture is not oversized: len={len(oversized_tag)}"
-    )
+    assert len(oversized_tag) > 15, f"fixture is not oversized: len={len(oversized_tag)}"
     payload = (
         '{"narrative": "ok", '
         '"state_mutations": {'

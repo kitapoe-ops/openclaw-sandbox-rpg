@@ -99,13 +99,13 @@ logger = logging.getLogger(__name__)
 class AuditVerdict(str, Enum):
     """Lifecycle states for an audit request."""
 
-    PENDING = "pending"          # In queue, not started
+    PENDING = "pending"  # In queue, not started
     IN_PROGRESS = "in_progress"  # Worker picked it up
-    PASS = "pass"                # R1 returned PASS
+    PASS = "pass"  # R1 returned PASS
     CONDITIONAL = "conditional"  # R1 returned CONDITIONAL
-    FAIL = "fail"                # R1 returned FAIL or BLOCK
-    ERROR = "error"              # Worker caught an exception
-    TIMEOUT = "timeout"          # Exceeded per-request timeout
+    FAIL = "fail"  # R1 returned FAIL or BLOCK
+    ERROR = "error"  # Worker caught an exception
+    TIMEOUT = "timeout"  # Exceeded per-request timeout
 
     @classmethod
     def from_r1_verdict(cls, raw: str) -> AuditVerdict:
@@ -129,7 +129,7 @@ class AuditVerdict(str, Enum):
 class BackpressurePolicy(str, Enum):
     """What to do when the bounded queue is full."""
 
-    BLOCK = "block"        # submit() blocks until space is available
+    BLOCK = "block"  # submit() blocks until space is available
     FAIL_FAST = "fail_fast"  # submit() raises asyncio.QueueFull
     DROP_OLDEST = "drop_oldest"  # Pop the oldest pending item to make room
 
@@ -152,7 +152,7 @@ class AuditRequest:
     target_files: list[str]
     concerns: list[str]
     context: dict[str, Any] | None = None
-    request_id: str = ""           # set by submit() if empty
+    request_id: str = ""  # set by submit() if empty
     submitted_at: float = field(default_factory=time.time)
     deadline: float | None = None  # unix timestamp
 
@@ -419,9 +419,7 @@ class AsyncAuditQueue:
             if result.is_terminal:
                 return result
             if deadline is not None and time.monotonic() >= deadline:
-                raise TimeoutError(
-                    f"audit {request_id} did not complete within {timeout}s"
-                )
+                raise TimeoutError(f"audit {request_id} did not complete within {timeout}s")
             await asyncio.sleep(poll_interval)
 
     def get_status(self, request_id: str) -> AuditVerdict:
@@ -613,9 +611,7 @@ def get_audit_queue(
         return audit_queue
 
     if r1_client is None:
-        raise ValueError(
-            "r1_client is required for the first call to get_audit_queue()"
-        )
+        raise ValueError("r1_client is required for the first call to get_audit_queue()")
 
     audit_queue = AsyncAuditQueue(r1_client=r1_client, **kwargs)
     return audit_queue

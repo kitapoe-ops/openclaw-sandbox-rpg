@@ -44,6 +44,7 @@ class ChoiceValidator:
         # 1. Schema validation
         try:
             from ..docs.SCHEMAS.player_input_schema import PLAYER_INPUT_SCHEMA
+
             validate(instance=player_input, schema=PLAYER_INPUT_SCHEMA)
         except (ImportError, ValidationError) as e:
             errors.append(f"Schema validation failed: {e}")
@@ -70,12 +71,17 @@ class ChoiceValidator:
         # 5. Item usage validity
         items_used = player_input.get("items_used", [])
         if items_used:
-            character_items = {i["item_id"]: i.get("quantity", 1) for i in character_state.get("inventory", {}).get("items", [])}
+            character_items = {
+                i["item_id"]: i.get("quantity", 1)
+                for i in character_state.get("inventory", {}).get("items", [])
+            }
             for used in items_used:
                 item_id = used["item_id"]
                 qty = used["quantity"]
                 if character_items.get(item_id, 0) < qty:
-                    errors.append(f"Insufficient quantity of '{item_id}' (need {qty}, have {character_items.get(item_id, 0)})")
+                    errors.append(
+                        f"Insufficient quantity of '{item_id}' (need {qty}, have {character_items.get(item_id, 0)})"
+                    )
 
         # 6. Physics lock
         if available_choices and option_id:

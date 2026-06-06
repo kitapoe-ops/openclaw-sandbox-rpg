@@ -53,9 +53,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 # Ensure repo root on sys.path (same idiom as other backend tests).
-_REPO_ROOT = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)
-)
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
@@ -286,12 +284,7 @@ async def test_concurrent_add_player_serialized() -> None:
     check (``len() < 4``) and the scene would overflow.
     """
     scene = MultiplayerScene("s1", max_players=4)
-    results = await asyncio.gather(
-        *[
-            scene.add_player(f"p{i}", f"char_{i}")
-            for i in range(8)
-        ]
-    )
+    results = await asyncio.gather(*[scene.add_player(f"p{i}", f"char_{i}") for i in range(8)])
     succeeded = sum(1 for r in results if r is True)
     failed = sum(1 for r in results if r is False)
     assert succeeded == 4, f"expected exactly 4 successes, got {succeeded}"
@@ -312,12 +305,8 @@ async def test_authorize_own_character(
     """Guard: requester may read+write their own character."""
     scene = await fresh_registry.get_or_create("s1")
     await scene.add_player("p_alice", "char_alice")
-    assert fresh_guard.authorize(
-        "p_alice", "s1", "char_alice", op="read"
-    ) is True
-    assert fresh_guard.authorize(
-        "p_alice", "s1", "char_alice", op="write"
-    ) is True
+    assert fresh_guard.authorize("p_alice", "s1", "char_alice", op="read") is True
+    assert fresh_guard.authorize("p_alice", "s1", "char_alice", op="write") is True
     # And ``require()`` does not raise.
     fresh_guard.require("p_alice", "s1", "char_alice", op="read")
 
@@ -336,12 +325,8 @@ async def test_authorize_other_character_denied(
     scene = await fresh_registry.get_or_create("s1")
     await scene.add_player("p_alice", "char_alice")
     await scene.add_player("p_bob", "char_bob")
-    assert fresh_guard.authorize(
-        "p_alice", "s1", "char_bob", op="read"
-    ) is False
-    assert fresh_guard.authorize(
-        "p_alice", "s1", "char_bob", op="write"
-    ) is False
+    assert fresh_guard.authorize("p_alice", "s1", "char_bob", op="read") is False
+    assert fresh_guard.authorize("p_alice", "s1", "char_bob", op="write") is False
     # ``require()`` raises MemoryIsolationError (subclass of PermissionError).
     with pytest.raises(MemoryIsolationError):
         fresh_guard.require("p_alice", "s1", "char_bob", op="read")
@@ -358,14 +343,10 @@ async def test_authorize_npc_character_allowed(
     scene = await fresh_registry.get_or_create("s1")
     await scene.add_player("p_alice", "char_alice")
     await scene.add_npc("npc_x", "char_x", "loc_tavern")
-    assert fresh_guard.authorize(
-        "p_alice", "s1", "char_x", op="read"
-    ) is True
+    assert fresh_guard.authorize("p_alice", "s1", "char_x", op="read") is True
     # Writes to NPC are denied (only the DM/action pipeline can
     # write to NPC memories, not players).
-    assert fresh_guard.authorize(
-        "p_alice", "s1", "char_x", op="write"
-    ) is False
+    assert fresh_guard.authorize("p_alice", "s1", "char_x", op="write") is False
     with pytest.raises(MemoryIsolationError):
         fresh_guard.require("p_alice", "s1", "char_x", op="write")
 
@@ -376,9 +357,7 @@ async def test_authorize_unknown_scene_denied(
 ) -> None:
     """Guard: unknown scene → fail-closed, ``require()`` raises."""
     # Scene does not exist
-    assert fresh_guard.authorize(
-        "p_alice", "ghost_scene", "char_x", op="read"
-    ) is False
+    assert fresh_guard.authorize("p_alice", "ghost_scene", "char_x", op="read") is False
     # Empty / None inputs are also denied.
     assert fresh_guard.authorize("", "s1", "char_x", op="read") is False
     assert fresh_guard.authorize("p_alice", "", "char_x", op="read") is False
@@ -400,6 +379,7 @@ async def test_wrap_memory_palace_blocks_unauthorized() -> None:
         :class:`MemoryIsolationError` (the underlying stub is
         NOT called).
     """
+
     # Stub memory palace with the same surface as Phase A +
     # Phase C2. AsyncMock auto-creates attributes on access.
     class StubPalace:
@@ -418,9 +398,7 @@ async def test_wrap_memory_palace_blocks_unauthorized() -> None:
     guard = MemoryIsolationGuard(scene_registry=registry)
 
     stub = StubPalace()
-    wrapped = guard.wrap_memory_palace(
-        stub, scene_id="s1", requester_id="p_alice"
-    )
+    wrapped = guard.wrap_memory_palace(stub, scene_id="s1", requester_id="p_alice")
 
     # Own-character write: passes through, stub is called once.
     res = await wrapped.remember("char_alice", content="hello")
@@ -480,9 +458,7 @@ async def http_client():
     from backend.app_with_memory import app
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(
-        transport=transport, base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
 
 
@@ -526,9 +502,7 @@ async def test_http_create_and_join_scene_end_to_end(
     assert r.json()["player_count"] == 2
 
     # List players
-    r = await http_client.get(
-        f"/api/scene-multiplayer/{scene_id}/players"
-    )
+    r = await http_client.get(f"/api/scene-multiplayer/{scene_id}/players")
     assert r.status_code == 200
     listing = r.json()
     assert listing["count"] == 2
@@ -536,16 +510,12 @@ async def test_http_create_and_join_scene_end_to_end(
     assert pids == {"p1", "p2"}
 
     # Leave player 1
-    r = await http_client.post(
-        f"/api/scene-multiplayer/{scene_id}/player/p1/leave"
-    )
+    r = await http_client.post(f"/api/scene-multiplayer/{scene_id}/player/p1/leave")
     assert r.status_code == 200
     assert r.json()["removed"] is True
 
     # List → 1 player left
-    r = await http_client.get(
-        f"/api/scene-multiplayer/{scene_id}/players"
-    )
+    r = await http_client.get(f"/api/scene-multiplayer/{scene_id}/players")
     assert r.json()["count"] == 1
 
 
@@ -557,9 +527,7 @@ async def test_http_turn_queue_roundtrip(
     scene_id = "http_turn_scene_1"
 
     # Create + add player
-    await http_client.post(
-        f"/api/scene-multiplayer/{scene_id}/create"
-    )
+    await http_client.post(f"/api/scene-multiplayer/{scene_id}/create")
     await http_client.post(
         f"/api/scene-multiplayer/{scene_id}/player/p1/join",
         params={"character_id": "char_alice"},
@@ -582,15 +550,11 @@ async def test_http_turn_queue_roundtrip(
     assert r2.json()["queue_size"] == 2
 
     # Queue size endpoint
-    r = await http_client.get(
-        f"/api/scene-multiplayer/{scene_id}/turn/queue-size"
-    )
+    r = await http_client.get(f"/api/scene-multiplayer/{scene_id}/turn/queue-size")
     assert r.json()["queue_size"] == 2
 
     # Process first ticket
-    r = await http_client.post(
-        f"/api/scene-multiplayer/{scene_id}/turn/process"
-    )
+    r = await http_client.post(f"/api/scene-multiplayer/{scene_id}/turn/process")
     assert r.status_code == 200
     body = r.json()
     assert body["ticket"] is not None
@@ -598,17 +562,13 @@ async def test_http_turn_queue_roundtrip(
     assert body["queue_size"] == 1
 
     # Process second ticket
-    r = await http_client.post(
-        f"/api/scene-multiplayer/{scene_id}/turn/process"
-    )
+    r = await http_client.post(f"/api/scene-multiplayer/{scene_id}/turn/process")
     body = r.json()
     assert body["ticket"]["action"]["verb"] == "move"
     assert body["queue_size"] == 0
 
     # Process on empty queue returns ticket=None
-    r = await http_client.post(
-        f"/api/scene-multiplayer/{scene_id}/turn/process"
-    )
+    r = await http_client.post(f"/api/scene-multiplayer/{scene_id}/turn/process")
     assert r.json()["ticket"] is None
 
 
@@ -717,15 +677,9 @@ async def test_http_unknown_scene_returns_404(
     http_client: AsyncClient,
 ) -> None:
     """Endpoints on a never-created scene → 404."""
-    r = await http_client.get(
-        "/api/scene-multiplayer/never_created_scene/players"
-    )
+    r = await http_client.get("/api/scene-multiplayer/never_created_scene/players")
     assert r.status_code == 404
-    r = await http_client.get(
-        "/api/scene-multiplayer/never_created_scene/npcs"
-    )
+    r = await http_client.get("/api/scene-multiplayer/never_created_scene/npcs")
     assert r.status_code == 404
-    r = await http_client.get(
-        "/api/scene-multiplayer/never_created_scene/turn/queue-size"
-    )
+    r = await http_client.get("/api/scene-multiplayer/never_created_scene/turn/queue-size")
     assert r.status_code == 404

@@ -21,9 +21,7 @@ import pytest
 import pytest_asyncio
 
 # Ensure backend on sys.path
-_PROJECT_ROOT = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)
-)
+_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
@@ -38,6 +36,7 @@ async def memory_palace(tmp_path):
     """Fresh MemoryPalace with a per-test SQLite file."""
     db_path = tmp_path / "memory_palace_test.db"
     from backend.memory_palace import MemoryPalace
+
     palace = MemoryPalace(db_path=str(db_path))
     yield palace
     # Cleanup happens automatically when tmp_path is removed
@@ -53,6 +52,7 @@ class TestEnums:
 
     def test_memory_type_has_4_values(self):
         from backend.memory_palace import MemoryType
+
         assert len(MemoryType) == 4
         assert MemoryType.EPISODIC.value == "episodic"
         assert MemoryType.SEMANTIC.value == "semantic"
@@ -61,6 +61,7 @@ class TestEnums:
 
     def test_memory_source_has_4_values(self):
         from backend.memory_palace import MemorySource
+
         assert len(MemorySource) == 4
         assert MemorySource.SCENE.value == "scene"
         assert MemorySource.CHOICE.value == "choice"
@@ -70,6 +71,7 @@ class TestEnums:
     def test_enums_are_orthogonal(self):
         """A memory can be e.g. EMOTIONAL + PLAYER_DIRECT (later) or EMOTIONAL + CHOICE."""
         from backend.memory_palace import MemorySource, MemoryType
+
         # All 16 combinations should be valid
         for mt in MemoryType:
             for ms in MemorySource:
@@ -88,6 +90,7 @@ class TestMemoryFragment:
 
     def test_valid_construction(self):
         from backend.memory_palace import MemoryFragment, MemorySource, MemoryType
+
         m = MemoryFragment(
             id="m1",
             character_id="char1",
@@ -104,6 +107,7 @@ class TestMemoryFragment:
 
     def test_salience_out_of_range_raises(self):
         from backend.memory_palace import MemoryFragment, MemorySource, MemoryType
+
         with pytest.raises(ValueError, match="salience"):
             MemoryFragment(
                 id="m1",
@@ -119,6 +123,7 @@ class TestMemoryFragment:
 
     def test_decay_rate_out_of_range_raises(self):
         from backend.memory_palace import MemoryFragment, MemorySource, MemoryType
+
         with pytest.raises(ValueError, match="decay_rate"):
             MemoryFragment(
                 id="m1",
@@ -135,6 +140,7 @@ class TestMemoryFragment:
 
     def test_to_from_dict_roundtrip(self):
         from backend.memory_palace import MemoryFragment, MemorySource, MemoryType
+
         original = MemoryFragment(
             id="m1",
             character_id="char1",
@@ -310,12 +316,8 @@ class TestMemoryPalaceStubs:
 
     @pytest.mark.asyncio
     async def test_apply_decay(self, memory_palace):
-        await memory_palace.add_memory(
-            "c1", "x", "episodic", "scene", salience=1.0, decay_rate=0.1
-        )
-        await memory_palace.add_memory(
-            "c1", "y", "episodic", "scene", salience=1.0, decay_rate=0.2
-        )
+        await memory_palace.add_memory("c1", "x", "episodic", "scene", salience=1.0, decay_rate=0.1)
+        await memory_palace.add_memory("c1", "y", "episodic", "scene", salience=1.0, decay_rate=0.2)
         updated = await memory_palace.apply_decay("c1", days_elapsed=2.0)
         # Both memories should have been decayed
         assert updated == 2
@@ -374,11 +376,13 @@ class TestSchemaIntegrity:
 
     def test_initialize_storage_idempotent(self, tmp_path):
         from backend.memory_palace import MemoryPalace
+
         db = tmp_path / "test.db"
         p1 = MemoryPalace(str(db))
         p2 = MemoryPalace(str(db))  # second init should not raise
         # Verify table exists
         import sqlite3
+
         conn = sqlite3.connect(str(db))
         try:
             rows = conn.execute(
@@ -393,6 +397,7 @@ class TestSchemaIntegrity:
         import sqlite3
 
         from backend.memory_palace import MemoryPalace
+
         db = tmp_path / "test.db"
         MemoryPalace(str(db))
         conn = sqlite3.connect(str(db))
@@ -408,9 +413,20 @@ class TestSchemaIntegrity:
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
-                        "x1", "c1", "INVALID_TYPE", "content", "scene",
-                        0.5, "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z", 0,
-                        "[]", "[]", 0.05, "{}", 0,
+                        "x1",
+                        "c1",
+                        "INVALID_TYPE",
+                        "content",
+                        "scene",
+                        0.5,
+                        "2026-01-01T00:00:00Z",
+                        "2026-01-01T00:00:00Z",
+                        0,
+                        "[]",
+                        "[]",
+                        0.05,
+                        "{}",
+                        0,
                     ),
                 )
         finally:
@@ -429,6 +445,7 @@ class TestR1AuditFixesV2:
     async def test_consolidate_n_plus_1_with_true_duplicates(self, memory_palace, monkeypatch):
         """consolidate_memories must use ONE connection even with true duplicates."""
         import sqlite3
+
         connection_opens = []
         original_connect = sqlite3.connect
 
@@ -438,13 +455,12 @@ class TestR1AuditFixesV2:
 
         monkeypatch.setattr(sqlite3, "connect", tracking_connect)
         from backend import memory_palace as mp_mod
+
         monkeypatch.setattr(mp_mod.sqlite3, "connect", tracking_connect)
 
         # Create 30 TRUE duplicates (same content)
         for i in range(30):
-            await memory_palace.add_memory(
-                "c1", "the wizard cast fireball", "episodic", "scene"
-            )
+            await memory_palace.add_memory("c1", "the wizard cast fireball", "episodic", "scene")
 
         connection_opens.clear()
         merged = await memory_palace.consolidate_memories(
@@ -462,11 +478,10 @@ class TestR1AuditFixesV2:
         """Use the memory_palace's own _connect() to inject failure."""
         # Add 5 source memories
         for i in range(5):
-            await memory_palace.add_memory(
-                "src", f"src_mem_{i}", "episodic", "scene", salience=0.8
-            )
+            await memory_palace.add_memory("src", f"src_mem_{i}", "episodic", "scene", salience=0.8)
         # Monkey-patch the connection wrapper to raise on commit
         from backend import memory_palace as mp_mod
+
         original_connect = mp_mod.MemoryPalace._connect
 
         class FailingConnection:

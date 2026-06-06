@@ -78,19 +78,16 @@ jobs:
           cd backend
           pip install -r requirements.txt
 
-      - name: Ruff (linter)
+      - name: Ruff (linter + format)
         working-directory: backend
         run: |
-          # Phase H2: ruff replaces the implicit lack of linting in CI.
+          # Phase H2 + Phase I: ruff now enforces both lint AND format.
           # 'ruff check' = lint gate (fails on E/F rule violations).
-          # 'ruff format --check' is informational only in this PR — 60
-          # files would be reformatted, so we don't enforce format yet.
-          # Future PRs can run 'ruff format' to fix formatting and then
-          # promote this to a hard gate.
+          # 'ruff format --check' = format gate (Phase I, promoted from
+          # informational to blocking after 'ruff format .' reformatted
+          # all 74 backend files in the Phase I commit).
           ruff check . --output-format=github
-          echo "---"
-          echo "ruff format --check (informational, not a gate):"
-          ruff format --check . || echo "(format violations exist; tracked for future PR)"
+          ruff format --check .
 
       - name: Mypy (type check)
         working-directory: backend

@@ -45,9 +45,7 @@ from typing import Any, Dict, List, Optional
 import pytest
 import pytest_asyncio
 
-_PROJECT_ROOT = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)
-)
+_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
@@ -61,6 +59,7 @@ if _PROJECT_ROOT not in sys.path:
 async def engine(tmp_path):
     """A fresh SemanticSoulTransfer with in-memory storage."""
     from backend.soul_transfer import SemanticSoulTransfer
+
     return SemanticSoulTransfer(soul_db_path=":memory:")
 
 
@@ -69,6 +68,7 @@ async def engine_with_mock_llm(tmp_path):
     """SemanticSoulTransfer with a mock LLM that returns a known tag."""
     from backend.llm_client import MockLLMClient
     from backend.soul_transfer import SemanticSoulTransfer
+
     mock = MockLLMClient(
         canned_response='{"degraded_state": "測試降級"}',
     )
@@ -83,6 +83,7 @@ async def engine_with_bad_llm(tmp_path):
     """SemanticSoulTransfer with a mock LLM that returns garbage."""
     from backend.llm_client import MockLLMClient
     from backend.soul_transfer import SemanticSoulTransfer
+
     mock = MockLLMClient(canned_response='{"degraded_state": "!!garbage!!"}')
     return SemanticSoulTransfer(
         soul_db_path=":memory:",
@@ -104,6 +105,7 @@ async def engine_with_isolation_guard():
             self.calls += 1
             if not self.allow:
                 from backend.memory_isolation import MemoryIsolationError
+
                 raise MemoryIsolationError("denied by fake guard")
 
     guard = FakeGuard(allow=True)
@@ -132,6 +134,7 @@ class TestTierList:
         assert result["downgraded_from"] == "右手骨折"
         # Pick is from the tier list for "右手骨折"
         from backend.soul_transfer import TIER_DOWNGRADES
+
         valid_picks = TIER_DOWNGRADES["右手骨折"]
         assert result["downgraded_to"] in valid_picks
         # The new tag set is the old set minus the source tag, plus
@@ -141,7 +144,8 @@ class TestTierList:
 
     @pytest.mark.asyncio
     async def test_tier_list_unknown_state_uses_llm_fallback(
-        self, engine_with_mock_llm,
+        self,
+        engine_with_mock_llm,
     ):
         """
         Decision 1 (Option B): for a state NOT in the tier list, the
@@ -174,7 +178,8 @@ class TestTierList:
 
     @pytest.mark.asyncio
     async def test_llm_invalid_output_uses_uncategorized_fallback(
-        self, engine_with_bad_llm,
+        self,
+        engine_with_bad_llm,
     ):
         """
         Decision 1 + F1 D2 alignment: the LLM output is validated
@@ -216,6 +221,7 @@ class TestAntiPredictability:
         # (the second MUST differ from the first if the tier list
         # has ≥ 2 entries).
         from backend.soul_transfer import TIER_DOWNGRADES
+
         tier_choices = TIER_DOWNGRADES["非常健康"]
         assert len(tier_choices) >= 2
         assert results[0] in tier_choices
@@ -228,7 +234,8 @@ class TestAntiPredictability:
 
     @pytest.mark.asyncio
     async def test_anti_predictability_repeated_returns_varied_results(
-        self, engine,
+        self,
+        engine,
     ):
         """
         Decision 2: across N=10 transfers, the distribution of
@@ -236,6 +243,7 @@ class TestAntiPredictability:
         (with overwhelming probability for a 4-entry tier list).
         """
         from backend.soul_transfer import TIER_DOWNGRADES
+
         tier_choices = TIER_DOWNGRADES["健康"]  # 3 entries
         results = set()
         for i in range(10):
@@ -263,6 +271,7 @@ class TestAntiExploit:
         the same scene. The engine requires `scene_id` to be set.
         """
         from backend.soul_transfer import ANTI_EXPLOIT_RULE_1
+
         check = engine.is_transfer_allowed(
             source_character_id="char_a",
             source_state=["健康"],
@@ -363,6 +372,7 @@ class TestMemoryIsolation:
 
         # Sad path: guard denies → transfer blocked
         from backend.soul_transfer import SoulTransferNotAllowedError
+
         guard.allow = False
         with pytest.raises(SoulTransferNotAllowedError) as excinfo:
             await engine.execute_transfer(
@@ -385,7 +395,9 @@ class TestMemoryIsolation:
 class TestAtomicity:
     @pytest.mark.asyncio
     async def test_atomicity_persist_failure_no_partial_state(
-        self, engine, monkeypatch,
+        self,
+        engine,
+        monkeypatch,
     ):
         """
         V2: force the SQLite commit() to fail. The transfer must
@@ -404,9 +416,11 @@ class TestAtomicity:
         # Now patch _persist to raise
         def boom(record):
             raise RuntimeError("simulated commit failure")
+
         monkeypatch.setattr(engine, "_persist", boom)
 
         from backend.soul_transfer import SoulTransferError
+
         with pytest.raises(RuntimeError, match="simulated commit failure"):
             await engine.execute_transfer(
                 source_character_id="char_a",
@@ -448,9 +462,10 @@ class TestApplyIdempotency:
         )
         # Exactly one should have rows_updated=1, the other 0
         row_updates = [r["rows_updated"] for r in results]
-        assert sorted(row_updates) == [0, 1], (
-            f"Expected [0, 1] from concurrent apply, got {row_updates}"
-        )
+        assert sorted(row_updates) == [
+            0,
+            1,
+        ], f"Expected [0, 1] from concurrent apply, got {row_updates}"
         # Verify final state: applied=1
         retrieved = await engine.get_transfer(record.transfer_id)
         assert retrieved.applied is True
@@ -481,6 +496,7 @@ class TestEndToEnd:
         assert "恐懼" in record.new_tags  # not in tier list, kept as-is
         # downgraded_to is from the tier list for "右手骨折"
         from backend.soul_transfer import TIER_DOWNGRADES
+
         assert record.downgraded_to in TIER_DOWNGRADES["右手骨折"]
         # Memories carried
         assert len(record.carried_memories) == 2

@@ -128,13 +128,9 @@ def _validate_tag(tag: str) -> str:
     if not tag.strip():
         raise ValueError("tag is empty or whitespace-only")
     if len(tag) > MAX_TAG_LENGTH:
-        raise ValueError(
-            f"tag too long: {len(tag)} > {MAX_TAG_LENGTH} chars ({tag!r})"
-        )
+        raise ValueError(f"tag too long: {len(tag)} > {MAX_TAG_LENGTH} chars ({tag!r})")
     if not _TAG_PATTERN.match(tag):
-        raise ValueError(
-            f"invalid characters in tag (only CJK + space + hyphen allowed): {tag!r}"
-        )
+        raise ValueError(f"invalid characters in tag (only CJK + space + hyphen allowed): {tag!r}")
     return tag
 
 
@@ -187,9 +183,7 @@ class StateMutation(BaseModel):
     # Side effects (defense D2: bounded lists).
     items_consumed: list[ItemConsumed] = Field(default_factory=list, max_length=16)
     new_memories: list[str] = Field(default_factory=list, max_length=16)
-    relationship_changes: list[RelationshipChange] = Field(
-        default_factory=list, max_length=16
-    )
+    relationship_changes: list[RelationshipChange] = Field(default_factory=list, max_length=16)
 
     # Narrative grounding (audit invariant #16).
     reason: str = Field(..., min_length=1, max_length=200)
@@ -364,7 +358,8 @@ class PhysicsLock:
         except TimeoutError:
             logger.warning(
                 "physics_lock: R1 audit timed out for character=%s action=%r",
-                character_id, action_text[:40],
+                character_id,
+                action_text[:40],
             )
             response = {
                 "allowed": False,
@@ -375,7 +370,8 @@ class PhysicsLock:
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "physics_lock: R1 audit errored for character=%s: %s",
-                character_id, exc,
+                character_id,
+                exc,
             )
             response = {
                 "allowed": False,
@@ -467,8 +463,17 @@ class SemanticState:
     state; do NOT mutate this object in place.
     """
 
-    __slots__ = ("character_id", "tags", "stamina", "health", "morale",
-                 "memories", "relationships", "inventory", "_updated_at")
+    __slots__ = (
+        "character_id",
+        "tags",
+        "stamina",
+        "health",
+        "morale",
+        "memories",
+        "relationships",
+        "inventory",
+        "_updated_at",
+    )
 
     def __init__(
         self,
@@ -482,9 +487,7 @@ class SemanticState:
         inventory: dict[str, Any] | None = None,
     ) -> None:
         if not isinstance(character_id, str) or not character_id.strip():
-            raise StateValidationError(
-                f"character_id must be non-empty str, got {character_id!r}"
-            )
+            raise StateValidationError(f"character_id must be non-empty str, got {character_id!r}")
         # Validate tags on construction (defense D2: CJK + length).
         tags = tags or []
         for t in tags:
@@ -698,9 +701,9 @@ class SemanticStateMachine:
     ) -> dict[str, Any]:
         """Apply item consumption (invariants #9, #10, #11).
 
-          #9  — quantity is decremented; partially-consumed items persist
-          #10 — quantity == 0 ⇒ item is removed from inventory
-          #11 — unknown item IDs are a silent no-op
+        #9  — quantity is decremented; partially-consumed items persist
+        #10 — quantity == 0 ⇒ item is removed from inventory
+        #11 — unknown item IDs are a silent no-op
         """
         items = state.inventory.setdefault("items", [])
         report = {"consumed": [], "removed": [], "unknown": []}
@@ -748,9 +751,7 @@ class SemanticStateMachine:
         report = []
         for change in rel_changes:
             state.relationships[change.npc_id] = change.new_relationship
-            report.append(
-                {"npc_id": change.npc_id, "new": change.new_relationship}
-            )
+            report.append({"npc_id": change.npc_id, "new": change.new_relationship})
         return {"updated": report}
 
     # -------- main entry point (audit invariants 6-16) --------
@@ -808,12 +809,8 @@ class SemanticStateMachine:
             effects["scalars"] = self._apply_scalar_mutation(
                 state, mutation.stamina, mutation.health, mutation.morale
             )
-            effects["items"] = self._apply_items_consumed(
-                state, mutation.items_consumed
-            )
-            effects["memories"] = self._apply_new_memories(
-                state, mutation.new_memories
-            )
+            effects["items"] = self._apply_items_consumed(state, mutation.items_consumed)
+            effects["memories"] = self._apply_new_memories(state, mutation.new_memories)
             effects["relationships"] = self._apply_relationship_changes(
                 state, mutation.relationship_changes
             )
@@ -905,7 +902,8 @@ class SemanticStateMachine:
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "feed_memory_palace failed for character=%s: %s",
-                character_id, exc,
+                character_id,
+                exc,
             )
             return None
         return None

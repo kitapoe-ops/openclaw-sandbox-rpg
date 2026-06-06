@@ -75,9 +75,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 # Ensure repo root on sys.path.
-_REPO_ROOT = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)
-)
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
@@ -103,22 +101,20 @@ DEMO_HTML_DEFAULT_SCENE = "scene_default"
 # too — this test enforces the contract.
 E6C_FRONTEND_URLS = {
     # E6b (scene state)
-    "scene_create":        "/api/scene-multiplayer/{scene_id}/create",
-    "scene_player_join":   "/api/scene-multiplayer/{scene_id}/player/{player_id}/join",
-    "scene_players_list":  "/api/scene-multiplayer/{scene_id}/players",
-    "scene_npcs_list":     "/api/scene-multiplayer/{scene_id}/npcs",
-    "scene_queue_size":    "/api/scene-multiplayer/{scene_id}/turn/queue-size",
+    "scene_create": "/api/scene-multiplayer/{scene_id}/create",
+    "scene_player_join": "/api/scene-multiplayer/{scene_id}/player/{player_id}/join",
+    "scene_players_list": "/api/scene-multiplayer/{scene_id}/players",
+    "scene_npcs_list": "/api/scene-multiplayer/{scene_id}/npcs",
+    "scene_queue_size": "/api/scene-multiplayer/{scene_id}/turn/queue-size",
     # E6a (transport)
-    "broadcast":           "/api/multiplayer/{scene_id}/broadcast",
-    "ws_multiplayer":      "/ws/multiplayer/{scene_id}/{player_id}",
+    "broadcast": "/api/multiplayer/{scene_id}/broadcast",
+    "ws_multiplayer": "/ws/multiplayer/{scene_id}/{player_id}",
 }
 
 
 def _route_paths(application) -> list[str]:
     """Return all route paths (templates) registered on the app."""
-    return sorted({
-        r.path for r in application.routes if hasattr(r, "path")
-    })
+    return sorted({r.path for r in application.routes if hasattr(r, "path")})
 
 
 @pytest_asyncio.fixture
@@ -135,6 +131,7 @@ async def client(tmp_path: Path) -> AsyncIterator[AsyncClient]:
     integration = MemoryPalaceIntegration(persistence, vector_store)
 
     import backend.memory_palace_integration_endpoint as ep_mod
+
     prev = ep_mod._integration
     set_integration(integration)
 
@@ -164,7 +161,8 @@ class TestMultiplayerFrontendWireUp:
 
     @pytest.mark.asyncio
     async def test_frontend_can_create_multiplayer_scene(
-        self, client: AsyncClient,
+        self,
+        client: AsyncClient,
     ) -> None:
         """POST ``/api/scene-multiplayer/{scene_id}/create`` returns 200.
 
@@ -183,9 +181,7 @@ class TestMultiplayerFrontendWireUp:
         )
 
         scene_id = "scene_e6c_create"
-        resp = await client.post(
-            f"/api/scene-multiplayer/{scene_id}/create"
-        )
+        resp = await client.post(f"/api/scene-multiplayer/{scene_id}/create")
         assert resp.status_code == 200, resp.text
         body = resp.json()
         # The scene health() payload is JSON-shaped. The JS doesn't
@@ -193,24 +189,20 @@ class TestMultiplayerFrontendWireUp:
         # 'create_scene failed: HTTP 500' to the user.
         assert isinstance(body, dict)
         assert body.get("scene_id") == scene_id, (
-            f"expected scene_id={scene_id!r} in response, got "
-            f"{body.get('scene_id')!r}"
+            f"expected scene_id={scene_id!r} in response, got " f"{body.get('scene_id')!r}"
         )
         # Cap values the UI relies on (e.g. "Queue: 0 pending"
         # next to the mp-queue-badge).
         assert body.get("max_players") == 4, (
-            f"expected max_players=4 (game scope), got "
-            f"{body.get('max_players')!r}"
+            f"expected max_players=4 (game scope), got " f"{body.get('max_players')!r}"
         )
-        assert body.get("max_npcs") == 100, (
-            f"expected max_npcs=100 (E6b cap), got {body.get('max_npcs')!r}"
-        )
+        assert (
+            body.get("max_npcs") == 100
+        ), f"expected max_npcs=100 (E6b cap), got {body.get('max_npcs')!r}"
         # And: creating the same scene twice is idempotent (the JS
         # calls this on every toggle, so a 200/200 sequence must
         # not 409).
-        resp2 = await client.post(
-            f"/api/scene-multiplayer/{scene_id}/create"
-        )
+        resp2 = await client.post(f"/api/scene-multiplayer/{scene_id}/create")
         assert resp2.status_code == 200, (
             f"second create on the same scene must be idempotent; "
             f"got {resp2.status_code}: {resp2.text}"
@@ -218,7 +210,8 @@ class TestMultiplayerFrontendWireUp:
 
     @pytest.mark.asyncio
     async def test_frontend_can_join_as_player_1(
-        self, client: AsyncClient,
+        self,
+        client: AsyncClient,
     ) -> None:
         """POST join for slot 0 (player_1) returns 200.
 
@@ -251,15 +244,12 @@ class TestMultiplayerFrontendWireUp:
         assert isinstance(body, dict)
         assert body.get("scene_id") == scene_id
         assert body.get("player_count") == 1, (
-            f"expected 1 player after first join, got "
-            f"{body.get('player_count')!r}"
+            f"expected 1 player after first join, got " f"{body.get('player_count')!r}"
         )
 
         # And: a follow-up GET /players shows the slot the JS will
         # render in the sidebar.
-        resp2 = await client.get(
-            f"/api/scene-multiplayer/{scene_id}/players"
-        )
+        resp2 = await client.get(f"/api/scene-multiplayer/{scene_id}/players")
         assert resp2.status_code == 200
         roster = resp2.json()
         players = roster.get("players", [])
@@ -269,7 +259,8 @@ class TestMultiplayerFrontendWireUp:
 
     @pytest.mark.asyncio
     async def test_frontend_can_list_4_player_slots(
-        self, client: AsyncClient,
+        self,
+        client: AsyncClient,
     ) -> None:
         """GET ``/api/scene-multiplayer/{scene_id}/players`` returns
         a JSON object with a ``players`` array and the cap the UI
@@ -302,24 +293,20 @@ class TestMultiplayerFrontendWireUp:
             )
             assert r.status_code == 200, f"join {i} failed: {r.text}"
 
-        resp = await client.get(
-            f"/api/scene-multiplayer/{scene_id}/players"
-        )
+        resp = await client.get(f"/api/scene-multiplayer/{scene_id}/players")
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert isinstance(body, dict)
         # All 4 players in the array.
         assert isinstance(body.get("players"), list)
         assert len(body["players"]) == 4, (
-            f"expected 4 players in roster, got {len(body['players'])}: "
-            f"{body['players']!r}"
+            f"expected 4 players in roster, got {len(body['players'])}: " f"{body['players']!r}"
         )
         # The cap fields the UI relies on for "Join as Player N"
         # button enabled/disabled state.
         assert body.get("count") == 4
         assert body.get("max_players") == 4, (
-            f"expected max_players=4 in roster response, got "
-            f"{body.get('max_players')!r}"
+            f"expected max_players=4 in roster response, got " f"{body.get('max_players')!r}"
         )
         # Each player has the fields the JS reads.
         for p in body["players"]:
@@ -328,7 +315,8 @@ class TestMultiplayerFrontendWireUp:
 
     @pytest.mark.asyncio
     async def test_frontend_cannot_join_5th_player(
-        self, client: AsyncClient,
+        self,
+        client: AsyncClient,
     ) -> None:
         """5th player returns 409 (scene full).
 
@@ -353,9 +341,9 @@ class TestMultiplayerFrontendWireUp:
                 f"/api/scene-multiplayer/{scene_id}/player/player_{i}/join",
                 params={"character_id": f"char_player_{i}"},
             )
-            assert r.status_code == 200, (
-                f"player {i} should have joined, got {r.status_code}: {r.text}"
-            )
+            assert (
+                r.status_code == 200
+            ), f"player {i} should have joined, got {r.status_code}: {r.text}"
 
         # 5th must be rejected with 409 (the exact status code the
         # JS branches on).
@@ -372,14 +360,11 @@ class TestMultiplayerFrontendWireUp:
         # be friendlier if a detail string is present).
         body = r5.json()
         assert "detail" in body, (
-            f"409 response missing 'detail' field; UI message will be "
-            f"blank. body={body!r}"
+            f"409 response missing 'detail' field; UI message will be " f"blank. body={body!r}"
         )
 
         # And: the roster must still show 4 (not 5, not 3).
-        roster = await client.get(
-            f"/api/scene-multiplayer/{scene_id}/players"
-        )
+        roster = await client.get(f"/api/scene-multiplayer/{scene_id}/players")
         assert roster.status_code == 200
         body = roster.json()
         assert body.get("count") == 4, (
@@ -389,7 +374,8 @@ class TestMultiplayerFrontendWireUp:
 
     @pytest.mark.asyncio
     async def test_frontend_broadcast_endpoint_works(
-        self, client: AsyncClient,
+        self,
+        client: AsyncClient,
     ) -> None:
         """POST ``/api/multiplayer/{scene_id}/broadcast`` returns 200
         with ``{scene_id, delivered_to}`` even when nobody is
@@ -417,9 +403,7 @@ class TestMultiplayerFrontendWireUp:
             "verb": "speak",
             "narrative": "Gundren leans across the bar...",
         }
-        resp = await client.post(
-            f"/api/multiplayer/{scene_id}/broadcast", json=payload
-        )
+        resp = await client.post(f"/api/multiplayer/{scene_id}/broadcast", json=payload)
         assert resp.status_code == 200, (
             f"broadcast must succeed (delivered_to=0 is OK); got "
             f"{resp.status_code}: {resp.text}"
@@ -427,13 +411,13 @@ class TestMultiplayerFrontendWireUp:
         body = resp.json()
         # The exact shape demo.html's broadcast callers (and the
         # audit log) expect.
-        assert set(body.keys()) == {"scene_id", "delivered_to"}, (
-            f"unexpected broadcast response shape: {set(body.keys())!r}"
-        )
+        assert set(body.keys()) == {
+            "scene_id",
+            "delivered_to",
+        }, f"unexpected broadcast response shape: {set(body.keys())!r}"
         assert body["scene_id"] == scene_id
         assert body["delivered_to"] == 0, (
-            f"no players connected; expected delivered_to=0, got "
-            f"{body['delivered_to']!r}"
+            f"no players connected; expected delivered_to=0, got " f"{body['delivered_to']!r}"
         )
 
     @pytest.mark.asyncio
@@ -462,9 +446,9 @@ class TestMultiplayerFrontendWireUp:
         # intentionally literal (no \b word boundaries) because
         # we want to catch, e.g., ``.innerHTML = ...`` assignments.
         forbidden_patterns = [
-            "v-html",        # Vue raw HTML directive
-            "innerHTML",     # DOM property write
-            "outerHTML",     # DOM property write
+            "v-html",  # Vue raw HTML directive
+            "innerHTML",  # DOM property write
+            "outerHTML",  # DOM property write
             "document.write",  # classic XSS sink
         ]
 
@@ -475,19 +459,26 @@ class TestMultiplayerFrontendWireUp:
         text = demo_path.read_text(encoding="utf-8")
         # Strip block comments /* ... */ (handles multi-line).
         text_no_block = re.sub(
-            r"/\*.*?\*/", "", text, flags=re.DOTALL,
+            r"/\*.*?\*/",
+            "",
+            text,
+            flags=re.DOTALL,
         )
         # Strip HTML comments <!-- ... --> (handles multi-line
         # AND single-line comments — the DOTALL flag is what
         # makes ``.`` match newlines, so single-line comments
         # are also removed).
         text_no_html_comments = re.sub(
-            r"<!--.*?-->", "", text_no_block, flags=re.DOTALL,
+            r"<!--.*?-->",
+            "",
+            text_no_block,
+            flags=re.DOTALL,
         )
 
         real_usages: list[tuple[str, int, str]] = []
         for lineno, raw_line in enumerate(
-            text_no_html_comments.splitlines(), start=1,
+            text_no_html_comments.splitlines(),
+            start=1,
         ):
             # Strip JS line comments (// ...) — anything after
             # ``//`` on a line is treated as a comment. This is
@@ -512,10 +503,7 @@ class TestMultiplayerFrontendWireUp:
             "XSS invariant violated: demo.html contains "
             "forbidden patterns. "
             "Offending lines:\n"
-            + "\n".join(
-                f"  L{ln}: {pat!r}  →  {line!r}"
-                for pat, ln, line in unique_usages
-            )
+            + "\n".join(f"  L{ln}: {pat!r}  →  {line!r}" for pat, ln, line in unique_usages)
             + "\n\nSee docs/AUDIT_D4_M3.json finding #3 for the rule."
         )
 
@@ -542,10 +530,7 @@ class TestE6CFrontendURLContract:
         the templates use the same brace syntax.
         """
         paths = _route_paths(composed_app)
-        missing = [
-            name for name, tmpl in E6C_FRONTEND_URLS.items()
-            if tmpl not in paths
-        ]
+        missing = [name for name, tmpl in E6C_FRONTEND_URLS.items() if tmpl not in paths]
         assert not missing, (
             f"demo.html multiplayer panel fetches URLs that don't "
             f"exist on the backend: {missing!r}. Either the "
@@ -567,8 +552,7 @@ class TestE6CFrontendURLContract:
         The template must be present on the router.
         """
         ws_templates = [
-            r.path for r in composed_app.routes
-            if hasattr(r, "path") and r.path.startswith("/ws/")
+            r.path for r in composed_app.routes if hasattr(r, "path") and r.path.startswith("/ws/")
         ]
         expected = "/ws/multiplayer/{scene_id}/{player_id}"
         assert expected in ws_templates, (
@@ -593,7 +577,7 @@ class TestE6CFrontendURLContract:
         for r in composed_app.routes:
             if not hasattr(r, "path") or not hasattr(r, "methods"):
                 continue
-            for m in (r.methods or set()):
+            for m in r.methods or set():
                 if m == "HEAD":
                     continue
                 method_paths.add((r.path, m))
@@ -602,14 +586,13 @@ class TestE6CFrontendURLContract:
         expected_calls = [
             ("POST", "/api/scene-multiplayer/{scene_id}/create"),
             ("POST", "/api/scene-multiplayer/{scene_id}/player/{player_id}/join"),
-            ("GET",  "/api/scene-multiplayer/{scene_id}/players"),
-            ("GET",  "/api/scene-multiplayer/{scene_id}/npcs"),
-            ("GET",  "/api/scene-multiplayer/{scene_id}/turn/queue-size"),
+            ("GET", "/api/scene-multiplayer/{scene_id}/players"),
+            ("GET", "/api/scene-multiplayer/{scene_id}/npcs"),
+            ("GET", "/api/scene-multiplayer/{scene_id}/turn/queue-size"),
             ("POST", "/api/multiplayer/{scene_id}/broadcast"),
         ]
         missing = [
-            (verb, tmpl) for verb, tmpl in expected_calls
-            if (tmpl, verb) not in method_paths
+            (verb, tmpl) for verb, tmpl in expected_calls if (tmpl, verb) not in method_paths
         ]
         assert not missing, (
             f"Frontend HTTP verb + path combination missing on the "

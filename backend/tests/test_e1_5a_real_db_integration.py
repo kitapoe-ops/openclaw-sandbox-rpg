@@ -62,9 +62,7 @@ import pytest
 import pytest_asyncio
 
 # Ensure repo root is on sys.path (mirrors the rest of backend/tests/).
-_REPO_ROOT = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)
-)
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
@@ -180,10 +178,7 @@ async def test_action_processor_full_pipeline_with_real_db(
     # that the LLM state contract expects. The processor extracts
     # the ``narrative`` field from the parsed JSON.
     canned_narrative = "你大步向北走去，腳下的碎石沙沙作響，遠處的城牆漸漸清晰。"
-    canned_response = (
-        '{"narrative": "' + canned_narrative + '", '
-        '"state_mutations": null}'
-    )
+    canned_response = '{"narrative": "' + canned_narrative + '", ' '"state_mutations": null}'
     llm_client = MockLLMClient(canned_response=canned_response)
 
     processor = ActionProcessor(
@@ -194,8 +189,7 @@ async def test_action_processor_full_pipeline_with_real_db(
 
     # Sanity: ensure the palace is NOT the None default.
     assert processor.memory_palace is real_palace, (
-        "ActionProcessor.memory_palace is not the real palace; "
-        "the wiring step failed silently."
+        "ActionProcessor.memory_palace is not the real palace; " "the wiring step failed silently."
     )
     # And that the verb we're about to use is actually whitelisted.
     assert "move" in ALLOWED_VERBS, (
@@ -212,9 +206,7 @@ async def test_action_processor_full_pipeline_with_real_db(
 
     # ---- 3) Validate the response shape. ----
     assert isinstance(result, dict), f"process() must return dict, got {type(result)}"
-    assert result.get("status") == "processed", (
-        f"unexpected status: {result!r}"
-    )
+    assert result.get("status") == "processed", f"unexpected status: {result!r}"
     assert "action_id" in result, f"missing action_id: {result!r}"
     # Validate the action_id is a UUID-shaped string.
     try:
@@ -225,8 +217,7 @@ async def test_action_processor_full_pipeline_with_real_db(
     assert "narrative" in result, f"missing narrative: {result!r}"
     # The MockLLMClient returns the canned_response verbatim.
     assert result["narrative"] == canned_narrative, (
-        f"narrative mismatch: got {result['narrative']!r}, "
-        f"expected {canned_narrative!r}"
+        f"narrative mismatch: got {result['narrative']!r}, " f"expected {canned_narrative!r}"
     )
 
     # The side_effects list should contain a ``memory_persisted``
@@ -234,17 +225,13 @@ async def test_action_processor_full_pipeline_with_real_db(
     # ``palace.remember()`` (as opposed to skipping it or hitting
     # the ``memory_persist_failed`` branch).
     side_effects = result.get("side_effects", [])
-    persist_effects = [
-        se for se in side_effects if se.get("type") == "memory_persisted"
-    ]
+    persist_effects = [se for se in side_effects if se.get("type") == "memory_persisted"]
     assert persist_effects, (
         f"no 'memory_persisted' side_effect — processor skipped "
         f"persistence! side_effects={side_effects!r}"
     )
     memory_id = persist_effects[0]["memory_id"]
-    assert isinstance(memory_id, str) and memory_id, (
-        f"bad memory_id: {memory_id!r}"
-    )
+    assert isinstance(memory_id, str) and memory_id, f"bad memory_id: {memory_id!r}"
     # And the memory_id should also be a UUID (MemoryPalaceIntegration
     # uses uuid4 for memory rows).
     try:
@@ -255,8 +242,7 @@ async def test_action_processor_full_pipeline_with_real_db(
     # ---- 4) Verify the row is actually in Postgres. ----
     pg_count = await real_palace.count("player_1")
     assert pg_count == 1, (
-        f"expected 1 memory in PG for player_1, got {pg_count}. "
-        f"side_effects={side_effects!r}"
+        f"expected 1 memory in PG for player_1, got {pg_count}. " f"side_effects={side_effects!r}"
     )
 
     # ---- 5) Verify the vector is actually indexed. ----
@@ -274,52 +260,38 @@ async def test_action_processor_full_pipeline_with_real_db(
         k=5,
     )
     assert len(recall_hits) >= 1, (
-        f"recall returned nothing; memory was not retrievable. "
-        f"side_effects={side_effects!r}"
+        f"recall returned nothing; memory was not retrievable. " f"side_effects={side_effects!r}"
     )
     # The first hit should be our memory; verify content rehydration.
     top_hit = recall_hits[0]
     assert "content" in top_hit, f"recall hit missing 'content': {top_hit!r}"
     assert "memory_id" in top_hit, f"recall hit missing 'memory_id': {top_hit!r}"
     assert top_hit["memory_id"] == memory_id, (
-        f"recall hit has wrong memory_id: got {top_hit['memory_id']!r}, "
-        f"expected {memory_id!r}"
+        f"recall hit has wrong memory_id: got {top_hit['memory_id']!r}, " f"expected {memory_id!r}"
     )
     # The content follows "{verb} {target}: {narrative}" pattern
     # (see ActionProcessor._persist_memory).
     content = top_hit["content"]
-    assert "move" in content, (
-        f"recall content missing 'move': {content!r}"
-    )
-    assert "north" in content, (
-        f"recall content missing 'north': {content!r}"
-    )
+    assert "move" in content, f"recall content missing 'move': {content!r}"
+    assert "north" in content, f"recall content missing 'north': {content!r}"
     assert canned_narrative in content, (
         f"recall content missing the canned narrative! "
         f"content={content!r}, expected to contain {canned_narrative!r}"
     )
     # And the metadata is the round-tripped dict the processor set.
     metadata = top_hit.get("metadata") or {}
-    assert metadata.get("source") == "action_processor", (
-        f"metadata.source mismatch: {metadata!r}"
-    )
+    assert metadata.get("source") == "action_processor", f"metadata.source mismatch: {metadata!r}"
     assert metadata.get("action_id") == result["action_id"], (
         f"metadata.action_id mismatch: got "
         f"{metadata.get('action_id')!r}, expected "
         f"{result['action_id']!r}"
     )
-    assert metadata.get("verb") == "move", (
-        f"metadata.verb mismatch: {metadata!r}"
-    )
+    assert metadata.get("verb") == "move", f"metadata.verb mismatch: {metadata!r}"
 
     # ---- 6) Verify health. ----
     health = await real_palace.health()
-    assert health.get("postgres") is True, (
-        f"postgres not healthy: {health!r}"
-    )
-    assert health.get("vector_store") is True, (
-        f"vector_store not healthy: {health!r}"
-    )
+    assert health.get("postgres") is True, f"postgres not healthy: {health!r}"
+    assert health.get("vector_store") is True, f"vector_store not healthy: {health!r}"
 
     # ---- 7) Verify no hang / no deadlock. ----
     elapsed = time.monotonic() - t_start

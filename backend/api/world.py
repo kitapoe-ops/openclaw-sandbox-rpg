@@ -67,7 +67,7 @@ def _resolve_world_yaml(world_id: str) -> Path | None:
             try:
                 with open(yaml_file, encoding="utf-8") as f:
                     head = f.read(4096)
-                if f"id: \"{world_id}\"" in head or f"id: '{world_id}'" in head:
+                if f'id: "{world_id}"' in head or f"id: '{world_id}'" in head:
                     return yaml_file
             except OSError:
                 continue
@@ -197,6 +197,7 @@ def _demo_etl(world_id: str) -> dict[str, Any]:
 # Routes
 # ============================================
 
+
 @router.get("/")
 async def list_worlds() -> dict[str, Any]:
     """List all available worlds (demo mode: from `worlds/`, DB mode: from PostgreSQL)."""
@@ -210,9 +211,7 @@ async def list_worlds() -> dict[str, Any]:
     from ..models import World
 
     async with get_db_session() as session:
-        result = await session.execute(
-            select(World).where(World.is_active.is_(True))
-        )
+        result = await session.execute(select(World).where(World.is_active.is_(True)))
         worlds = result.scalars().all()
         return {
             "worlds": [

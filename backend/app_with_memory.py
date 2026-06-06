@@ -216,6 +216,7 @@ async def list_characters() -> list[dict[str, Any]]:
             # we use ``session.execute`` with a typed select for
             # forward-compat with SQLAlchemy 2.x.
             from sqlalchemy import select
+
             stmt = select(CharacterState).limit(50)
             rows = (await session.execute(stmt)).scalars().all()
             for char in rows:
@@ -445,9 +446,7 @@ async def http_create_scene(
             detail=f"max_npcs must be in [1, 1000], got {max_npcs}",
         )
     registry = get_scene_registry()
-    scene = await registry.get_or_create(
-        scene_id, max_players=max_players, max_npcs=max_npcs
-    )
+    scene = await registry.get_or_create(scene_id, max_players=max_players, max_npcs=max_npcs)
     return scene.health()
 
 
@@ -460,9 +459,7 @@ async def http_create_scene(
         409: {"description": "Scene full / duplicate / character taken"},
     },
 )
-async def http_join_scene(
-    scene_id: str, player_id: str, character_id: str
-) -> dict[str, Any]:
+async def http_join_scene(scene_id: str, player_id: str, character_id: str) -> dict[str, Any]:
     """Add a player. Returns 409 if the scene is full, the
     player_id is already in the scene, or the character_id is
     already controlled by another player in the scene.
@@ -475,10 +472,7 @@ async def http_join_scene(
     if not ok:
         raise HTTPException(
             status_code=409,
-            detail=(
-                "join_rejected: scene_full | duplicate_player | "
-                "character_taken"
-            ),
+            detail=("join_rejected: scene_full | duplicate_player | " "character_taken"),
         )
     return scene.health()
 
@@ -628,9 +622,7 @@ async def http_isolation_check(
             detail=f"op must be 'read' or 'write', got {op!r}",
         )
     guard = get_isolation_guard()
-    allowed = guard.authorize(
-        requester_id, scene_id, target_character_id, op=op
-    )
+    allowed = guard.authorize(requester_id, scene_id, target_character_id, op=op)
     return {
         "scene_id": scene_id,
         "requester_id": requester_id,

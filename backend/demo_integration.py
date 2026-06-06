@@ -62,6 +62,7 @@ from typing import Any
 try:
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     from apscheduler.triggers.interval import IntervalTrigger
+
     _APSCHEDULER_AVAILABLE = True
 except ImportError:  # pragma: no cover - exercised only when dep missing
     AsyncIOScheduler = None  # type: ignore[assignment]
@@ -97,7 +98,7 @@ def _record_health(result: dict[str, Any]) -> None:
     """Append a result to the rolling buffer, dropping the oldest."""
     _RECENT_HEALTH_RESULTS.append(result)
     if len(_RECENT_HEALTH_RESULTS) > _RECENT_HEALTH_MAX:
-        del _RECENT_HEALTH_RESULTS[: -_RECENT_HEALTH_MAX]
+        del _RECENT_HEALTH_RESULTS[:-_RECENT_HEALTH_MAX]
 
 
 def get_recent_health() -> list[dict[str, Any]]:
@@ -131,18 +132,21 @@ async def job_memory_health_minute() -> None:
         import httpx
     except ImportError:  # pragma: no cover - defensive
         logger.exception("[demo] httpx unavailable; job_memory_health_minute cannot run")
-        _record_health({
-            "timestamp": datetime.now(UTC).isoformat(),
-            "ok": False,
-            "error": "httpx unavailable",
-        })
+        _record_health(
+            {
+                "timestamp": datetime.now(UTC).isoformat(),
+                "ok": False,
+                "error": "httpx unavailable",
+            }
+        )
         return
 
     transport = httpx.ASGITransport(app=composed_app)
     timestamp = datetime.now(UTC).isoformat()
     try:
         async with httpx.AsyncClient(
-            transport=transport, base_url="http://demo",
+            transport=transport,
+            base_url="http://demo",
         ) as client:
             resp = await client.get("/memory/health", timeout=10.0)
         body: Any = None
@@ -172,7 +176,10 @@ async def job_memory_health_minute() -> None:
     logger.log(
         level,
         "[demo] /memory/health @ %s -> ok=%s status=%s body=%s",
-        timestamp, entry["ok"], entry.get("status_code"), entry.get("body"),
+        timestamp,
+        entry["ok"],
+        entry.get("status_code"),
+        entry.get("body"),
     )
 
 
@@ -191,9 +198,7 @@ def add_demo_job(scheduler: AsyncIOScheduler) -> None:
         registration without entering the event loop).
     """
     if not _APSCHEDULER_AVAILABLE:
-        raise RuntimeError(
-            "apscheduler v3.x is required for backend.demo_integration"
-        )
+        raise RuntimeError("apscheduler v3.x is required for backend.demo_integration")
     scheduler.add_job(
         job_memory_health_minute,
         IntervalTrigger(seconds=DEMO_HEALTH_INTERVAL_SECONDS),
@@ -205,7 +210,8 @@ def add_demo_job(scheduler: AsyncIOScheduler) -> None:
     )
     logger.info(
         "[demo] Registered %s (every %ss)",
-        JOB_MEMORY_HEALTH_MINUTE, DEMO_HEALTH_INTERVAL_SECONDS,
+        JOB_MEMORY_HEALTH_MINUTE,
+        DEMO_HEALTH_INTERVAL_SECONDS,
     )
 
 
@@ -217,16 +223,18 @@ def build_demo_scheduler() -> AsyncIOScheduler:
     pattern below does this).
     """
     if not _APSCHEDULER_AVAILABLE:
-        raise RuntimeError(
-            "apscheduler v3.x is required for backend.demo_integration"
-        )
+        raise RuntimeError("apscheduler v3.x is required for backend.demo_integration")
     scheduler = AsyncIOScheduler(
-        jobstores={"default": __import__(
-            "apscheduler.jobstores.memory", fromlist=["MemoryJobStore"]
-        ).MemoryJobStore()},
-        executors={"default": __import__(
-            "apscheduler.executors.asyncio", fromlist=["AsyncIOExecutor"]
-        ).AsyncIOExecutor()},
+        jobstores={
+            "default": __import__(
+                "apscheduler.jobstores.memory", fromlist=["MemoryJobStore"]
+            ).MemoryJobStore()
+        },
+        executors={
+            "default": __import__(
+                "apscheduler.executors.asyncio", fromlist=["AsyncIOExecutor"]
+            ).AsyncIOExecutor()
+        },
         timezone="Asia/Shanghai",
     )
     add_demo_job(scheduler)
@@ -255,6 +263,7 @@ async def _demo_lifespan(application: FastAPI):
         # Synchronous shutdown (we are inside the loop). Same
         # rationale as backend.scheduler._scheduler_lifespan.
         from apscheduler.schedulers.base import BaseScheduler
+
         BaseScheduler.shutdown(scheduler, wait=False)
         logger.info("[demo] AsyncIOScheduler stopped")
 
@@ -274,9 +283,7 @@ def create_demo_app() -> FastAPI:
     same object is the ASGI app the lifespan manages.
     """
     if not _APSCHEDULER_AVAILABLE:  # pragma: no cover - import-time guard
-        raise RuntimeError(
-            "apscheduler v3.x is required for backend.demo_integration"
-        )
+        raise RuntimeError("apscheduler v3.x is required for backend.demo_integration")
 
     composed_app.state.demo_scheduler = build_demo_scheduler()
     # Override the lifespan on the *same* app instance — the one
@@ -298,11 +305,13 @@ def create_demo_app() -> FastAPI:
                         next_run_iso = nrt.isoformat()
                 except Exception:  # pragma: no cover - defensive
                     next_run_iso = None
-            jobs_info.append({
-                "id": job.id,
-                "name": job.name,
-                "next_run": next_run_iso,
-            })
+            jobs_info.append(
+                {
+                    "id": job.id,
+                    "name": job.name,
+                    "next_run": next_run_iso,
+                }
+            )
         return {
             "demo": True,
             "scheduler_running": sched.running,

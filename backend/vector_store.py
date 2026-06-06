@@ -80,6 +80,7 @@ def _detect_lancedb() -> Any:
     """
     try:
         import lancedb  # type: ignore
+
         return lancedb
     except Exception as exc:  # ImportError, OSError, ValueError, ...
         logger.info("vector_store: lancedb import failed (%s); using fallback", exc)
@@ -188,12 +189,16 @@ class VectorStore:
                     # First-time bootstrap: create with a single row so the
                     # vector column type is fixed at EMBEDDING_DIM. We
                     # delete that bootstrap row immediately after.
-                    bootstrap = [{
-                        "id": "__bootstrap__",
-                        "vector": [0.0] * EMBEDDING_DIM,
-                    }]
+                    bootstrap = [
+                        {
+                            "id": "__bootstrap__",
+                            "vector": [0.0] * EMBEDDING_DIM,
+                        }
+                    ]
                     self._table = db.create_table(
-                        self.table_name, data=bootstrap, mode="overwrite",
+                        self.table_name,
+                        data=bootstrap,
+                        mode="overwrite",
                     )
                     try:
                         self._table.delete("id = '__bootstrap__'")
@@ -203,13 +208,15 @@ class VectorStore:
                         pass
                 logger.info(
                     "vector_store: backend=lancedb path=%s table=%s",
-                    self.db_path, self.table_name,
+                    self.db_path,
+                    self.table_name,
                 )
             except Exception as exc:
                 # LanceDB import succeeded but connection/table open
                 # failed — degrade to fallback rather than crash.
                 logger.warning(
-                    "vector_store: lancedb open failed (%s); falling back", exc,
+                    "vector_store: lancedb open failed (%s); falling back",
+                    exc,
                 )
                 self._lancedb = None
                 self._table = None
@@ -249,8 +256,7 @@ class VectorStore:
         """
         if len(embedding) != EMBEDDING_DIM:
             raise ValueError(
-                f"embedding length {len(embedding)} != EMBEDDING_DIM "
-                f"({EMBEDDING_DIM})"
+                f"embedding length {len(embedding)} != EMBEDDING_DIM " f"({EMBEDDING_DIM})"
             )
         if self._lancedb is not None:
             await asyncio.to_thread(self._add_lancedb, memory_id, embedding, metadata)
@@ -281,7 +287,10 @@ class VectorStore:
             )
         if self._lancedb is not None:
             return await asyncio.to_thread(
-                self._search_lancedb, query_embedding, k, filter,
+                self._search_lancedb,
+                query_embedding,
+                k,
+                filter,
             )
         return self._search_fallback(query_embedding, k, filter)
 
@@ -313,7 +322,10 @@ class VectorStore:
     # LanceDB sync implementations
     # ============================================
     def _add_lancedb(
-        self, memory_id: str, embedding: list[float], metadata: dict,
+        self,
+        memory_id: str,
+        embedding: list[float],
+        metadata: dict,
     ) -> None:
         # Flatten metadata to top-level keys. We do NOT nest under
         # a "metadata" sub-object — that would force us to define a
@@ -331,7 +343,10 @@ class VectorStore:
         self._table.add([row])
 
     def _search_lancedb(
-        self, query_embedding: list[float], k: int, flt: dict | None,
+        self,
+        query_embedding: list[float],
+        k: int,
+        flt: dict | None,
     ) -> list[dict]:
         try:
             query = self._table.search(query_embedding).limit(k)
@@ -353,7 +368,8 @@ class VectorStore:
                     query = query.where(" AND ".join(clauses))
             except Exception as exc:
                 logger.warning(
-                    "vector_store: lancedb filter not applied (%s)", exc,
+                    "vector_store: lancedb filter not applied (%s)",
+                    exc,
                 )
         try:
             rows = query.to_list()
@@ -376,11 +392,13 @@ class VectorStore:
             except Exception:
                 score = 0.0
             metadata = {k: v for k, v in row.items() if k not in ("id", "vector")}
-            results.append({
-                "memory_id": row_id,
-                "score": score,
-                "metadata": metadata,
-            })
+            results.append(
+                {
+                    "memory_id": row_id,
+                    "score": score,
+                    "metadata": metadata,
+                }
+            )
         # Sort by score desc — Lance's internal ordering is L2 asc.
         results.sort(key=lambda r: r["score"], reverse=True)
         return results
@@ -410,12 +428,18 @@ class VectorStore:
     # Fallback sync implementations (pure-Python)
     # ============================================
     def _add_fallback(
-        self, memory_id: str, embedding: list[float], metadata: dict,
+        self,
+        memory_id: str,
+        embedding: list[float],
+        metadata: dict,
     ) -> None:
         self._fallback_rows[memory_id] = (list(embedding), dict(metadata))
 
     def _search_fallback(
-        self, query_embedding: list[float], k: int, flt: dict | None,
+        self,
+        query_embedding: list[float],
+        k: int,
+        flt: dict | None,
     ) -> list[dict]:
         scored: list[tuple[float, str, dict]] = []
         for mid, (vec, meta) in self._fallback_rows.items():
@@ -426,10 +450,7 @@ class VectorStore:
         # Partial sort: take top-k by score desc.
         scored.sort(key=lambda t: t[0], reverse=True)
         top = scored[:k]
-        return [
-            {"memory_id": mid, "score": score, "metadata": meta}
-            for score, mid, meta in top
-        ]
+        return [{"memory_id": mid, "score": score, "metadata": meta} for score, mid, meta in top]
 
     def _delete_fallback(self, memory_id: str) -> None:
         self._fallback_rows.pop(memory_id, None)

@@ -56,47 +56,57 @@ async def lifespan(app: FastAPI):
                 # World
                 world_obj = await session.get(World, DEMO_STARTER["world_id"])
                 if not world_obj:
-                    session.add(World(
-                        id=DEMO_STARTER["world_id"],
-                        name="被遺忘嘅國度 — 凡達林地區",
-                        version="D&D_5e_SRD_v5.1.0",
-                        config={"yaml_path": "worlds/dnd_5e_forgotten_realms.yaml"},
-                        is_active=True,
-                    ))
+                    session.add(
+                        World(
+                            id=DEMO_STARTER["world_id"],
+                            name="被遺忘嘅國度 — 凡達林地區",
+                            version="D&D_5e_SRD_v5.1.0",
+                            config={"yaml_path": "worlds/dnd_5e_forgotten_realms.yaml"},
+                            is_active=True,
+                        )
+                    )
                 # Scene
                 scene_obj = await session.get(Scene, DEMO_SCENE["scene_id"])
                 if not scene_obj:
-                    session.add(Scene(
-                        id=DEMO_SCENE["scene_id"],
-                        world_id=DEMO_STARTER["world_id"],
-                        name="凡達林鎮 (Phandalin Town)",
-                        description=DEMO_SCENE["scene_narrative"],
-                        location_tag="settlement",
-                        environment_tags=["outdoor", "settlement", "town", "frontier"],
-                        active_npcs=[
-                            "npc_gundren", "npc_halia", "npc_sister_garaele",
-                            "npc_redbrand_ringleader", "npc_injured_traveler_01",
-                        ],
-                        atmosphere="tense",
-                        is_dynamic=False,
-                    ))
+                    session.add(
+                        Scene(
+                            id=DEMO_SCENE["scene_id"],
+                            world_id=DEMO_STARTER["world_id"],
+                            name="凡達林鎮 (Phandalin Town)",
+                            description=DEMO_SCENE["scene_narrative"],
+                            location_tag="settlement",
+                            environment_tags=["outdoor", "settlement", "town", "frontier"],
+                            active_npcs=[
+                                "npc_gundren",
+                                "npc_halia",
+                                "npc_sister_garaele",
+                                "npc_redbrand_ringleader",
+                                "npc_injured_traveler_01",
+                            ],
+                            atmosphere="tense",
+                            is_dynamic=False,
+                        )
+                    )
                 # Character
                 char_obj = await session.get(CharacterState, DEMO_STARTER["character_id"])
                 if not char_obj:
-                    session.add(CharacterState(
-                        character_id=DEMO_STARTER["character_id"],
-                        name=DEMO_STARTER["name"],
-                        world_id=DEMO_STARTER["world_id"],
-                        current_scene_id=DEMO_STARTER["current_scene_id"],
-                        semantic_profile=DEMO_STARTER["semantic_profile"],
-                        is_npc_mode=False,
-                        is_alive=True,
-                    ))
+                    session.add(
+                        CharacterState(
+                            character_id=DEMO_STARTER["character_id"],
+                            name=DEMO_STARTER["name"],
+                            world_id=DEMO_STARTER["world_id"],
+                            current_scene_id=DEMO_STARTER["current_scene_id"],
+                            semantic_profile=DEMO_STARTER["semantic_profile"],
+                            is_npc_mode=False,
+                            is_alive=True,
+                        )
+                    )
             logger.info("[Startup] Demo data seeded")
 
             # Recover zombies
             try:
                 from sqlalchemy import text
+
                 async with get_db_session() as session:
                     result = await session.execute(text("SELECT recover_interrupted_actions()"))
                     recovered = result.scalar() or 0
@@ -147,6 +157,7 @@ app.include_router(character.router, prefix="/api/character", tags=["character"]
 app.include_router(action.router, prefix="/api/action", tags=["action"])
 app.include_router(scene.router, prefix="/api/scene", tags=["scene"])
 app.include_router(world.router, prefix="/api/world", tags=["world"])
+
 
 # WebSocket
 @app.websocket("/ws/game/{character_id}")

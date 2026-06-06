@@ -35,9 +35,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 # Ensure repo root on sys.path.
-_REPO_ROOT = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)
-)
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
@@ -87,6 +85,7 @@ async def client(tmp_path: Path) -> AsyncIterator[AsyncClient]:
     # file from polluting another.
     prev = None
     import backend.memory_palace_integration_endpoint as ep_mod
+
     prev = ep_mod._integration
     set_integration(integration)
 
@@ -112,7 +111,8 @@ async def client(tmp_path: Path) -> AsyncIterator[AsyncClient]:
 class TestRememberEndpoint:
     @pytest.mark.asyncio
     async def test_remember_endpoint_returns_memory_id(
-        self, client: AsyncClient,
+        self,
+        client: AsyncClient,
     ) -> None:
         """POST /memory/remember returns 200 with a uuid4 memory_id."""
         resp = await client.post(
@@ -135,7 +135,8 @@ class TestRememberEndpoint:
 class TestRecallEndpoint:
     @pytest.mark.asyncio
     async def test_recall_endpoint_returns_results(
-        self, client: AsyncClient,
+        self,
+        client: AsyncClient,
     ) -> None:
         """POST /memory/recall returns a list of result dicts."""
         # Seed two memories.
@@ -176,7 +177,8 @@ class TestRecallEndpoint:
 
     @pytest.mark.asyncio
     async def test_recall_filters_by_character_id(
-        self, client: AsyncClient,
+        self,
+        client: AsyncClient,
     ) -> None:
         """Recall as char_A does not return char_B's memories."""
         # char_B has a memory on axis 5.
@@ -220,7 +222,8 @@ class TestRecallEndpoint:
 class TestForgetEndpoint:
     @pytest.mark.asyncio
     async def test_forget_endpoint_returns_success(
-        self, client: AsyncClient,
+        self,
+        client: AsyncClient,
     ) -> None:
         """DELETE /memory/{char}/{mem} returns 200 with deleted=True."""
         # Seed.
@@ -244,7 +247,8 @@ class TestForgetEndpoint:
 
     @pytest.mark.asyncio
     async def test_forget_endpoint_404_on_wrong_owner(
-        self, client: AsyncClient,
+        self,
+        client: AsyncClient,
     ) -> None:
         """Forgetting another character's memory returns 404."""
         r = await client.post(
@@ -265,7 +269,8 @@ class TestForgetEndpoint:
 class TestHealthEndpoint:
     @pytest.mark.asyncio
     async def test_health_endpoint_returns_both_backends_status(
-        self, client: AsyncClient,
+        self,
+        client: AsyncClient,
     ) -> None:
         """GET /memory/health returns 200 with both booleans True."""
         resp = await client.get("/memory/health")

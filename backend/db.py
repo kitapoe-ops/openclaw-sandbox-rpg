@@ -43,7 +43,7 @@ engine = create_async_engine(
     pool_size=10,
     max_overflow=20,
     pool_pre_ping=True,  # Avoid zombie connections
-    pool_recycle=300,    # Recycle connections every 5 min
+    pool_recycle=300,  # Recycle connections every 5 min
 )
 
 AsyncSessionLocal = async_sessionmaker(
@@ -131,6 +131,7 @@ async def init_db():
         try:
             # Import models to register them with Base
             from . import models  # noqa: F401
+
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
             _init_done = True

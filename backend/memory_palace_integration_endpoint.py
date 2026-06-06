@@ -114,12 +114,8 @@ def _get_integration() -> MemoryPalaceIntegration:
         # mirrors the rest of the codebase's "demo mode" pattern.
         data_dir = os.environ.get("SANDBOX_RPG_DATA_DIR", "./data")
         os.makedirs(data_dir, exist_ok=True)
-        sqlite_path = os.path.join(
-            data_dir, "memory_palace_integration.db"
-        )
-        persistence = PostgresPersistence(
-            f"sqlite+aiosqlite:///{sqlite_path}"
-        )
+        sqlite_path = os.path.join(data_dir, "memory_palace_integration.db")
+        persistence = PostgresPersistence(f"sqlite+aiosqlite:///{sqlite_path}")
 
     vector_store = VectorStore()
     _integration = MemoryPalaceIntegration(persistence, vector_store)
@@ -238,7 +234,8 @@ async def recall(req: RecallRequest) -> RecallResponse:
 
 
 @router.delete(
-    "/{character_id}/{memory_id}", response_model=ForgetResponse,
+    "/{character_id}/{memory_id}",
+    response_model=ForgetResponse,
 )
 async def forget(character_id: str, memory_id: str) -> ForgetResponse:
     """Delete a memory, verifying ownership.
@@ -258,7 +255,9 @@ async def forget(character_id: str, memory_id: str) -> ForgetResponse:
             ),
         )
     return ForgetResponse(
-        deleted=True, character_id=character_id, memory_id=memory_id,
+        deleted=True,
+        character_id=character_id,
+        memory_id=memory_id,
     )
 
 

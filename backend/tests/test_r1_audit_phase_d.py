@@ -17,9 +17,7 @@ import inspect
 import os
 import sys
 
-_PROJECT_ROOT = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)
-)
+_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
@@ -36,6 +34,7 @@ _D_FUNCTIONS = (
 def _load_d_functions():
     """Lazy import so test collection never fails on partial renames."""
     import backend.r1_audit_client as m
+
     return {name: getattr(m, name) for name in _D_FUNCTIONS}
 
 
@@ -91,9 +90,7 @@ def test_all_d_functions_have_docstrings() -> None:
             "it asks R1 to verify."
         )
         # grep-ability: docstring should mention "Phase D"
-        assert "Phase D" in doc, (
-            f"{name} docstring should reference 'Phase D' for grep-ability."
-        )
+        assert "Phase D" in doc, f"{name} docstring should reference 'Phase D' for grep-ability."
 
 
 def test_d_functions_take_repo_root_kwarg() -> None:
@@ -105,13 +102,13 @@ def test_d_functions_take_repo_root_kwarg() -> None:
         sig = inspect.signature(fn)
         params = list(sig.parameters.values())
         assert params, f"{name} must accept at least one parameter (repo_root)"
-        assert params[0].name == "repo_root", (
-            f"{name} first parameter must be 'repo_root', got '{params[0].name}'"
-        )
+        assert (
+            params[0].name == "repo_root"
+        ), f"{name} first parameter must be 'repo_root', got '{params[0].name}'"
         assert params[0].default == ".", (
             f"{name} default for 'repo_root' should be '.' (current dir), "
             f"got {params[0].default!r}"
         )
-        assert sig.return_annotation != inspect.Signature.empty, (
-            f"{name} should declare a return annotation"
-        )
+        assert (
+            sig.return_annotation != inspect.Signature.empty
+        ), f"{name} should declare a return annotation"

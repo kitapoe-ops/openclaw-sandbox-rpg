@@ -106,10 +106,10 @@ class MemoryType(str, enum.Enum):
     Orthogonal to MemorySource.
     """
 
-    EPISODIC = "episodic"      # Specific events that happened at a time/place
-    SEMANTIC = "semantic"      # Facts, world rules, NPC names, relationships
+    EPISODIC = "episodic"  # Specific events that happened at a time/place
+    SEMANTIC = "semantic"  # Facts, world rules, NPC names, relationships
     PROCEDURAL = "procedural"  # Skills, how to do things, decryption steps
-    EMOTIONAL = "emotional"    # Significant emotional state changes
+    EMOTIONAL = "emotional"  # Significant emotional state changes
 
 
 class MemorySource(str, enum.Enum):
@@ -118,10 +118,10 @@ class MemorySource(str, enum.Enum):
     Orthogonal to MemoryType.
     """
 
-    SCENE = "scene"             # Scene context description
-    CHOICE = "choice"           # Player decision branch
+    SCENE = "scene"  # Scene context description
+    CHOICE = "choice"  # Player decision branch
     NPC_DIALOGUE = "npc_dialogue"  # Conversation with an NPC
-    WORLD_EVENT = "world_event" # System-level or environmental event
+    WORLD_EVENT = "world_event"  # System-level or environmental event
 
 
 # Allowed set per source → sanity check (defense against future bug)
@@ -166,18 +166,12 @@ class MemoryFragment:
             self.source = MemorySource(self.source)
         # Validate salience in [0, 1]
         if not 0.0 <= self.salience <= 1.0:
-            raise ValueError(
-                f"salience must be in [0, 1], got {self.salience}"
-            )
+            raise ValueError(f"salience must be in [0, 1], got {self.salience}")
         # Validate decay_rate in [0, 1]
         if not 0.0 <= self.decay_rate <= 1.0:
-            raise ValueError(
-                f"decay_rate must be in [0, 1], got {self.decay_rate}"
-            )
+            raise ValueError(f"decay_rate must be in [0, 1], got {self.decay_rate}")
         if self.access_count < 0:
-            raise ValueError(
-                f"access_count must be >= 0, got {self.access_count}"
-            )
+            raise ValueError(f"access_count must be >= 0, got {self.access_count}")
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dict (for JSON storage)."""
@@ -292,6 +286,7 @@ class MemoryPalace:
     async def _get_lock(self) -> Any:
         """Lazy-init asyncio.Lock (must be created in async context)."""
         import asyncio
+
         if self._lock is None:
             self._lock = asyncio.Lock()
         return self._lock
@@ -486,9 +481,7 @@ class MemoryPalace:
         finally:
             conn.close()
 
-    async def count(
-        self, character_id: str, include_archived: bool = False
-    ) -> int:
+    async def count(self, character_id: str, include_archived: bool = False) -> int:
         """Return the number of memories for a character."""
         conn = self._connect()
         try:
@@ -574,9 +567,7 @@ class MemoryPalace:
             finally:
                 conn.close()
 
-    async def update_salience(
-        self, memory_id: str, new_salience: float
-    ) -> bool:
+    async def update_salience(self, memory_id: str, new_salience: float) -> bool:
         """Update the salience score of a single memory."""
         if not 0.0 <= new_salience <= 1.0:
             raise ValueError("new_salience must be in [0, 1]")
@@ -591,9 +582,7 @@ class MemoryPalace:
         finally:
             conn.close()
 
-    async def traverse_links(
-        self, memory_id: str, max_depth: int = 3
-    ) -> list[MemoryFragment]:
+    async def traverse_links(self, memory_id: str, max_depth: int = 3) -> list[MemoryFragment]:
         """
         BFS traversal of the memory graph starting from memory_id.
         Returns all reachable memories (excluding the start).
@@ -642,9 +631,7 @@ class MemoryPalace:
         finally:
             conn.close()
 
-    async def apply_decay(
-        self, character_id: str, days_elapsed: float = 1.0
-    ) -> int:
+    async def apply_decay(self, character_id: str, days_elapsed: float = 1.0) -> int:
         """
         Apply time-based decay to all memories for a character.
         Returns the number of memories whose salience was modified.
@@ -671,9 +658,7 @@ class MemoryPalace:
             ).fetchall()
             updates: list[tuple] = []
             for row in rows:
-                new_sal = row["salience"] * math.exp(
-                    -row["decay_rate"] * days_elapsed
-                )
+                new_sal = row["salience"] * math.exp(-row["decay_rate"] * days_elapsed)
                 # Clamp to [0, 1] (floating point tolerance)
                 new_sal = max(0.0, min(1.0, new_sal))
                 if new_sal != row["salience"]:
@@ -779,9 +764,7 @@ class MemoryPalace:
         finally:
             conn.close()
 
-    async def archive_cold_memories(
-        self, character_id: str, salience_floor: float = 0.05
-    ) -> int:
+    async def archive_cold_memories(self, character_id: str, salience_floor: float = 0.05) -> int:
         """Archive memories whose salience has decayed below the floor."""
         conn = self._connect()
         try:
@@ -828,6 +811,7 @@ class MemoryPalace:
 
         # Step 2: Decide which to transfer (in memory)
         import random
+
         now = _now_iso()
         inserts: list[tuple] = []
         for row in rows:
@@ -844,22 +828,24 @@ class MemoryPalace:
                 **(json.loads(row["metadata_json"])),
                 "transferred_from": source_character_id,
             }
-            inserts.append((
-                new_id,
-                target_character_id,
-                mt,
-                row["content"],
-                "world_event",  # mark as world event since transferred
-                row["salience"] * 0.8,  # slight salience loss on transfer
-                now,
-                now,
-                0,
-                row["tags_json"],
-                "[]",  # reset links (old IDs no longer valid)
-                row["decay_rate"],
-                json.dumps(metadata_with_origin),
-                0,
-            ))
+            inserts.append(
+                (
+                    new_id,
+                    target_character_id,
+                    mt,
+                    row["content"],
+                    "world_event",  # mark as world event since transferred
+                    row["salience"] * 0.8,  # slight salience loss on transfer
+                    now,
+                    now,
+                    0,
+                    row["tags_json"],
+                    "[]",  # reset links (old IDs no longer valid)
+                    row["decay_rate"],
+                    json.dumps(metadata_with_origin),
+                    0,
+                )
+            )
 
         if not inserts:
             return 0
@@ -966,9 +952,7 @@ class MemoryPalaceIntegration:
     public attribute on :class:`PostgresPersistence`.
     """
 
-    _ALLOWED_MEMORY_TYPES: frozenset[str] = frozenset(
-        {"episodic", "semantic", "procedural"}
-    )
+    _ALLOWED_MEMORY_TYPES: frozenset[str] = frozenset({"episodic", "semantic", "procedural"})
 
     def __init__(
         self,
@@ -1047,15 +1031,12 @@ class MemoryPalaceIntegration:
                 f"{sorted(self._ALLOWED_MEMORY_TYPES)}, got {memory_type!r}"
             )
         if not 0.0 <= salience <= 1.0:
-            raise SalienceOutOfRangeError(
-                f"salience must be in [0.0, 1.0], got {salience}"
-            )
+            raise SalienceOutOfRangeError(f"salience must be in [0.0, 1.0], got {salience}")
         if len(embedding) != EMBEDDING_DIM:
             # Re-raise the ValueError raised by the vector store
             # before we touch Postgres.
             raise ValueError(
-                f"embedding length {len(embedding)} != "
-                f"EMBEDDING_DIM ({EMBEDDING_DIM})"
+                f"embedding length {len(embedding)} != " f"EMBEDDING_DIM ({EMBEDDING_DIM})"
             )
 
         memory_id = str(uuid.uuid4())
@@ -1131,9 +1112,7 @@ class MemoryPalaceIntegration:
         if k <= 0:
             raise ValueError("k must be > 0")
         if not 0.0 <= min_salience <= 1.0:
-            raise SalienceOutOfRangeError(
-                f"min_salience must be in [0.0, 1.0], got {min_salience}"
-            )
+            raise SalienceOutOfRangeError(f"min_salience must be in [0.0, 1.0], got {min_salience}")
         if memory_type is not None and memory_type not in self._ALLOWED_MEMORY_TYPES:
             raise ValueError(
                 f"memory_type must be one of "
@@ -1207,7 +1186,8 @@ class MemoryPalaceIntegration:
         return results
 
     async def _fetch_memories_by_id(
-        self, memory_ids: list[str],
+        self,
+        memory_ids: list[str],
     ) -> dict[str, dict[str, Any]]:
         """Bulk-fetch a set of memories by id, regardless of character.
 
@@ -1235,7 +1215,9 @@ class MemoryPalaceIntegration:
     # Deletes
     # ============================================
     async def forget(
-        self, character_id: str, memory_id: str,
+        self,
+        character_id: str,
+        memory_id: str,
     ) -> bool:
         """Delete a memory, verifying ownership first.
 
@@ -1282,7 +1264,8 @@ class MemoryPalaceIntegration:
             logger.warning(
                 "MemoryPalaceIntegration.forget: vector delete failed for "
                 "%s: %s (PG row already gone)",
-                memory_id, exc,
+                memory_id,
+                exc,
             )
         return True
 
