@@ -20,8 +20,12 @@ source = .
 branch = false
 
 [report]
-# Match the CI gate: 85% line coverage for non-excluded code.
-fail_under = 85
+# Phase J: gate moved from 85% to 89% after test additions
+# (test_config_settings.py + test_llm_client_helpers.py).
+# Measured coverage: 89.04%. Target 90% is the next milestone
+# — see PHASE_K_NOTES.md in the repo for the 4-file plan that
+# would push us to 90% (estimated 20-30 min dev work).
+fail_under = 89
 
 # Skip these paths entirely from coverage tracking.
 # Use the omit glob to exclude stub files (TODO: Implement) and
