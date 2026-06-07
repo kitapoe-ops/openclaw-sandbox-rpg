@@ -340,30 +340,100 @@ async def _process_action(
                     f"[Task {task_id}] Locked scene {authoritative_scene_id}, calling LLM"
                 )
                 client = get_llm_client()
-                # Build a strong prompt — real PromptBuilder is Phase C-2
+                # Build a rich system_prompt + user_message that
+                # carries the FULL game context. Without this, M3
+                # has no memory of prior rounds, the scene state,
+                # or the character's current profile — so every
+                # response is a cold start (generic 'you stand in
+                # a tavern...' rather than a continuation of the
+                # actual story).
+                from sqlalchemy import text as _sql_text_ctx
+                from ..db import engine as _engine
+
+                # 1. Load scene description
+                scene_desc = ""
+                try:
+                    async with _engine.begin() as conn:
+                        r = await conn.execute(
+                            _sql_text_ctx(
+                                "SELECT name, description, atmosphere FROM scenes WHERE id = :sid"
+                            ),
+                            {"sid": authoritative_scene_id},
+                        )
+                        row = r.first()
+                        if row:
+                            scene_desc = f"場景名: {row[0]}\n場景描述: {row[1]}\n氣氛: {row[2] or 'neutral'}"
+                except Exception:
+                    pass
+
+                # 2. Load last 3 actions for context
+                prior_actions = []
+                try:
+                    async with _engine.begin() as conn:
+                        r = await conn.execute(
+                            _sql_text_ctx(
+                                "SELECT round_number, player_choice, llm_narrative_output "
+                                "FROM action_history WHERE character_id = :cid "
+                                "ORDER BY created_at DESC LIMIT 3"
+                            ),
+                            {"cid": character_id},
+                        )
+                        for row in r:
+                            prior_actions.append({
+                                "round": row[0],
+                                "choice": row[1],
+                                "narrative": row[2],
+                            })
+                except Exception:
+                    pass
+
+                # 3. Build the strong prompt
+                sem = character_state.get("semantic_profile") or {}
+                phys = sem.get("physical", {}) or {}
+                ment = sem.get("mental", {}) or {}
                 system_prompt = (
                     "你是 OpenClaw Sandbox RPG 的敘事者。\n"
-                    "請用繁體中文（粵語风格）回應。\n"
+                    "請用繁體中文（粵語风格）回應，narrative 至少 3-4 句以豐富場景描述。\n"
                     "\n"
                     "## 強制規則\n"
                     "1. **只返回 JSON**。不要有任何解釋、思考、Markdown 包装。\n"
                     "2. JSON 形狀:\n"
-                    '   {"narrative": "<一段敘事文字>", '
-                    '"choices": [{"id": "opt_1", "vignette": "<選擇>", "intent_category": "<類別>"}, ...], '
+                    '   {"narrative": "<一段敘事文字 3-4 句>", '
+                    '"choices": [{"id": "opt_1", "vignette": "<選擇 1 句>", "intent_category": "<類別>"}, ...], '
                     '"state_changes": {"stamina_level": "<stamina>" | null, '
                     '"health_status": "<status>" | null, '
                     '"morale_level": "<morale>" | null}, '
                     '"new_scene_id": "<scene_id>" | null}\n'
-                    "3. choices 必須有 4 個，不可为空。\n"
+                    "3. choices 必須有 4 個，不可為空。\n"
                     "4. narrative 必須是完整段落，不可以包含<think>開頭的思考。\n"
+                    "5. 請延續之前的劇情（見 user_message 嘅 prior_actions），"
+                    "不要無關聯地重新開始。\n"
                     "\n"
-                    f"當前角色: {character_state.get('name', character_id)}\n"
-                    f"場景: {authoritative_scene_id}\n"
+                    f"## 當前角色\n"
+                    f"名字: {character_state.get('name', character_id)}\n"
+                    f"體力: {phys.get('stamina_level', 'fresh')}\n"
+                    f"健康: {phys.get('health_status', 'healthy')}\n"
+                    f"士氣: {ment.get('morale_level', 'calm')}\n"
+                    f"\n"
+                    f"## 當前場景\n"
+                    f"{scene_desc or authoritative_scene_id}\n"
                 )
-                user_message = json.dumps(
-                    msg.get("choice") or msg.get("player_input") or {},
-                    ensure_ascii=False,
-                )
+
+                # 4. Build the rich user_message that carries the
+                # previous round's narrative + the choice being made.
+                choice_obj = msg.get("choice") or msg.get("player_input") or {}
+                user_message_parts = []
+                if prior_actions:
+                    user_message_parts.append("## 之前的劇情 (prior_actions)\n")
+                    for pa in reversed(prior_actions):
+                        user_message_parts.append(
+                            f"- Round {pa['round']}: 玩家選擇: {json.dumps(pa['choice'], ensure_ascii=False)[:200]}\n"
+                            f"  結果: {(pa['narrative'] or '(no narrative)')[:300]}\n"
+                        )
+                user_message_parts.append("\n## 玩家嘅最新選擇 (current choice)\n")
+                user_message_parts.append(json.dumps(choice_obj, ensure_ascii=False))
+                user_message = "\n".join(user_message_parts)
+
                 raw = await client.generate(
                     system_prompt=system_prompt,
                     user_message=user_message,
