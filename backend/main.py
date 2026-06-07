@@ -196,8 +196,8 @@ async def health():
     }
 
 
-@app.get("/")
-async def root():
+@app.get("/api")
+async def api_info():
     return {
         "name": "OpenClaw Sandbox RPG",
         "version": "0.4.0",
@@ -210,3 +210,58 @@ async def root():
             "ws_url": f"/ws/game/{DEMO_STARTER['character_id']}",
         },
     }
+
+
+# ============================================
+# Phase L2-G: Serve frontend SPA from frontend/dist/
+# (Vue 3 + Vite build) at / and any non-/api path.
+# This MUST come AFTER all API routes so they take precedence.
+# ============================================
+import pathlib
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+_FRONTEND_DIST = pathlib.Path(__file__).resolve().parent.parent / "frontend" / "dist"
+_FRONTEND_DIST = _FRONTEND_DIST.resolve()
+_FRONTEND_INDEX = _FRONTEND_DIST / "index.html"
+
+if _FRONTEND_DIST.exists() and _FRONTEND_INDEX.exists():
+    # Mount /assets (Vite outputs JS/CSS here)
+    _assets_dir = _FRONTEND_DIST / "assets"
+    if _assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(_assets_dir)), name="assets")
+
+    @app.get("/")
+    async def spa_root():
+        return FileResponse(str(_FRONTEND_INDEX))
+
+    @app.get("/{full_path:path}")
+    async def spa_fallback(full_path: str):
+        # Don't shadow /api or /docs or /ws or /health
+        if full_path.startswith(("api/", "docs", "redoc", "openapi.json", "ws/", "health")):
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Not Found")
+        # Try to serve a static file first (e.g. /favicon.ico)
+        candidate = _FRONTEND_DIST / full_path
+        if candidate.is_file():
+            return FileResponse(str(candidate))
+        # Otherwise SPA fallback to index.html (Vue Router history mode)
+        return FileResponse(str(_FRONTEND_INDEX))
+else:
+    # No frontend dist — fall back to the JSON / endpoint
+    @app.get("/")
+    async def root():
+        return {
+            "name": "OpenClaw Sandbox RPG",
+            "version": "0.4.0",
+            "docs": "/docs",
+            "frontend_dist_missing": True,
+            "message": "frontend/dist/ not found. Run 'cd frontend && npm run build'.",
+            "demo": {
+                "character_id": DEMO_STARTER["character_id"],
+                "scene_id": DEMO_SCENE["scene_id"],
+                "character_url": f"/api/character/{DEMO_STARTER['character_id']}",
+                "scene_url": f"/api/scene/{DEMO_STARTER['character_id']}",
+                "ws_url": f"/ws/game/{DEMO_STARTER['character_id']}",
+            },
+        }
