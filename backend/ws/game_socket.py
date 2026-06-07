@@ -511,13 +511,36 @@ async def _process_action(
                                 },
                             )
                 if scene_output.get("new_scene_id"):
-                    await conn.execute(
-                        _sql_text(
-                            "UPDATE character_states SET current_scene_id = :sid, "
-                            "updated_at = now() WHERE character_id = :cid"
-                        ),
-                        {"sid": scene_output["new_scene_id"], "cid": character_id},
+                    new_sid = scene_output["new_scene_id"]
+                    # Phase L2-E hotfix: validate the scene exists in DB
+                    # before updating character_states.current_scene_id.
+                    # Without this, an M3-invented scene slug like
+                    # 'loc_phandalin_town_square' would crash with
+                    # ForeignKeyViolationError mid-transaction, the
+                    # whole Q6 STEP 3 TX would roll back, and the
+                    # scene_update broadcast never fires — leaving
+                    # the player on a permanent 'handling...' spinner.
+                    scene_check = await conn.execute(
+                        _sql_text("SELECT 1 FROM scenes WHERE id = :sid"),
+                        {"sid": new_sid},
                     )
+                    if scene_check.first() is not None:
+                        await conn.execute(
+                            _sql_text(
+                                "UPDATE character_states SET current_scene_id = :sid, "
+                                "updated_at = now() WHERE character_id = :cid"
+                            ),
+                            {"sid": new_sid, "cid": character_id},
+                        )
+                    else:
+                        # M3 invented a scene the DB doesn't have.
+                        # Skip the scene update (keep the player in
+                        # their current scene) and just log the warning.
+                        # The narrative still ships to the player.
+                        logger.warning(
+                            f"[Task {task_id}] M3 returned unknown scene_id "
+                            f"'{new_sid}' — keeping current scene '{authoritative_scene_id}'"
+                        )
         except Exception as e:
             logger.exception(f"[Task {task_id}] DB write failed: {e}")
             try:
