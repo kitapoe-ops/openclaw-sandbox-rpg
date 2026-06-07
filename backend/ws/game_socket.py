@@ -340,30 +340,95 @@ async def _process_action(
                     f"[Task {task_id}] Locked scene {authoritative_scene_id}, calling LLM"
                 )
                 client = get_llm_client()
-                # Build a minimal prompt — real PromptBuilder is Phase C-2
+                # Build a strong prompt — real PromptBuilder is Phase C-2
                 system_prompt = (
-                    "你是 OpenClaw Sandbox RPG 的敘事者。回應請用繁體中文（粵語风格）。"
-                    "請返回 JSON: {narrative, choices, state_changes, new_scene_id}。"
-                    f"當前角色: {character_state.get('name', character_id)}"
+                    "你是 OpenClaw Sandbox RPG 的敘事者。\n"
+                    "請用繁體中文（粵語风格）回應。\n"
+                    "\n"
+                    "## 強制規則\n"
+                    "1. **只返回 JSON**。不要有任何解釋、思考、Markdown 包装。\n"
+                    "2. JSON 形狀:\n"
+                    '   {"narrative": "<一段敘事文字>", '
+                    '"choices": [{"id": "opt_1", "vignette": "<選擇>", "intent_category": "<類別>"}, ...], '
+                    '"state_changes": {"stamina_level": "<stamina>" | null, '
+                    '"health_status": "<status>" | null, '
+                    '"morale_level": "<morale>" | null}, '
+                    '"new_scene_id": "<scene_id>" | null}\n'
+                    "3. choices 必須有 4 個，不可为空。\n"
+                    "4. narrative 必須是完整段落，不可以包含<think>開頭的思考。\n"
+                    "\n"
+                    f"當前角色: {character_state.get('name', character_id)}\n"
+                    f"場景: {authoritative_scene_id}\n"
                 )
                 user_message = json.dumps(
-                    msg.get("choice") or msg.get("player_input") or {}, ensure_ascii=False
+                    msg.get("choice") or msg.get("player_input") or {},
+                    ensure_ascii=False,
                 )
                 raw = await client.generate(
                     system_prompt=system_prompt,
                     user_message=user_message,
                 )
-                # Try to parse as JSON
-                try:
-                    scene_output = json.loads(raw)
-                except json.JSONDecodeError:
-                    # Wrap raw text in a minimal scene_output
+                # Phase L2-E hotfix: M3 with thinking mode often prepends
+                # \n<think>\n... to the output. We strip thinking blocks
+                # first, then attempt JSON parse, then a strict regex
+                # search for a JSON object in the cleaned text.
+                import re as _re
+                cleaned = _re.sub(r"<think>.*?</think>", "", raw, flags=_re.DOTALL).strip()
+                cleaned = _re.sub(r"^<think>.*?(?=\n\n|\Z)", "", cleaned, flags=_re.DOTALL).strip()
+                # Find first '{' and the matching '}' (balanced braces)
+                scene_output: dict = {}
+                if cleaned:
+                    # Find a JSON object
+                    start = cleaned.find("{")
+                    if start != -1:
+                        depth = 0
+                        in_string = False
+                        escape = False
+                        for end in range(start, len(cleaned)):
+                            ch = cleaned[end]
+                            if escape:
+                                escape = False
+                                continue
+                            if ch == "\\":
+                                escape = True
+                                continue
+                            if ch == '"':
+                                in_string = not in_string
+                                continue
+                            if in_string:
+                                continue
+                            if ch == "{":
+                                depth += 1
+                            elif ch == "}":
+                                depth -= 1
+                                if depth == 0:
+                                    try:
+                                        scene_output = json.loads(cleaned[start : end + 1])
+                                    except json.JSONDecodeError:
+                                        pass
+                                    break
+                if not scene_output:
+                    # Last-resort fallback: treat the whole cleaned
+                    # response as a narrative with NO choices. This
+                    # is degraded but at least the player sees
+                    # something instead of an infinite spinner.
                     scene_output = {
-                        "narrative": raw[:500] if raw else "(LLM returned empty)",
+                        "narrative": (cleaned or raw)[:500],
                         "choices": [],
                         "state_changes": {},
                         "new_scene_id": None,
                     }
+                # Always provide 4 choices (the SPA renders 4
+                # choice cards; fewer breaks the layout). Pad with
+                # safe defaults if the LLM returned fewer.
+                while len(scene_output.get("choices", [])) < 4:
+                    scene_output.setdefault("choices", []).append(
+                        {
+                            "id": f"opt_fallback_{len(scene_output.get('choices', [])) + 1}",
+                            "vignette": "繼續觀察環境",
+                            "intent_category": "exploration",
+                        }
+                    )
                 logger.info(f"[Task {task_id}] LLM complete")
         except Exception as e:
             logger.exception(f"[Task {task_id}] LLM call failed: {e}")
