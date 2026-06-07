@@ -29,10 +29,20 @@ onMounted(async () => {
   // a 'character_not_found' rejection with no visible UI feedback.
   let state: any = null
   let scene: any = null
+  // Hard timeout: if the initial load chain takes more than 25s
+  // (e.g. backend hiccup, request stuck, etc.), surface a clear
+  // error instead of leaving the player on an infinite spinner.
+  const timeout = setTimeout(() => {
+    setLoadError(
+      '載入逾時（25秒）— 請 reload 或 check Network tab。\n' +
+      '  角色 ID: ' + characterId
+    )
+  }, 25000)
   try {
     state = await gameApi.getCharacter(characterId)
     setCharacterState(state)
   } catch (e: any) {
+    clearTimeout(timeout)
     if (e?.response?.status === 404 || /not found/i.test(String(e?.message || e))) {
       setLoadError(`Character '${characterId}' 唔存在。請用 Character Create 建立新角色。`)
       return
@@ -49,7 +59,17 @@ onMounted(async () => {
     console.error('Failed to load current scene:', e)
   }
 
-  await gameStore.initialize(characterId)
+  try {
+    await gameStore.initialize(characterId)
+    clearTimeout(timeout)
+  } catch (e: any) {
+    clearTimeout(timeout)
+    console.error('Failed to initialize game store:', e)
+    setLoadError(
+      'Backend 連線失敗: ' + (e?.message || e) + '\n\n' +
+      '請確認 backend 跑緊（port 8000）之後 reload。'
+    )
+  }
 })
 
 onUnmounted(() => {
