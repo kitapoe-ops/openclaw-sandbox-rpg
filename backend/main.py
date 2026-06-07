@@ -155,6 +155,28 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Phase L2-E hotfix: disable ALL caching for HTML and JS bundle
+# responses. Telegram's in-app browser, mobile Safari, and many
+# Android browsers cache aggressively even on hard reload,
+# and the user has reported the same 'blank/hung' bug 7 times
+# in a row despite the Python e2e test passing every time. The
+# most likely cause is the browser pinning an OLD bundle. By
+# adding no-cache headers we force every load to hit Cloudflare
+# and the backend, which in turn means the next commit's new
+# bundle hash will be picked up on the very next reload.
+@app.middleware("http")
+async def _no_cache_middleware(request, call_next):
+    response = await call_next(request)
+    # Only add no-cache to HTML and JS/CSS assets (not the JSON
+    # API — that one can stay cacheable for short bursts).
+    path = request.url.path
+    if path == "/" or path.endswith(".html") or "/assets/" in path:
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
+
 app.add_middleware(
     CORSMiddleware,
     # Restrictive default; override via CORS_ORIGINS env var (comma-separated)
