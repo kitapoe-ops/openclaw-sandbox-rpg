@@ -253,6 +253,26 @@ export const useGameStore = defineStore('game', () => {
     pendingTasks.value.set(tempId, task)
     lastTaskError.value = null
 
+    // Phase L2-E: hard safety net. The backend's WS handler sends
+    // a scene_update with a server-UUID task_id that DOES NOT match
+    // the temp_xxx we just set. Even though our scene_update
+    // handler calls pendingTasks.value.clear() (which empties the
+    // whole map regardless of task_id), a slow response or a
+    // late-arriving message can leave a stale entry that locks
+    // the UI on the spinner. We also schedule a 30s hard clear so
+    // that even if the backend never responds the player can
+    // keep playing. The clear is idempotent.
+    setTimeout(() => {
+      if (pendingTasks.value.size > 0) {
+        console.warn(
+          '[gameStore] 30s hard clear — backend never confirmed',
+          Array.from(pendingTasks.value.keys()),
+        )
+        pendingTasks.value.clear()
+      }
+    }, 30000)
+    void tempId  // silence unused-variable warning in some configs
+
     // NOTE: We no longer send scene_id in payload!
     // Server reads from DB character_states.current_scene_id
     // (Defense against client tampering / replay attacks)
