@@ -485,19 +485,27 @@ async def _process_action(
                         ("morale_level", "morale_level", "mental"),
                     ):
                         if k in cs and cs[k]:
+                            # Build the path as a SQL ARRAY literal.
+                            # jsonb_set needs a real ARRAY[...] expression,
+                            # not bound positional params — asyncpg does
+                            # not allow bound params inside an ARRAY
+                            # literal. The values are constants, not
+                            # user-controlled, so string concat is safe.
+                            path_array = (
+                                "ARRAY['" + profile_section
+                                + "','" + db_key + "']::text[]"
+                            )
                             await conn.execute(
                                 _sql_text(
                                     "UPDATE character_states "
                                     "SET semantic_profile = jsonb_set("
                                     "    COALESCE(semantic_profile, '{}'::jsonb), "
-                                    "    ARRAY[:section, :key]::text[], "
-                                    "    to_jsonb(:val::text) "
+                                    "    " + path_array + ", "
+                                    "    to_jsonb(:val) "
                                     "), updated_at = now() "
                                     "WHERE character_id = :cid"
                                 ),
                                 {
-                                    "section": profile_section,
-                                    "key": db_key,
                                     "val": str(cs[k]),
                                     "cid": character_id,
                                 },
