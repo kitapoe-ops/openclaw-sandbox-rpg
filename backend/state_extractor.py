@@ -174,49 +174,45 @@ class StateExtractor:
         failure. Never raises — extraction is best-effort.
         """
         # System prompt: STRICT extraction discipline
+        # Gemma 4 12B-specific: T=0.0 + 嚴格 JSON 規範 + 顯式 output format marker
         system_prompt = (
             "你是 OpenClaw Sandbox RPG 嘅 state extractor（守門人）。\n"
-            "任務：從 narrative 抽出 EXPLICITLY 提到嘅狀態改變。\n"
+            "Your task: extract EXPLICIT state changes from the narrative.\n"
+            "OUTPUT FORMAT: JSON only, no prose, no markdown, no explanation.\n"
+            "Your response MUST start with { and end with }.\n"
             "\n"
             "## 強制規則\n"
-            "1. **只返回 JSON**，唔要任何解釋、Markdown 包裝。\n"
+            "1. **只返回 JSON object**。Start with {, end with }.\n"
             "2. **只抽取 narrative 內 EXPLICITLY 提到嘅事實**。\n"
             "   - 唔做 inference\n"
             "   - 唔做 assumption\n"
             "   - 唔補完 narrative 冇講嘅嘢\n"
-            "3. 每個改變都必須有 `evidence` field，引用 narrative 原文。\n"
+            "3. 每個改變都必須有 `evidence` field，引用 narrative 原文 verbatim。\n"
             "4. 如果 narrative 冇提到任何改變，返回空 mutations `{}`。\n"
             "5. NPC id 用小寫 snake_case (e.g. 'npc_halia_thornton')。\n"
-            "6. evidence 必須係 narrative 內 verbatim 嘅一句或半句。\n"
+            "6. evidence 必須係 narrative 內 verbatim 嘅一句或半句，唔可以 paraphrase。\n"
             "\n"
             "## JSON Schema (嚴格遵守)\n"
-            "{\n"
-            '  "npc_status_changes": [\n'
-            '    {"npc_id": "<id>", "new_status": "<status>", "evidence": "<原文>"}\n'
-            "  ],\n"
-            '  "inventory_changes": [\n'
-            '    {"action": "add"|"remove", "item_id": "<id>", "quantity": <int>, "evidence": "<原文>"}\n'
-            "  ],\n"
-            '  "character_state_changes": [\n'
-            '    {"stamina_level": "<level>"|null, "health_status": "<status>"|null, "morale_level": "<level>"|null, "evidence": "<原文>"}\n'
-            "  ],\n"
-            '  "location_change": "<scene_id>"|null\n'
-            "}\n"
+            '{"npc_status_changes": [...], "inventory_changes": [...], "character_state_changes": [...], "location_change": "..."}\n'
             "\n"
             "## Few-shot 範例 (照樣做)\n"
             "\n"
             "Input narrative: '你用鐵劍刺穿了 Harbin 的胸膛，他倒在地上不再動彈。'\n"
             "Output:\n"
-            '{"npc_status_changes": [{"npc_id": "npc_harbin_west", "new_status": "dead", "evidence": "用鐵劍刺穿了 Harbin 的胸膛，他倒在地上不再動彈"}], "inventory_changes": [], "character_state_changes": [], "location_change": null}\n'
+            '{"npc_status_changes": [{"npc_id": "npc_harbin_west", "new_status": "dead", "evidence": "你用鐵劍刺穿了 Harbin 的胸膛，他倒在地上不再動彈"}], "inventory_changes": [], "character_state_changes": [], "location_change": null}\n'
             "\n"
-            "Input narrative: 'Sister Garaele 微笑著遞給你一個小袋子。'\n"
+            "Input narrative: 'Sister Garaele 微笑著遞給你一個小袋子，裡面裝著三枚銀幣。'\n"
             "Output:\n"
-            '{"npc_status_changes": [], "inventory_changes": [{"action": "add", "item_id": "small_pouch", "quantity": 1, "evidence": "Sister Garaele 微笑著遞給你一個小袋子"}], "character_state_changes": [], "location_change": null}\n'
+            '{"npc_status_changes": [], "inventory_changes": [{"action": "add", "item_id": "small_pouch", "quantity": 1, "evidence": "Sister Garaele 微笑著遞給你一個小袋子"}, {"action": "add", "item_id": "silver_coin", "quantity": 3, "evidence": "裡面裝著三枚銀幣"}], "character_state_changes": [], "location_change": null}\n'
             "\n"
             "Input narrative: '你站在 Phandalin 鎮中心，四周的木屋包圍著你。'\n"
             "Output:\n"
             '{"npc_status_changes": [], "inventory_changes": [], "character_state_changes": [], "location_change": null}\n'
-            "  (narrative 只描述場景，冇 state 改變，return empty)"
+            "  (narrative 只描述場景，冇 state 改變，return empty)\n"
+            "\n"
+            "## Final reminder\n"
+            "Return JSON only. No preamble. No explanation. No code fences.\n"
+            "First character MUST be {. Last character MUST be }."
         )
 
         # User message: per-round context
@@ -256,7 +252,16 @@ class StateExtractor:
                 },
             )
             data = r.json()
-            text = data["choices"][0]["message"]["content"].strip()
+            msg = data["choices"][0]["message"]
+            # Gemma 4 12B QAT (and other reasoning-capable models)
+            # may emit JSON in 'reasoning_content' field with empty
+            # 'content' field. Read both, prefer the non-empty one.
+            text = (msg.get("content") or "").strip()
+            if not text:
+                text = (msg.get("reasoning_content") or "").strip()
+            if not text:
+                logger.warning("[StateExtractor] Both content and reasoning_content empty")
+                return StateMutation()
         except Exception as e:
             logger.warning(f"[StateExtractor] LLM call failed: {e}")
             return StateMutation()
