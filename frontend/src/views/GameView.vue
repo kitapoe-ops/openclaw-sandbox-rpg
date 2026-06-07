@@ -14,6 +14,13 @@ import OtherPlayersPanel from '@/components/OtherPlayersPanel.vue'
 const route = useRoute()
 const gameStore = useGameStore()
 const characterId = route.params.characterId as string
+// Phase L2-E: pull setLoadError out of the store so we can use it
+// from the onMounted error handlers. Direct `gameStore.loadError =`
+// does NOT work because `loadError` is a ref, not a reactive
+// store property — you must mutate via the setter.
+const setLoadError = gameStore.setLoadError
+const setCharacterState = gameStore.setCharacterState
+const setCurrentScene = gameStore.setCurrentScene
 
 onMounted(async () => {
   // Phase L2-E hotfix: if the character doesn't exist (404), show
@@ -24,20 +31,20 @@ onMounted(async () => {
   let scene: any = null
   try {
     state = await gameApi.getCharacter(characterId)
-    gameStore.setCharacterState(state)
+    setCharacterState(state)
   } catch (e: any) {
     if (e?.response?.status === 404 || /not found/i.test(String(e?.message || e))) {
-      gameStore.loadError = `Character '${characterId}' 唔存在。請用 Character Create 建立新角色。`
+      setLoadError(`Character '${characterId}' 唔存在。請用 Character Create 建立新角色。`)
       return
     }
     console.error('Failed to load character state:', e)
-    gameStore.loadError = `Failed to load character: ${e?.message || e}`
+    setLoadError(`Failed to load character: ${e?.message || e}`)
     return
   }
 
   try {
     scene = await gameApi.getCurrentScene(characterId)
-    gameStore.setCurrentScene(scene)
+    setCurrentScene(scene)
   } catch (e) {
     console.error('Failed to load current scene:', e)
   }

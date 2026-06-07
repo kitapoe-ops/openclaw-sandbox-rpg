@@ -319,6 +319,7 @@ export const useGameStore = defineStore('game', () => {
     // Actions
     setCharacterState,
     setCurrentScene,
+    setLoadError,
     initialize,
     submitChoice,
     clearTaskError,
