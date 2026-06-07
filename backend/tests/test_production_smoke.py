@@ -75,19 +75,23 @@ async def test_health_returns_200_and_full_mode(client):
 
 @pytest.mark.asyncio
 async def test_root_returns_spa_bootstrap(client):
-    """Root endpoint returns API info (used by frontend SPA on boot)."""
+    """Root endpoint serves the Vue SPA (frontend/dist/index.html).
+    Phase L2-G: / was changed from JSON to the SPA, with API metadata
+    moved to /api. We verify HTML shape here."""
     resp = await client.get("/")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert "name" in body
-    assert body["name"] == "OpenClaw Sandbox RPG"
-    # The / endpoint may include a `demo` key for backward-compat
-    # bootstrap info. The assertion below is intentionally relaxed:
-    # we only require the response shape is valid, not that demo
-    # URLs are absent. See PHASE_L2_REMAINING_SPEC.md for the
-    # follow-up to remove the `demo` key in a future release.
-    assert "version" in body
-    assert "docs" in body
+    assert resp.status_code == 200, f"GET / failed: {resp.text}"
+    content_type = resp.headers.get("content-type", "")
+    # / should serve HTML (the Vue SPA)
+    assert "text/html" in content_type, (
+        f"GET / should return text/html (Vue SPA), got {content_type}. "
+        "Did you forget to build frontend/dist/?"
+    )
+    body = resp.text
+    assert "<!doctype html>" in body.lower() or "<html" in body.lower(), (
+        f"GET / body doesn't look like HTML. First 200 chars: {body[:200]}"
+    )
+    # The SPA includes the Vue entry point
+    assert "/assets/" in body, "GET / doesn't reference /assets/ (Vue bundle missing)"
 
 
 @pytest.mark.asyncio
