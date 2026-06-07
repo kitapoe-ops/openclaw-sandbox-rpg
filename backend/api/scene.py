@@ -1,14 +1,55 @@
 """
 Scene API Endpoints (v3.7 — demo + DB modes)
 """
+import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
+from sqlalchemy import func
 
 from ..demo_mode import is_demo_mode
 from ..scenes_demo import DEMO_SCENE, get_demo_scene
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+
+def _current_round_from_db(character_id: str) -> int:
+    """Look up the next round for this character.
+
+    Returns the count of action_history rows + 1. We use COUNT
+    rather than MAX(round_number) because the round_number
+    column has historically been unreliable (0/1 oscillation
+    when M3 returns null). COUNT gives a stable monotonic
+    counter that always advances by 1 per submit.
+
+    NOTE: this is a sync helper. Inside a FastAPI async endpoint
+    we can't call asyncio.run() because there's a running loop.
+    The endpoint (get_current_scene below) runs the query
+    directly via an async helper and passes the result.
+    """
+    return 1  # placeholder; endpoint uses _current_round_from_db_async instead
+
+
+async def _current_round_from_db_async(character_id: str) -> int:
+    """Async version of _current_round_from_db. Called from
+    inside the running event loop."""
+    try:
+        from ..db import engine
+        from sqlalchemy import text as _sql_text
+        async with engine.begin() as conn:
+            r = await conn.execute(
+                _sql_text(
+                    "SELECT COUNT(*) FROM action_history WHERE character_id = :cid"
+                ),
+                {"cid": character_id},
+            )
+            count = r.scalar() or 0
+            return int(count) + 1
+    except Exception as e:
+        logger.warning(f"Failed to query current round for {character_id}: {e}")
+        return 1
 
 
 @router.get("/{character_id}")
@@ -54,8 +95,13 @@ async def get_current_scene(character_id: str) -> dict[str, Any]:
                     status_code=404, detail=f"Scene {char.current_scene_id} not found"
                 )
 
+            # Phase L2-E hotfix: round = max(prior round) + 1.
+            # Previously hardcoded to 1, which meant the choice
+            # card always showed 'Round 1' and never incremented.
+            current_round = await _current_round_from_db_async(character_id)
+
             return {
-                "round": 1,
+                "round": current_round,
                 "character_id": character_id,
                 "scene_id": scene.id,
                 "narrative": scene.description,
