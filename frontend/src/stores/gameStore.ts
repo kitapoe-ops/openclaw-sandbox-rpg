@@ -62,6 +62,11 @@ export const useGameStore = defineStore('game', () => {
     }>
   >([])
   const OTHER_PLAYER_HISTORY_MAX = 10
+  // Phase L2-E hotfix: a top-level error message set when a character
+  // fails to load (e.g. 404). The GameView watches this and renders
+  // an inline banner instead of leaving the 'handling' spinner on
+  // forever.
+  const loadError = ref<string | null>(null)
 
   const staminaDisplay = computed(() => characterState.value?.physical.stamina_level ?? 'unknown')
   const healthDisplay = computed(() => characterState.value?.physical.health_status ?? 'unknown')
@@ -73,6 +78,10 @@ export const useGameStore = defineStore('game', () => {
 
   function setCurrentScene(scene: SceneOutput) {
     currentScene.value = scene
+  }
+
+  function setLoadError(message: string | null) {
+    loadError.value = message
   }
 
   async function initialize(characterIdParam: string) {
@@ -299,6 +308,7 @@ export const useGameStore = defineStore('game', () => {
     stateMismatchWarning,
     lastActionInterrupted,
     otherPlayerActions,
+    loadError,
 
     // Computed
     staminaDisplay,

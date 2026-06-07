@@ -16,15 +16,27 @@ const gameStore = useGameStore()
 const characterId = route.params.characterId as string
 
 onMounted(async () => {
+  // Phase L2-E hotfix: if the character doesn't exist (404), show
+  // an inline error and stop the 'spinner forever' hang. Don't
+  // try to connect to the WebSocket — that would just trigger
+  // a 'character_not_found' rejection with no visible UI feedback.
+  let state: any = null
+  let scene: any = null
   try {
-    const state = await gameApi.getCharacter(characterId)
+    state = await gameApi.getCharacter(characterId)
     gameStore.setCharacterState(state)
-  } catch (e) {
+  } catch (e: any) {
+    if (e?.response?.status === 404 || /not found/i.test(String(e?.message || e))) {
+      gameStore.loadError = `Character '${characterId}' 唔存在。請用 Character Create 建立新角色。`
+      return
+    }
     console.error('Failed to load character state:', e)
+    gameStore.loadError = `Failed to load character: ${e?.message || e}`
+    return
   }
 
   try {
-    const scene = await gameApi.getCurrentScene(characterId)
+    scene = await gameApi.getCurrentScene(characterId)
     gameStore.setCurrentScene(scene)
   } catch (e) {
     console.error('Failed to load current scene:', e)
@@ -54,6 +66,11 @@ async function handleChoice(payload: { optionId: string; attitudeSelections: any
 
 <template>
   <div class="game-view" :class="{ mobile: isMobile }">
+    <!-- Phase L2-E hotfix: surface load errors to the user -->
+    <div v-if="gameStore.loadError" class="load-error-banner">
+      <p>{{ gameStore.loadError }}</p>
+      <button @click="$router.push('/')">返主頁</button>
+    </div>
     <div class="left-panel">
       <ScenePanel :scene="gameStore.currentScene" />
 
