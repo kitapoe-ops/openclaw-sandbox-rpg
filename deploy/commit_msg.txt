@@ -1,0 +1,20 @@
+fix(L2-E): cast :val to text via SQL literal for to_jsonb()
+
+The previous fix (836d73e) removed the ::text cast thinking
+asyncpg would coerce the param. It doesn't — asyncpg treats
+the bound param as type 'unknown' which to_jsonb() rejects
+with: could not determine polymorphic type because input
+has type unknown.
+
+Fix: build the value as a quoted SQL literal with the cast
+inline, e.g. 'full'::text. The value is a primitive string
+from the M3 LLM (stamina_level=full, health_status=healthy,
+morale_level=calm, etc.) so escape single quotes and string-
+concat into the SQL. This is the same pattern as the
+ARRAY[...] path-array fix from ad01dc0.
+
+End-to-end test (Python e2e_test.py):
+  - 0.4s ack
+  - 0.5s accepted
+  - 23.2s scene_update with 159-char narrative + 4 choices
+  - PASS

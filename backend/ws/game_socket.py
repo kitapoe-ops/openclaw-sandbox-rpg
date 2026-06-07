@@ -495,18 +495,22 @@ async def _process_action(
                                 "ARRAY['" + profile_section
                                 + "','" + db_key + "']::text[]"
                             )
+                            # Cast :val explicitly to text via SQL fragment
+                            # (asyncpg's bind params don't support inline ::text
+                            # casts). Build the value as a quoted SQL literal
+                            # since :val is always a primitive (str from M3).
+                            val_literal = "'" + str(cs[k]).replace("'", "''") + "'::text"
                             await conn.execute(
                                 _sql_text(
                                     "UPDATE character_states "
                                     "SET semantic_profile = jsonb_set("
                                     "    COALESCE(semantic_profile, '{}'::jsonb), "
                                     "    " + path_array + ", "
-                                    "    to_jsonb(:val) "
+                                    "    to_jsonb(" + val_literal + ") "
                                     "), updated_at = now() "
                                     "WHERE character_id = :cid"
                                 ),
                                 {
-                                    "val": str(cs[k]),
                                     "cid": character_id,
                                 },
                             )
