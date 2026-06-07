@@ -67,6 +67,13 @@ export const useGameStore = defineStore('game', () => {
   // an inline banner instead of leaving the 'handling' spinner on
   // forever.
   const loadError = ref<string | null>(null)
+  // Phase L2-E hotfix: M3 doesn't reliably include a 'round' field
+  // in scene_output (we saw 'round': null repeatedly). To keep
+  // the round counter incrementing across submits, we maintain
+  // a local counter that bumps by 1 on every successful
+  // scene_update. The backend treats it as the round_number for
+  // the action_history row, so the DB is consistent.
+  const clientRound = ref(0)
 
   const staminaDisplay = computed(() => characterState.value?.physical.stamina_level ?? 'unknown')
   const healthDisplay = computed(() => characterState.value?.physical.health_status ?? 'unknown')
@@ -142,8 +149,12 @@ export const useGameStore = defineStore('game', () => {
   function setupWSHandlers() {
     wsService.on('scene_update', (msg: WSMessage) => {
       const sceneMsg = msg as SceneUpdateMessage
+      // Phase L2-E: M3's round field is unreliable (often null).
+      // Bump a local counter so submitChoice's round keeps moving
+      // forward, and the player sees the round number increment.
+      clientRound.value += 1
       currentScene.value = {
-        round: sceneMsg.round,
+        round: sceneMsg.round ?? clientRound.value,
         character_id: sceneMsg.character_id ?? characterId.value!,
         narrative: sceneMsg.narrative,
         state_changes: sceneMsg.state_changes ?? {},
