@@ -30,6 +30,7 @@ export type WSMessageType =
   | 'state_change'
   | 'countdown'
   | 'world_event'
+  | 'other_player_action'
   | 'error'
   | 'ping'
   | 'pong'

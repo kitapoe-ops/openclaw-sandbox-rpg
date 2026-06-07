@@ -41,6 +41,32 @@ async def websocket_endpoint(
 
     try:
         await registry.register(character_id, connection_id, websocket)
+
+        # Phase L2-I/Phase B: register the character's current scene so
+        # we can broadcast to other players in the same scene. If we
+        # don't know it yet, leave it unset; it'll be set on the first
+        # _process_action call.
+        try:
+            from . import _db_session_factory  # type: ignore  # noqa
+        except ImportError:
+            pass
+
+        # Best-effort: read character state to discover current scene
+        try:
+            db_session = get_db_session()
+            try:
+                cs = await db_session.get_character_state(character_id)
+                if cs and cs.get("current_scene_id"):
+                    await registry.set_scene(
+                        character_id, cs["current_scene_id"]
+                    )
+            finally:
+                await db_session.close()
+        except Exception as e:
+            logger.warning(
+                f"[WS {connection_id}] Could not pre-load scene for {character_id}: {e}"
+            )
+
         await websocket.send_json(
             {
                 "type": "connection_ack",
@@ -374,6 +400,53 @@ async def _process_action(
                 "timestamp": datetime.utcnow().isoformat(),
             },
         )
+
+        # Phase L2-I/Phase B: update the character's current scene in
+        # the registry so future cross-player broadcasts go to the
+        # right audience.
+        if scene_output.get("new_scene_id"):
+            await registry.set_scene(
+                character_id, scene_output["new_scene_id"]
+            )
+        else:
+            await registry.set_scene(character_id, authoritative_scene_id)
+
+        # Phase L2-I/Phase B: cross-player broadcast. Notify everyone
+        # else in the same scene that this character took an action.
+        # The recipient clients use this to update their "other player
+        # activity" sidebar (Phase B-5). We do NOT include the full
+        # scene_output here (each player will get their own next round
+        # when they submit); we only include the action's narrative
+        # summary so others can react.
+        actor_choice = msg.get("choice") or msg.get("player_input") or {}
+        choice_text = (
+            actor_choice.get("vignette")
+            or actor_choice.get("text")
+            or (actor_choice.get("id") if isinstance(actor_choice, dict) else None)
+            or "took an action"
+        )
+        sent = await registry.broadcast_to_scene(
+            authoritative_scene_id,
+            {
+                "type": "other_player_action",
+                "task_id": task_id,
+                "actor_character_id": character_id,
+                "actor_name": character_state.get("name", character_id),
+                "scene_id": authoritative_scene_id,
+                "choice_text": choice_text,
+                "world_event": scene_output.get("minor_event"),
+                "world_state_change": (
+                    bool(scene_output.get("state_changes"))
+                ),
+                "timestamp": datetime.utcnow().isoformat(),
+            },
+            exclude_character_id=character_id,
+        )
+        if sent:
+            logger.info(
+                f"[Phase B] Broadcast {character_id}'s action to "
+                f"{sent} other player(s) in {authoritative_scene_id}"
+            )
 
     finally:
         # ============================================================

@@ -47,6 +47,21 @@ export const useGameStore = defineStore('game', () => {
   const lastTaskError = ref<string | null>(null)
   const stateMismatchWarning = ref<{ client: string; server: string } | null>(null)
   const lastActionInterrupted = ref(false)
+  // Phase L2-I/Phase B: a sidebar of recent actions taken by OTHER
+  // players in the same scene. The server pushes `other_player_action`
+  // messages via WebSocket; we keep the most-recent N.
+  const otherPlayerActions = ref<
+    Array<{
+      id: string
+      actor_character_id: string
+      actor_name: string
+      choice_text: string
+      world_event?: string
+      world_state_change?: boolean
+      timestamp: string
+    }>
+  >([])
+  const OTHER_PLAYER_HISTORY_MAX = 10
 
   const staminaDisplay = computed(() => characterState.value?.physical.stamina_level ?? 'unknown')
   const healthDisplay = computed(() => characterState.value?.physical.health_status ?? 'unknown')
@@ -183,6 +198,24 @@ export const useGameStore = defineStore('game', () => {
       })
     })
 
+    wsService.on('other_player_action', (msg: WSMessage) => {
+      // Phase L2-I/Phase B: a different player in our scene just
+      // took an action. Append to the recent-activity feed.
+      const id = `${msg.task_id ?? 'tx'}-${msg.actor_character_id ?? '?'}-${Date.now()}`
+      otherPlayerActions.value.unshift({
+        id,
+        actor_character_id: msg.actor_character_id ?? '?',
+        actor_name: msg.actor_name ?? msg.actor_character_id ?? '另一位玩家',
+        choice_text: msg.choice_text ?? '...',
+        world_event: msg.world_event,
+        world_state_change: msg.world_state_change,
+        timestamp: msg.timestamp ?? new Date().toISOString(),
+      })
+      if (otherPlayerActions.value.length > OTHER_PLAYER_HISTORY_MAX) {
+        otherPlayerActions.value.length = OTHER_PLAYER_HISTORY_MAX
+      }
+    })
+
     wsService.on('error', (msg: WSMessage) => {
       console.error('[WS] Server error:', msg)
       if (msg.code === 'state_mismatch') {
@@ -265,6 +298,7 @@ export const useGameStore = defineStore('game', () => {
     lastTaskError,
     stateMismatchWarning,
     lastActionInterrupted,
+    otherPlayerActions,
 
     // Computed
     staminaDisplay,

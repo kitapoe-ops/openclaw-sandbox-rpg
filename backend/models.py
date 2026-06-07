@@ -122,3 +122,40 @@ class WorldEvent(Base):
     affected_locations = Column(JSONB, nullable=False, default=list)
     affected_npcs = Column(JSONB, nullable=False, default=list)
     occurred_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+
+
+class SceneNpcState(Base):
+    """Phase L2-I/Phase B: per-scene NPC state.
+
+    Tracks the world-level state of each NPC in a given scene so that
+    the LLM prompt and the choice generator can both see the current
+    "alive / hostile / neutral / friendly / dead" status of every
+    NPC. This is GLOBAL (not per-character): if player A kills the
+    innkeeper, player B should see the innkeeper as dead too.
+
+    This model is intentionally simple (one row per scene + npc) so
+    that reads can be a single indexed SELECT and writes are atomic
+    on (scene_id, npc_id).
+    """
+    __tablename__ = "scene_npc_states"
+
+    scene_id = Column(String(128), ForeignKey("scenes.id"), primary_key=True)
+    npc_id = Column(String(64), primary_key=True)
+    # "alive" | "dead" | "fled" | "unconscious" | "hostile" |
+    # "neutral" | "friendly" | "absent"
+    status = Column(String(32), nullable=False, default="alive")
+    # Free-text status detail (e.g. "wounded in combat", "fled toward
+    # the forest", "sleeping")
+    detail = Column(Text)
+    # Free-form metadata: relationship changes, recent dialogue, etc.
+    extra = Column(JSONB, nullable=False, default=dict)
+    # Last action that mutated this NPC's state (e.g. action_history
+    # UUID). For audit / replay.
+    last_action_id = Column(UUID(as_uuid=True))
+    # Last time a player (any player) observed this state.
+    last_observed_at = Column(DateTime(timezone=True))
+    last_observed_by = Column(String(64), ForeignKey("character_states.character_id"))
+    created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+    updated_at = Column(
+        DateTime(timezone=True), nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )

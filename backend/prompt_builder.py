@@ -378,6 +378,48 @@ class PromptBuilder:
                 lines.append("參數: (無法序列化)")
         return "\n".join(lines)
 
+    def _format_npc_state_section(self, npc_states: list[dict]) -> str:
+        """Phase L2-I/Phase B: format the world-level NPC state.
+
+        ``npc_states`` is a list of dicts like:
+          {"npc_id": "npc_halia", "status": "alive", "detail": "...",
+           "extra": {...}, "last_observed_at": "..."}
+
+        The section is intentionally compact: it tells the LLM which
+        NPCs are alive, dead, hostile, etc. so it can generate
+        narratively and choice options that respect the world state.
+        """
+        if not npc_states:
+            return "(場景內未記錄任何 NPC 狀態)"
+
+        # Sort: dead first (most critical to remember), then by npc_id
+        def _key(n: dict) -> tuple[int, str]:
+            status = n.get("status", "alive")
+            priority = {
+                "dead": 0,
+                "fled": 1,
+                "unconscious": 2,
+                "hostile": 3,
+                "absent": 4,
+                "neutral": 5,
+                "friendly": 6,
+                "alive": 7,
+            }.get(status, 99)
+            return (priority, n.get("npc_id", ""))
+
+        sorted_states = sorted(npc_states, key=_key)
+
+        lines: list[str] = []
+        for n in sorted_states:
+            npc_id = n.get("npc_id", "?")
+            status = n.get("status", "alive")
+            detail = n.get("detail") or ""
+            line = f"- {npc_id}: {status}"
+            if detail:
+                line += f" ({detail})"
+            lines.append(line)
+        return "\n".join(lines)
+
 
 __all__ = [
     "PromptBuilder",

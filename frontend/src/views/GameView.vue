@@ -9,6 +9,7 @@ import CharacterStatus from '@/components/CharacterStatus.vue'
 import Inventory from '@/components/Inventory.vue'
 import Equipment from '@/components/Equipment.vue'
 import HistoryLog from '@/components/HistoryLog.vue'
+import OtherPlayersPanel from '@/components/OtherPlayersPanel.vue'
 
 const route = useRoute()
 const gameStore = useGameStore()
@@ -97,6 +98,9 @@ async function handleChoice(payload: { optionId: string; attitudeSelections: any
       />
 
       <HistoryLog :history="gameStore.history" />
+
+      <!-- Phase L2-I/Phase B: other players' recent actions in this scene -->
+      <OtherPlayersPanel :actions="gameStore.otherPlayerActions" />
 
       <!-- State mismatch warning -->
       <div v-if="gameStore.stateMismatchWarning" class="state-mismatch-warning">

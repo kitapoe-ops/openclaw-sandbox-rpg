@@ -37,6 +37,9 @@ class ConnectionRegistry:
         # Track when flag was acquired (for stale-flag detection)
         self._inflight_since: dict[str, float] = {}
         self._inflight_timeout = inflight_timeout_seconds
+        # Phase L2-I/Phase B: character_id -> scene_id mapping so we can
+        # broadcast to everyone in the same scene (cross-player).
+        self._character_to_scene: dict[str, str] = {}
         self._lock = asyncio.Lock()
 
     # ============================================
@@ -48,16 +51,26 @@ class ConnectionRegistry:
         character_id: str,
         connection_id: str,
         websocket: WebSocket,
+        scene_id: str | None = None,
     ) -> None:
         async with self._lock:
             if character_id not in self._connections:
                 self._connections[character_id] = {}
             self._connections[character_id][connection_id] = websocket
             self._player_controlled[character_id] = True
+            if scene_id is not None:
+                self._character_to_scene[character_id] = scene_id
             logger.info(
-                f"[Registry] Registered {connection_id} for {character_id}. "
-                f"Active: {len(self._connections[character_id])}"
+                f"[Registry] Registered {connection_id} for {character_id} "
+                f"(scene={scene_id}). Active: {len(self._connections[character_id])}"
             )
+
+    async def set_scene(self, character_id: str, scene_id: str) -> None:
+        """Update the character-to-scene mapping when a character
+        changes scenes (e.g. after a successful action that advances
+        the scene)."""
+        async with self._lock:
+            self._character_to_scene[character_id] = scene_id
 
     async def unregister(
         self,
@@ -70,6 +83,7 @@ class ConnectionRegistry:
                 if not self._connections[character_id]:
                     del self._connections[character_id]
                     self._player_controlled[character_id] = False
+                    self._character_to_scene.pop(character_id, None)
                     logger.info(f"[Registry] {character_id} fully disconnected -> NPC mode")
 
     async def is_player_controlled(self, character_id: str) -> bool:
@@ -89,6 +103,53 @@ class ConnectionRegistry:
             except Exception as e:
                 logger.warning(f"[Registry] Send to {character_id} failed: {e}")
         return sent
+
+    # ============================================
+    # Phase L2-I/Phase B: cross-player broadcast
+    # ============================================
+
+    async def broadcast_to_scene(
+        self,
+        scene_id: str,
+        message: dict,
+        exclude_character_id: str | None = None,
+    ) -> int:
+        """Send a message to every connected character currently in
+        the given scene. Optionally exclude the actor (so the actor
+        doesn't receive their own broadcast twice).
+
+        Returns the number of messages successfully sent.
+        """
+        async with self._lock:
+            # Snapshot: which characters are in this scene?
+            targets: list[tuple[str, WebSocket]] = []
+            for char_id, ws_dict in self._connections.items():
+                if self._character_to_scene.get(char_id) != scene_id:
+                    continue
+                if exclude_character_id and char_id == exclude_character_id:
+                    continue
+                for ws in ws_dict.values():
+                    targets.append((char_id, ws))
+
+        sent = 0
+        for char_id, ws in targets:
+            try:
+                await ws.send_json(message)
+                sent += 1
+            except Exception as e:
+                logger.warning(
+                    f"[Registry] Scene broadcast to {char_id} failed: {e}"
+                )
+        return sent
+
+    async def characters_in_scene(self, scene_id: str) -> list[str]:
+        """List all character_ids currently in this scene."""
+        async with self._lock:
+            return [
+                cid
+                for cid, sid in self._character_to_scene.items()
+                if sid == scene_id and cid in self._connections
+            ]
 
     # ============================================
     # Q7: In-flight action interception
@@ -153,6 +214,7 @@ class ConnectionRegistry:
             "active_characters": len(self._connections),
             "total_connections": sum(len(c) for c in self._connections.values()),
             "player_controlled": sum(1 for v in self._player_controlled.values() if v),
+            "scenes_active": len(set(self._character_to_scene.values())),
             **self.inflight_stats(),
         }
 
