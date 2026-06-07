@@ -399,12 +399,17 @@ async def _process_action(
                     "1. **只返回 JSON**。不要有任何解釋、思考、Markdown 包装。\n"
                     "2. JSON 形狀:\n"
                     '   {"narrative": "<一段敘事文字 3-4 句>", '
-                    '"choices": [{"id": "opt_1", "vignette": "<選擇 1 句>", "intent_category": "<類別>"}, ...], '
+                    '"choices": [{"id": "opt_1", "vignette": "<選擇 1 句>"}, ...], '
                     '"state_changes": {"stamina_level": "<stamina>" | null, '
                     '"health_status": "<status>" | null, '
                     '"morale_level": "<morale>" | null}, '
                     '"new_scene_id": "<scene_id>" | null}\n'
-                    "3. choices 必須有 4 個，不可為空。\n"
+                    "3. **choices 必須有 4 個，每個方向唔同**，不可為空。\n"
+                    "   建議 4 個方向:\n"
+                    "   - 1 個 **戰鬥/動作** 方向 (action: 攻擊、施法、逃跑)\n"
+                    "   - 1 個 **社交/對話** 方向 (talk: 問路、求助、欺騙)\n"
+                    "   - 1 個 **探索/調查** 方向 (explore: 搜查、跟蹤、發掘)\n"
+                    "   - 1 個 **創意/異想天開** 方向 (creative: 玩遊戲、講笑話、奇怪主意)\n"
                     "4. narrative 必須是完整段落，不可以包含<think>開頭的思考。\n"
                     "5. 請延續之前的劇情（見 user_message 嘅 prior_actions），"
                     "不要無關聯地重新開始。\n"
@@ -414,9 +419,16 @@ async def _process_action(
                     f"體力: {phys.get('stamina_level', 'fresh')}\n"
                     f"健康: {phys.get('health_status', 'healthy')}\n"
                     f"士氣: {ment.get('morale_level', 'calm')}\n"
-                    f"\n"
+                    "\n"
                     f"## 當前場景\n"
                     f"{scene_desc or authoritative_scene_id}\n"
+                    "\n"
+                    "## 範例 (few-shot)\n"
+                    "若玩家站在酒館門口，4 個選擇可以是:\n"
+                    '  {"id": "opt_1", "vignette": "推門進去問吧枱老闆消息"}\n'
+                    '  {"id": "opt_2", "vignette": "從側窗偷窺酒館內部動靜"}\n'
+                    '  {"id": "opt_3", "vignette": "敲門前先整理裝備"}\n'
+                    '  {"id": "opt_4", "vignette": "扮成吟遊詩人混入酒館"}\n'
                 )
 
                 # 4. Build the rich user_message that carries the
