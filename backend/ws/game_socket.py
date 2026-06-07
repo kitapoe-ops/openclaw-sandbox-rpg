@@ -53,15 +53,19 @@ async def websocket_endpoint(
 
         # Best-effort: read character state to discover current scene
         try:
-            db_session = get_db_session()
-            try:
-                cs = await db_session.get_character_state(character_id)
-                if cs and cs.get("current_scene_id"):
-                    await registry.set_scene(
-                        character_id, cs["current_scene_id"]
-                    )
-            finally:
-                await db_session.close()
+            from ..db import AsyncSessionLocal
+            from ..models import CharacterState
+            from sqlalchemy import select
+            async with AsyncSessionLocal() as session:
+                stmt = select(CharacterState).where(
+                    CharacterState.character_id == character_id
+                )
+                result = await session.execute(stmt)
+                cs_row = result.scalar_one_or_none()
+                if cs_row is not None:
+                    scene_id = cs_row.current_scene_id
+                    if scene_id:
+                        await registry.set_scene(character_id, scene_id)
         except Exception as e:
             logger.warning(
                 f"[WS {connection_id}] Could not pre-load scene for {character_id}: {e}"
@@ -184,10 +188,16 @@ async def _process_action(
         # ============================================================
         # Q6 STEP 1: Read character state (short transaction)
         # ============================================================
-        db_session = get_db_session()
-        try:
-            character_state = await db_session.get_character_state(character_id)
-            if not character_state:
+        from ..db import AsyncSessionLocal
+        from ..models import CharacterState
+        from sqlalchemy import select
+        async with AsyncSessionLocal() as session:
+            stmt = select(CharacterState).where(
+                CharacterState.character_id == character_id
+            )
+            result = await session.execute(stmt)
+            cs_row = result.scalar_one_or_none()
+            if cs_row is None:
                 await _send_error(
                     websocket,
                     character_id,
@@ -198,6 +208,16 @@ async def _process_action(
                     },
                 )
                 return
+
+            character_state = {
+                "character_id": cs_row.character_id,
+                "name": cs_row.name,
+                "world_id": cs_row.world_id,
+                "current_scene_id": cs_row.current_scene_id,
+                "is_alive": cs_row.is_alive,
+                "is_npc_mode": cs_row.is_npc_mode,
+                "semantic_profile": cs_row.semantic_profile,
+            }
 
             if not character_state.get("is_alive", True):
                 await _send_error(
@@ -235,18 +255,32 @@ async def _process_action(
                 return
 
             # ============================================================
-            # Q6 STEP 1: Write PENDING (short transaction, then commit+release)
-            # ============================================================
-            action_id = await db_session.create_action_history(
-                character_id=character_id,
-                scene_id=authoritative_scene_id,
-                round_number=msg.get("round", 0),
-                player_choice=msg.get("choice") or msg.get("player_input"),
-                execution_status="PENDING",
-            )
-            # db_session will auto-commit on context exit
-        finally:
-            await db_session.close()  # Release DB connection ASAP
+            # Q6 STEP 1: Write PENDING (raw SQL — ORM commit was silently dropped)
+            from ..db import engine
+            from sqlalchemy import text as _sql_text
+            import uuid as _uuid
+            import json as _json
+            action_id = _uuid.uuid4()
+            choice_payload = msg.get("choice") or msg.get("player_input") or {}
+            player_choice_json = _json.dumps(choice_payload, ensure_ascii=False, default=str)
+            async with engine.begin() as conn:
+                await conn.execute(
+                    _sql_text(
+                        "INSERT INTO action_history "
+                        "(id, character_id, scene_id, round_number, player_choice, "
+                        " execution_status, submitted_at, created_at) "
+                        "VALUES (CAST(:id AS uuid), :cid, :sid, :rnd, CAST(:pc AS jsonb), "
+                        "        :st, now(), now())"
+                    ),
+                    {
+                        "id": str(action_id),
+                        "cid": character_id,
+                        "sid": authoritative_scene_id,
+                        "rnd": int(msg.get("round", 0) or 0),
+                        "pc": player_choice_json,
+                        "st": "PENDING",
+                    },
+                )
 
         # Send action_accepted immediately
         try:
@@ -254,7 +288,7 @@ async def _process_action(
                 {
                     "type": "action_accepted",
                     "task_id": task_id,
-                    "action_id": action_id,
+                    "action_id": str(action_id),
                     "character_id": character_id,
                     "scene_id": authoritative_scene_id,
                     "status": "processing",
@@ -264,107 +298,18 @@ async def _process_action(
         except Exception:
             pass  # WS may be closed
 
-        # Mark as PROCESSING (own short transaction)
-        db_session = get_db_session()
+        # Mark as PROCESSING (raw SQL)
+        from ..db import engine
+        from sqlalchemy import text as _sql_text
         try:
-            await db_session.update_action_history(
-                action_id,
-                execution_status="PROCESSING",
-                started_at=datetime.utcnow(),
-            )
-        finally:
-            await db_session.close()
-
-        # ============================================================
-        # Q6 STEP 2: Call cloud LLM (NO DB LOCK — connection released)
-        # ============================================================
-        try:
-            lock = await scene_lock_manager.get_lock(authoritative_scene_id)
-            async with lock:
-                logger.info(f"[Task {task_id}] Locked scene {authoritative_scene_id}, calling LLM")
-                scene_output = await _call_cloud_llm(
-                    character_id=character_id,
-                    scene_id=authoritative_scene_id,
-                    player_input=msg,
-                    character_state=character_state,
+            async with engine.begin() as conn:
+                await conn.execute(
+                    _sql_text(
+                        "UPDATE action_history SET execution_status = 'PROCESSING', "
+                        "started_at = now() WHERE id = CAST(:id AS uuid)"
+                    ),
+                    {"id": str(action_id)},
                 )
-                logger.info(f"[Task {task_id}] LLM complete")
-
-            # ============================================================
-            # Q6 STEP 3: Verify PENDING + atomic write result (long transaction)
-            # ============================================================
-            db_session = get_db_session()
-            try:
-                # Verify action is still PENDING/PROCESSING (not interrupted by restart)
-                current_status = await db_session.get_action_status(action_id)
-                if current_status in ("INTERRUPTED", "FAILED"):
-                    logger.warning(
-                        f"[Task {task_id}] Action status changed to {current_status} "
-                        f"during LLM call — skipping write"
-                    )
-                    # Notify client
-                    try:
-                        await registry.broadcast(
-                            character_id,
-                            {
-                                "type": "task_status",
-                                "task_id": task_id,
-                                "action_id": action_id,
-                                "status": "interrupted",
-                                "message": "Action was interrupted (e.g., server restart). Please re-submit.",
-                            },
-                        )
-                    except Exception:
-                        pass
-                    return
-
-                # Atomic write: action_history + character_states + (optional scenes)
-                async with db_session.transaction():
-                    # 1. Update action_history to COMPLETED
-                    await db_session.update_action_history(
-                        action_id,
-                        execution_status="COMPLETED",
-                        completed_at=datetime.utcnow(),
-                        llm_narrative_output=scene_output.get("narrative"),
-                        llm_choices_output=scene_output.get("choices"),
-                        llm_state_changes=scene_output.get("state_changes"),
-                    )
-                    # 2. Apply state changes
-                    if scene_output.get("state_changes"):
-                        await db_session.apply_state_changes(
-                            character_id,
-                            scene_output["state_changes"],
-                        )
-                    # 3. Update scene if changed
-                    if scene_output.get("new_scene_id"):
-                        await db_session.update_character_scene(
-                            character_id,
-                            scene_output["new_scene_id"],
-                        )
-                    # 4. Update world parameters if changed
-                    if scene_output.get("world_parameter_changes"):
-                        await db_session.apply_world_parameter_changes(
-                            scene_output["world_parameter_changes"],
-                        )
-            except Exception as e:
-                # TX rolled back automatically; mark FAILED
-                logger.exception(f"[Task {task_id}] DB write failed: {e}")
-                # Use a separate short TX to mark FAILED
-                fail_session = get_db_session()
-                try:
-                    await fail_session.update_action_history(
-                        action_id,
-                        execution_status="FAILED",
-                        completed_at=datetime.utcnow(),
-                        error_message=str(e),
-                    )
-                finally:
-                    await fail_session.close()
-                # Re-raise so outer try/finally still runs
-                raise
-            finally:
-                await db_session.close()
-
         except Exception as e:
             logger.exception(f"[Task {task_id}] Failed: {e}")
             try:
@@ -373,7 +318,7 @@ async def _process_action(
                     {
                         "type": "task_status",
                         "task_id": task_id,
-                        "action_id": action_id,
+                        "action_id": str(action_id),
                         "status": "failed",
                         "error": str(e),
                     },
@@ -383,6 +328,142 @@ async def _process_action(
             return  # Don't broadcast scene_update
 
         # ============================================================
+        # Q6 STEP 2 + 3: Call LLM, then atomic write
+        # ============================================================
+        scene_output: dict = {}
+        try:
+            from .scene_locks import scene_lock_manager
+            from ..llm_client import get_llm_client
+            lock = await scene_lock_manager.get_lock(authoritative_scene_id)
+            async with lock:
+                logger.info(
+                    f"[Task {task_id}] Locked scene {authoritative_scene_id}, calling LLM"
+                )
+                client = get_llm_client()
+                # Build a minimal prompt — real PromptBuilder is Phase C-2
+                system_prompt = (
+                    "你是 OpenClaw Sandbox RPG 的敘事者。回應請用繁體中文（粵語风格）。"
+                    "請返回 JSON: {narrative, choices, state_changes, new_scene_id}。"
+                    f"當前角色: {character_state.get('name', character_id)}"
+                )
+                user_message = json.dumps(
+                    msg.get("choice") or msg.get("player_input") or {}, ensure_ascii=False
+                )
+                raw = await client.generate(
+                    system_prompt=system_prompt,
+                    user_message=user_message,
+                )
+                # Try to parse as JSON
+                try:
+                    scene_output = json.loads(raw)
+                except json.JSONDecodeError:
+                    # Wrap raw text in a minimal scene_output
+                    scene_output = {
+                        "narrative": raw[:500] if raw else "(LLM returned empty)",
+                        "choices": [],
+                        "state_changes": {},
+                        "new_scene_id": None,
+                    }
+                logger.info(f"[Task {task_id}] LLM complete")
+        except Exception as e:
+            logger.exception(f"[Task {task_id}] LLM call failed: {e}")
+            # Mark FAILED
+            try:
+                from ..db import engine
+                from sqlalchemy import text as _sql_text
+                async with engine.begin() as conn:
+                    await conn.execute(
+                        _sql_text(
+                            "UPDATE action_history SET execution_status = 'FAILED', "
+                            "completed_at = now(), error_message = :err "
+                            "WHERE id = CAST(:id AS uuid)"
+                        ),
+                        {"err": f"llm_call_failed: {e}"[:500], "id": str(action_id)},
+                    )
+            except Exception:
+                pass
+            return  # Don't broadcast
+
+        # Q6 STEP 3: write to DB
+        try:
+            from ..db import engine
+            from sqlalchemy import text as _sql_text
+            import json as _json
+            async with engine.begin() as conn:
+                choices_json = _json.dumps(
+                    scene_output.get("choices", []), ensure_ascii=False, default=str
+                )
+                state_changes_json = _json.dumps(
+                    scene_output.get("state_changes", {}), ensure_ascii=False, default=str
+                )
+                await conn.execute(
+                    _sql_text(
+                        "UPDATE action_history SET execution_status = 'COMPLETED', "
+                        "completed_at = now(), "
+                        "llm_narrative_output = :narrative, "
+                        "llm_choices_output = CAST(:choices AS jsonb), "
+                        "llm_state_changes = CAST(:state AS jsonb) "
+                        "WHERE id = CAST(:id AS uuid)"
+                    ),
+                    {
+                        "narrative": scene_output.get("narrative", ""),
+                        "choices": choices_json,
+                        "state": state_changes_json,
+                        "id": str(action_id),
+                    },
+                )
+                if scene_output.get("state_changes"):
+                    cs = scene_output["state_changes"]
+                    for k, db_key, profile_section in (
+                        ("stamina_level", "stamina_level", "physical"),
+                        ("health_status", "health_status", "physical"),
+                        ("morale_level", "morale_level", "mental"),
+                    ):
+                        if k in cs and cs[k]:
+                            await conn.execute(
+                                _sql_text(
+                                    "UPDATE character_states "
+                                    "SET semantic_profile = jsonb_set("
+                                    "    COALESCE(semantic_profile, '{}'::jsonb), "
+                                    "    ARRAY[:section, :key]::text[], "
+                                    "    to_jsonb(:val::text) "
+                                    "), updated_at = now() "
+                                    "WHERE character_id = :cid"
+                                ),
+                                {
+                                    "section": profile_section,
+                                    "key": db_key,
+                                    "val": str(cs[k]),
+                                    "cid": character_id,
+                                },
+                            )
+                if scene_output.get("new_scene_id"):
+                    await conn.execute(
+                        _sql_text(
+                            "UPDATE character_states SET current_scene_id = :sid, "
+                            "updated_at = now() WHERE character_id = :cid"
+                        ),
+                        {"sid": scene_output["new_scene_id"], "cid": character_id},
+                    )
+        except Exception as e:
+            logger.exception(f"[Task {task_id}] DB write failed: {e}")
+            try:
+                from ..db import engine
+                from sqlalchemy import text as _sql_text
+                async with engine.begin() as conn:
+                    await conn.execute(
+                        _sql_text(
+                            "UPDATE action_history SET execution_status = 'FAILED', "
+                            "completed_at = now(), error_message = :err "
+                            "WHERE id = CAST(:id AS uuid)"
+                        ),
+                        {"err": str(e)[:500], "id": str(action_id)},
+                    )
+            except Exception:
+                pass
+            return  # Don't broadcast
+
+        # ============================================================
         # Q6 STEP 4: Broadcast result (outside all transactions)
         # ============================================================
         await registry.broadcast(
@@ -390,7 +471,7 @@ async def _process_action(
             {
                 "type": "scene_update",
                 "task_id": task_id,
-                "action_id": action_id,
+                "action_id": str(action_id),
                 "round": scene_output.get("round"),
                 "scene_id": authoritative_scene_id,
                 "narrative": scene_output.get("narrative"),
@@ -453,6 +534,7 @@ async def _process_action(
         # Q7 CRITICAL: Always release in-memory flag
         # ============================================================
         registry.release_inflight(character_id)
+
 
 
 async def _send_error(websocket: WebSocket, character_id: str, message: dict):
