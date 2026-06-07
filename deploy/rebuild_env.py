@@ -88,8 +88,12 @@ VITE_WS_BASE_URL=ws://localhost:8000
 VITE_APP_TITLE=OpenClaw Sandbox RPG
 
 # LLM Cloud
+# Phase L2-I/Phase C: provider switched from 'mock' to 'minimax'.
+# The API key is injected from system env (MINIMAX_API_KEY) at
+# backend startup via deploy/load_env.py — never written to disk.
+LLM_PROVIDER=minimax
 LLM_CLOUD_PROVIDER=minimax
-LLM_CLOUD_API_KEY=not_used_for_L2_E_audit_only
+LLM_CLOUD_API_KEY=
 LLM_CLOUD_BASE_URL=https://api.minimax.chat/v1
 LLM_CLOUD_MODEL=MiniMax-M3
 LLM_CLOUD_TEMPERATURE=1.0
