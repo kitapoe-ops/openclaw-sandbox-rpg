@@ -13,8 +13,13 @@
  *   4. If server reports state_mismatch, client refreshes state immediately
  */
 
-const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL || 'wss://api.yourdomain.com'
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.yourdomain.com'
+// Phase L2-H: Vite's `import.meta.env` is the right way to set per-build
+// defaults. We default to the same origin as the page (works for both
+// localhost dev and production tunnel). The .env.production file sets
+// VITE_API_BASE_URL=https://rpg.kitahim.uk and VITE_WS_BASE_URL=wss://...
+// which Vite inlines at build time.
+const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL || 'ws://localhost:8000'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
 
 export type WSMessageType =
   | 'connection_ack'

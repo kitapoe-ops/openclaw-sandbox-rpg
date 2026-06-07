@@ -8,6 +8,11 @@
 
 import axios, { type AxiosInstance } from 'axios'
 
+// Phase L2-H: use window.location.origin as the default so the SPA
+// works correctly when served from a Cloudflare tunnel (e.g.
+// https://rpg.kitahim.uk) AND from localhost. Without this, axios
+// would fall back to http://localhost:8000, which causes a
+// "mixed content" error when the page is served over HTTPS.
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
 
 const client: AxiosInstance = axios.create({
