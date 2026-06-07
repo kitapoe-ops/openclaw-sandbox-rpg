@@ -114,7 +114,7 @@ if (-not (Test-Path $EnvFile)) {
     exit 1
 }
 $envContent = Get-Content $EnvFile -Raw
-$tokenMatch = [regex]::Match($envContent, '(?m)^CLOUDFLARE_API_TOKEN=***')
+$tokenMatch = [regex]::Match($envContent, '(?m)^CLOUDFLARE_API_TOKEN=([^\r\n]+)')
 if (-not $tokenMatch.Success -or [string]::IsNullOrWhiteSpace($tokenMatch.Groups[1].Value)) {
     Write-Error @"
 CLOUDFLARE_API_TOKEN not in .env. To create one:
@@ -134,16 +134,21 @@ Then re-run this script.
 $apiToken = $tokenMatch.Groups[1].Value.Trim() -replace '^["'']|["'']$', ''
 Write-Host "CLOUDFLARE_API_TOKEN loaded (length: $($apiToken.Length))" -ForegroundColor Green
 
-# Verify the API token works (call /user/tokens/verify)
+# Verify the API token works (call /zones?name=kitahim.uk)
+# We can't use /user/tokens/verify because the token we provision
+# is scoped to Zone:DNS:Edit (no User Details:Read permission). The
+# /zones endpoint is enough to confirm the token is valid AND
+# scoped to our zone.
 Write-Host ""
 Write-Host "Verifying API token with Cloudflare..." -ForegroundColor Yellow
 try {
-    $resp = Invoke-WebRequest -Uri "https://api.cloudflare.com/client/v4/user/tokens/verify" `
+    $resp = Invoke-WebRequest -Uri "https://api.cloudflare.com/client/v4/zones?name=kitahim.uk" `
         -Headers @{Authorization="Bearer $apiToken"; Accept="application/json"} `
         -Method GET -UseBasicParsing -TimeoutSec 10
     $verify = $resp.Content | ConvertFrom-Json
     if ($verify.success) {
-        Write-Host "  API token valid (status: $($verify.result.status))" -ForegroundColor Green
+        $zoneCount = @($verify.result).Count
+        Write-Host "  API token valid (zones matching kitahim.uk: $zoneCount)" -ForegroundColor Green
     } else {
         Write-Error "API token rejected: $($verify.errors[0].message)"
         exit 1

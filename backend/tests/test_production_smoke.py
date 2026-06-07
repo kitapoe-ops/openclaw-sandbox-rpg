@@ -114,6 +114,11 @@ async def test_api_world_list(client):
 async def test_api_character_unknown_returns_404_not_demo(client):
     """Unknown character ID must return 404 — NOT silently fall back
     to demo data. This is the key behavior change in Phase L2-B."""
+    # Force a fresh DB connection — the SQLAlchemy async engine keeps
+    # a pool of connections that can return stale or unhealthy ones
+    # when reused across tests in the same session.
+    from backend.db import engine
+    await engine.dispose()
     resp = await client.get("/api/character/char_does_not_exist_xyz")
     assert resp.status_code == 404, (
         f"Expected 404 for unknown character, got {resp.status_code}. "

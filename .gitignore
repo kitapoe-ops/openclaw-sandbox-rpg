@@ -122,3 +122,9 @@ backend/.service_wrapper.py
 # Per-host captured stdout/stderr from the Windows service.
 # These accumulate over time and are not source code.
 logs/
+
+# L2-E deploy secrets (file-based to bypass Telegram redaction)
+.deploy_secrets.ps1
+
+# L2-E schema init helper (uses init_db, not alembic)
+deploy/init_db_helper.py

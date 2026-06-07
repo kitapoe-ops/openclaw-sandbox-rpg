@@ -37,10 +37,11 @@ async def get_character(character_id: str) -> dict[str, Any]:
         async with get_db_session() as session:
             char = await session.get(CharacterState, character_id)
             if not char:
-                demo = get_demo_character(character_id) or get_demo_character("char demo_player")
-                if demo:
-                    return _demo_to_response(demo)
-                raise HTTPException(status_code=404, detail=f"Character {character_id} not found")
+                # Phase L2-B: fail-loud. Don't fall back to demo data
+                # in full mode. Return 404 explicitly.
+                raise HTTPException(
+                    status_code=404, detail=f"Character {character_id} not found"
+                )
 
             return {
                 "character_id": char.character_id,
@@ -56,12 +57,12 @@ async def get_character(character_id: str) -> dict[str, Any]:
                 "memories": char.semantic_profile.get("memories", []),
                 "relationships": char.semantic_profile.get("relationships", {}),
             }
+    except HTTPException:
+        # Let 404 propagate as 404 (not caught by generic Exception)
+        raise
     except Exception as e:
-        # Fallback
-        demo = get_demo_character(character_id) or get_demo_character("char demo_player")
-        if demo:
-            return _demo_to_response(demo)
-        raise HTTPException(status_code=500, detail=str(e))
+        # Real DB error — surface as 500, no demo fallback
+        raise HTTPException(status_code=500, detail=f"DB error: {e}")
 
 
 @router.post("/")
