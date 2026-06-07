@@ -26,27 +26,11 @@ const emit = defineEmits<{
 const selectedAttitudes = ref<Record<string, string>>({})
 const isExpanded = ref(false)
 
-// Dimension labels (Chinese)
-const dimensionLabels: Record<string, string> = {
-  character_growth: '角色成長',
-  world_exploration: '世界探索',
-  relationship: '關係建立',
-  mystery_revelation: '謎團揭示',
-}
-
-const dimensionIcon = computed(() => {
-  const icons: Record<string, string> = {
-    character_growth: '👤',
-    world_exploration: '🗺️',
-    relationship: '🤝',
-    mystery_revelation: '🔮',
-  }
-  return icons[props.choice.intent_category] || '📜'
-})
-
-const dimensionLabel = computed(() =>
-  dimensionLabels[props.choice.intent_category] || props.choice.intent_category
-)
+// Phase L2-I: the choice UI no longer leaks meta tags to the player.
+// `intent_category`, `lore_source`, `direction_hint` are still in
+// the data model (LLM uses them server-side) but are not rendered.
+// The `attitude_options` are also hidden by default — most players
+// will just pick a vignette. Power users can expand for fine-tuning.
 
 function selectAttitude(dimension: string, level: string) {
   if (props.disabled) return
@@ -61,6 +45,12 @@ function selectAttitude(dimension: string, level: string) {
   }
 }
 
+function quickPick() {
+  if (props.disabled) return
+  // No attitude selections — submit with empty array
+  emit('select', { optionId: props.choice.id, attitudeSelections: [] })
+}
+
 function confirmChoice() {
   if (props.disabled) return
   if (Object.keys(selectedAttitudes.value).length === 0) return
@@ -70,33 +60,26 @@ function confirmChoice() {
   emit('select', { optionId: props.choice.id, attitudeSelections })
   selectedAttitudes.value = {}
 }
-
-const canConfirm = computed(() => Object.keys(selectedAttitudes.value).length > 0)
 </script>
 
 <template>
-  <div class="choice-card" :class="{ disabled, selected: canConfirm }">
-    <!-- Dimension badge (top corner) -->
-    <div class="dimension-badge" :class="choice.intent_category">
-      <span class="icon">{{ dimensionIcon }}</span>
-      <span class="label">{{ dimensionLabel }}</span>
-    </div>
-
-    <!-- Main vignette (30-50 chars) -->
+  <div class="choice-card" :class="{ disabled }">
+    <!-- Main vignette (the ONLY thing the player sees by default) -->
     <p class="vignette">{{ choice.vignette }}</p>
 
-    <!-- Lore source (small, bottom corner) -->
-    <div class="lore-source">
-      <code>{{ choice.lore_source }}</code>
-    </div>
+    <!-- Quick-pick: just click the card to choose this option immediately -->
+    <button
+      class="pick-btn"
+      :disabled="disabled"
+      @click="quickPick"
+    >
+      揀呢個
+    </button>
 
-    <!-- Expandable: direction hint + attitude options -->
+    <!-- Optional: expand for attitude fine-tuning. Power users only. -->
     <details class="attitude-section" @toggle="isExpanded = ($event.target as HTMLDetailsElement).open">
-      <summary>選擇態度 (1-2個)</summary>
+      <summary>微調態度（可選）</summary>
       <div v-if="isExpanded" class="attitude-options">
-        <p class="direction-hint">
-          <em>💡 {{ choice.direction_hint }}</em>
-        </p>
         <div class="attitude-chips">
           <div
             v-for="att in choice.attitude_options"
@@ -113,12 +96,12 @@ const canConfirm = computed(() => Object.keys(selectedAttitudes.value).length > 
           </div>
         </div>
         <button
-          v-if="canConfirm"
+          v-if="Object.keys(selectedAttitudes).length > 0"
           @click="confirmChoice"
           class="confirm-btn"
           :disabled="disabled"
         >
-          確認選擇
+          確認（已選 {{ Object.keys(selectedAttitudes).length }} 個態度）
         </button>
       </div>
     </details>
@@ -136,7 +119,7 @@ const canConfirm = computed(() => Object.keys(selectedAttitudes.value).length > 
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  min-height: 180px;
+  min-height: 140px;
 }
 
 .choice-card:hover:not(.disabled) {
@@ -144,44 +127,8 @@ const canConfirm = computed(() => Object.keys(selectedAttitudes.value).length > 
   background: rgba(0, 0, 0, 0.4);
 }
 
-.choice-card.selected:not(.disabled) {
-  border-color: var(--color-accent);
-  background: rgba(183, 141, 74, 0.1);
-  box-shadow: 0 0 0 1px var(--color-accent);
-}
-
 .choice-card.disabled {
   opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.dimension-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0.2rem 0.5rem;
-  background: rgba(0, 0, 0, 0.5);
-  border-radius: 4px;
-  font-size: 0.7rem;
-  align-self: flex-start;
-  border: 1px solid currentColor;
-}
-
-.dimension-badge.character_growth {
-  color: #d4a574;
-}
-.dimension-badge.world_exploration {
-  color: #7ba3d4;
-}
-.dimension-badge.relationship {
-  color: #c47bd4;
-}
-.dimension-badge.mystery_revelation {
-  color: #d4c47b;
-}
-
-.dimension-badge .icon {
-  font-size: 0.9rem;
 }
 
 .vignette {
@@ -189,16 +136,30 @@ const canConfirm = computed(() => Object.keys(selectedAttitudes.value).length > 
   line-height: 1.5;
   color: var(--color-text);
   flex: 1;
+  margin: 0;
 }
 
-.lore-source {
-  font-size: 0.7rem;
+.pick-btn {
+  width: 100%;
+  padding: 0.6rem;
+  background: transparent;
+  color: var(--color-accent);
+  border: 1px solid var(--color-accent);
+  border-radius: 4px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.15s;
+}
+
+.pick-btn:hover:not(:disabled) {
+  background: var(--color-accent);
+  color: white;
+}
+
+.pick-btn:disabled {
   opacity: 0.5;
-}
-
-.lore-source code {
-  font-family: monospace;
-  font-size: 0.7rem;
+  cursor: not-allowed;
 }
 
 .attitude-section {
@@ -209,11 +170,12 @@ const canConfirm = computed(() => Object.keys(selectedAttitudes.value).length > 
 
 .attitude-section summary {
   cursor: pointer;
-  font-size: 0.8rem;
-  color: var(--color-accent);
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
   user-select: none;
   list-style: none;
   padding: 0.3rem 0;
+  opacity: 0.6;
 }
 
 .attitude-section summary::before {
@@ -230,21 +192,11 @@ const canConfirm = computed(() => Object.keys(selectedAttitudes.value).length > 
   display: none;
 }
 
-.direction-hint {
-  font-size: 0.8rem;
-  opacity: 0.7;
-  margin-bottom: 0.5rem;
-  padding: 0.4rem 0.5rem;
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 4px;
-  border-left: 2px solid var(--color-accent);
-}
-
 .attitude-chips {
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
-  margin-bottom: 0.5rem;
+  margin: 0.5rem 0;
 }
 
 .attitude-chip {
@@ -262,7 +214,6 @@ const canConfirm = computed(() => Object.keys(selectedAttitudes.value).length > 
 
 .attitude-chip:hover:not(.disabled) {
   border-color: var(--color-accent);
-  background: rgba(183, 141, 74, 0.1);
 }
 
 .attitude-chip.active {
@@ -300,9 +251,5 @@ const canConfirm = computed(() => Object.keys(selectedAttitudes.value).length > 
 .confirm-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-.confirm-btn:hover:not(:disabled) {
-  opacity: 0.9;
 }
 </style>

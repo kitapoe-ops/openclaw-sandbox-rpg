@@ -8,7 +8,6 @@ import ChoiceCard from '@/components/ChoiceCard.vue'
 import CharacterStatus from '@/components/CharacterStatus.vue'
 import Inventory from '@/components/Inventory.vue'
 import Equipment from '@/components/Equipment.vue'
-import CountdownTimer from '@/components/CountdownTimer.vue'
 import HistoryLog from '@/components/HistoryLog.vue'
 
 const route = useRoute()
@@ -44,6 +43,10 @@ const isMobile = computed(() => {
 })
 
 async function handleChoice(payload: { optionId: string; attitudeSelections: any[] }) {
+  // Phase L2-I: free-for-all. Each player submits at their own pace;
+  // no waiting for other players. The round-system has been removed
+  // from the backend; the next scene is generated for THIS character
+  // immediately on submit.
   gameStore.submitChoice(payload.optionId, payload.attitudeSelections)
 }
 </script>
@@ -81,7 +84,7 @@ async function handleChoice(payload: { optionId: string; attitudeSelections: any
         :state="gameStore.characterState"
       />
 
-      <CountdownTimer :remaining-seconds="gameStore.remainingSeconds" />
+      <!-- Phase L2-I: CountdownTimer removed. Free-for-all pace. -->
 
       <Equipment
         v-if="gameStore.characterState?.inventory.equipment"

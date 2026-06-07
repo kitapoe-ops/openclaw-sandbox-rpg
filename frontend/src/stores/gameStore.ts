@@ -37,7 +37,10 @@ export const useGameStore = defineStore('game', () => {
   const currentScene = ref<SceneOutput | null>(null)
   const characterState = ref<CharacterState | null>(null)
   const history = ref<HistoryEntry[]>([])
-  const remainingSeconds = ref(15 * 60)
+
+  // Phase L2-I: removed `remainingSeconds`. The round-system has been
+  // retired. Players advance at their own pace (free-for-all), and
+  // there is no countdown forcing everyone to wait.
 
   const pendingTasks = ref<Map<string, PendingTask>>(new Map())
   const isProcessing = computed(() => pendingTasks.value.size > 0)
@@ -48,9 +51,6 @@ export const useGameStore = defineStore('game', () => {
   const staminaDisplay = computed(() => characterState.value?.physical.stamina_level ?? 'unknown')
   const healthDisplay = computed(() => characterState.value?.physical.health_status ?? 'unknown')
   const moraleDisplay = computed(() => characterState.value?.mental.morale_level ?? 'unknown')
-
-  const isRoundUrgent = computed(() => remainingSeconds.value < 60 && remainingSeconds.value > 0)
-  const isRoundExpired = computed(() => remainingSeconds.value === 0)
 
   function setCharacterState(state: CharacterState) {
     characterState.value = state
@@ -126,7 +126,9 @@ export const useGameStore = defineStore('game', () => {
         choices: sceneMsg.choices ?? [],
         minor_event: sceneMsg.minor_event,
       } as SceneOutput
-      remainingSeconds.value = 15 * 60
+      // Phase L2-I: removed `remainingSeconds.value = 15 * 60` reset
+      // (no countdown anymore). The next scene arrives immediately
+      // on submit; the player can keep playing at their own pace.
       pendingTasks.value.clear()
     })
 
@@ -166,9 +168,11 @@ export const useGameStore = defineStore('game', () => {
     })
 
     wsService.on('countdown', (msg: WSMessage) => {
-      if (typeof msg.remaining_seconds === 'number') {
-        remainingSeconds.value = msg.remaining_seconds
-      }
+      // Phase L2-I: countdown message is no longer used. The server
+      // no longer broadcasts a 15-minute timer. This handler is kept
+      // as a no-op in case old clients or test fixtures still send
+      // a `countdown` message; we just ignore it.
+      void msg
     })
 
     wsService.on('world_event', (msg: WSMessage) => {
@@ -257,7 +261,6 @@ export const useGameStore = defineStore('game', () => {
     currentScene,
     characterState,
     history,
-    remainingSeconds,
     pendingTasks,
     lastTaskError,
     stateMismatchWarning,
@@ -267,8 +270,6 @@ export const useGameStore = defineStore('game', () => {
     staminaDisplay,
     healthDisplay,
     moraleDisplay,
-    isRoundUrgent,
-    isRoundExpired,
     isProcessing,
 
     // Actions
