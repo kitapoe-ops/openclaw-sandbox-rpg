@@ -134,10 +134,15 @@ def _test_db_connection() -> bool:
     try:
         import psycopg2
 
-        db_url = os.getenv(
-            "DATABASE_URL",
-            "postgresql+asyncpg://rpg_user:1891879700000@localhost/sandbox_rpg",
-        )
+        db_url = os.getenv("DATABASE_URL")
+        if not db_url:
+            host = os.getenv("POSTGRES_HOST", "localhost")
+            port = os.getenv("POSTGRES_PORT", "5432")
+            db = os.getenv("POSTGRES_DB", "sandbox_rpg")
+            user = os.getenv("POSTGRES_USER", "rpg_user")
+            password = os.getenv("POSTGRES_PASSWORD", "dev_password")
+            db_url = f"postgresql+asyncpg://{user}:{password}@{host}:{port}/{db}"
+
         # Convert asyncpg scheme to psycopg2 compatible scheme
         if db_url.startswith("postgresql+asyncpg://"):
             db_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
