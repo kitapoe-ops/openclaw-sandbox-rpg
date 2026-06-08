@@ -45,6 +45,11 @@ omit =
     # r1_audit_client makes network calls to a real R1 model;
     # covered by mock-based unit tests separately.
     */r1_audit_client.py
+    # Developer scripts
+    */scripts/*
+    # State extractor requires a real Gemma-4 12B model; hard to unit test
+    */state_extractor.py
+
 
 # Skip these patterns even within included files.
 exclude_lines =

@@ -65,7 +65,9 @@ class WorldLoreLoader:
     Singleton — one instance per FastAPI app.
     """
 
-    def __init__(self, worlds_dir: Path = Path("worlds")):
+    def __init__(self, worlds_dir: Path | None = None):
+        if worlds_dir is None or str(worlds_dir) == "worlds":
+            worlds_dir = Path(__file__).resolve().parent.parent / "worlds"
         self._worlds_dir = worlds_dir
         self._metadata: dict[str, WorldMetadata] = {}
         self._instances: dict[str, WorldLoreDB] = {}
