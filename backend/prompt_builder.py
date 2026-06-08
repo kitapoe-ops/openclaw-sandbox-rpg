@@ -162,18 +162,27 @@ class PromptBuilder:
     ...                                   user_message="...")
     """
 
-    # 5-section system prompt template (Chinese, Cantonese flavor).
+    # 6-section system prompt template (Chinese, Cantonese flavor).
     # Sections in order:
     #   1. Role / "absolute current reality" rule
     #   2. Character current state (always at the top of the data)
-    #   3. Memory Palace retrieval
-    #   4. Action context
-    #   5. Output format + important rules
+    #   3. Character current equipment & physical constraints
+    #   4. Memory Palace retrieval
+    #   5. Action context
+    #   6. Output format + important rules
     SYSTEM_PROMPT_TEMPLATE: str = """你是一個文字冒險遊戲的 AI 主持人。當前角色的身體狀態是「絕對當前現實」,必須在每個回合都遵守。
 
 # 角色當前狀態 (語意標籤,最多 7 個,每個不超過 15 字)
 
 {state_section}
+
+# 角色當前裝備與物理約束
+
+{equipment_section}
+
+# 故事套路約束
+
+{trope_section}
 
 # 角色記憶摘要 (由 Memory Palace 檢索)
 
@@ -193,7 +202,7 @@ class PromptBuilder:
 # 重要規則
 
 - 角色身體狀態係純文字語意,沒有 HP / MP 等數值
-- 死亡狀態(標籤 "死亡" / "瀕死") 嘅角色無法執行任何主動動作
+- 死亡狀態(標籤 "死亡" / "瀕死") 嘅角色無法執行 any 主動動作
 - 跨角色嘅 memory access 受到 MemoryIsolationGuard 保護
 """
 
@@ -214,6 +223,7 @@ class PromptBuilder:
         character_id: str,
         current_state: SemanticState,
         action_context: dict[str, Any],
+        world_db: Any = None,
     ) -> str:
         """Build the system prompt for an LLM call.
 
@@ -244,6 +254,8 @@ class PromptBuilder:
               - "query_embedding" (list[float], optional) — embedding
                 for Memory Palace recall. If absent, recall is
                 skipped (no query embedding → no useful result).
+        world_db : Any, optional
+            The WorldLoreDB instance. Used to fetch item physical tags.
 
         Returns
         -------
@@ -263,12 +275,16 @@ class PromptBuilder:
             )
 
         state_section = self._format_state_section(current_state)
+        equipment_section = self._format_equipment_section(current_state, world_db)
+        trope_section = self._format_trope_section(current_state)
         # Memory section is async (recall is async); await it.
         memory_section = await self._format_memory_section(character_id, action_context)
         action_context_section = self._format_action_context(action_context)
 
         return self.SYSTEM_PROMPT_TEMPLATE.format(
             state_section=state_section,
+            equipment_section=equipment_section,
+            trope_section=trope_section,
             memory_section=memory_section,
             action_context_section=action_context_section,
         )
@@ -305,6 +321,114 @@ class PromptBuilder:
             # ellipsis to keep the prompt cacheable.
             formatted = formatted[: MAX_STATE_SECTION_LENGTH - 3] + "..."
         return formatted
+
+    def _format_equipment_section(self, current_state: SemanticState, world_db: Any = None) -> str:
+        """Format current equipped items and their physical constraints."""
+        if world_db is None:
+            return "(無裝備物理約束資訊)"
+
+        items = current_state.inventory.get("items", [])
+        equipped_items = [i for i in items if i.get("equipped") is True]
+        if not equipped_items:
+            return "(無當前裝備)"
+
+        lines = []
+        TAG_TRANSLATIONS = {
+            "sharp": "鋒利",
+            "light": "輕巧",
+            "metallic": "金屬製",
+            "heavy": "沉重",
+            "conductive": "導電",
+            "holy_damage": "神聖傷害",
+            "flexible": "柔韌",
+            "protective": "防護",
+            "flammable": "易燃",
+            "magical": "魔法屬性",
+            "fragile": "易碎",
+            "holy_property": "神聖屬性"
+        }
+
+        for eq in equipped_items:
+            item_id = eq.get("item_id")
+            item_data = world_db.get_item(item_id)
+            if not item_data:
+                continue
+
+            name = item_data.get("name", item_id)
+            tags = item_data.get("tags", [])
+            translated_tags = [TAG_TRANSLATIONS.get(t, t) for t in tags]
+
+            # Generate physical examples based on tags
+            examples = []
+            if "heavy" in tags:
+                examples.append("「沉重」代表攻擊勢大力沉但硬直大")
+            if "sharp" in tags:
+                examples.append("「鋒利」代表可以斬斷血肉或物體")
+            if "flammable" in tags:
+                examples.append("「易燃」代表遇火會燃燒")
+            if "fragile" in tags:
+                examples.append("「易碎」代表受到重擊容易破裂")
+
+            ex_str = "，".join(examples)
+            ex_clause = f"（例如：{ex_str}）" if ex_str else ""
+
+            lines.append(f"裝備：【{name}】（特性：{', '.join(translated_tags)}）")
+            lines.append("\n選項與敘事約束：")
+            lines.append(f"1. 生成戰鬥或破壞類選項時，必須優先考慮使用【{name}】。")
+            lines.append(f"2. 選項描述與劇情渲染必須符合道具的物理特性{ex_clause}。")
+            lines.append("3. 嚴禁憑空捏造裝備不具備的魔法或物理效果。")
+            lines.append("")  # Blank line separator
+
+        return "\n".join(lines).strip() if lines else "(無當前裝備)"
+
+    def _format_trope_section(self, current_state: SemanticState) -> str:
+        """Format active tropes and their narrative directives/consequences."""
+        active_threads = getattr(current_state, "active_threads", {}) or {}
+        active_ids = [tid for tid, data in active_threads.items() if data.get("status") in ("Active", "Evaded")]
+        if not active_ids:
+            return "(無作用中故事套路)"
+
+        # 載入 tropes
+        from backend.trope_router import TropeRouter
+        router = TropeRouter()
+
+        lines = []
+        for tid in active_ids:
+            tdata = active_threads[tid]
+            status = tdata.get("status")
+            escalation = tdata.get("escalation_level", 0)
+            
+            trope_def = router.get_trope_by_id(tid)
+            if not trope_def:
+                continue
+
+            name = trope_def.get("trope_name", tid)
+            directive = trope_def.get("narrative_directive", {})
+            plot_beat = directive.get("plot_beat", "")
+            tonal_focus = directive.get("tonal_focus", "")
+            mandatory_elements = directive.get("mandatory_elements", [])
+            choice_fw = trope_def.get("choice_framework", {})
+            evade_conseq = choice_fw.get("evade_consequence", "")
+            esc_threshold = choice_fw.get("escalation_threshold", 3)
+
+            lines.append(f"當前作用中套路：【{name}】(狀態：{status})")
+            lines.append("敘事約束：")
+            if plot_beat:
+                lines.append(f"- 劇情發展：{plot_beat}")
+            if tonal_focus:
+                lines.append(f"- 語意基調：{tonal_focus}")
+            if mandatory_elements:
+                lines.append("- 必須包含的元素：")
+                for i, elem in enumerate(mandatory_elements, 1):
+                    lines.append(f"  {i}. {elem}")
+            
+            if status == "Evaded" and escalation >= esc_threshold:
+                lines.append("偏航後果引爆：")
+                lines.append(f"- 警告：玩家多次逃避或偏離此套路，後果已發酵！你必須在 narrative 中強制呈現以下後果，並限制玩家的選項：{evade_conseq}。")
+
+            lines.append("") # 空行分隔
+
+        return "\n".join(lines).strip() if lines else "(無作用中故事套路)"
 
     async def _format_memory_section(
         self, character_id: str, action_context: dict[str, Any]

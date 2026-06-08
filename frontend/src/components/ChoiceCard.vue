@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 
 interface Choice {
   id: string
@@ -26,12 +26,6 @@ const emit = defineEmits<{
 const selectedAttitudes = ref<Record<string, string>>({})
 const isExpanded = ref(false)
 
-// Phase L2-I: the choice UI no longer leaks meta tags to the player.
-// `intent_category`, `lore_source`, `direction_hint` are still in
-// the data model (LLM uses them server-side) but are not rendered.
-// The `attitude_options` are also hidden by default — most players
-// will just pick a vignette. Power users can expand for fine-tuning.
-
 function selectAttitude(dimension: string, level: string) {
   if (props.disabled) return
   if (selectedAttitudes.value[dimension] === level) {
@@ -39,7 +33,7 @@ function selectAttitude(dimension: string, level: string) {
     selectedAttitudes.value = rest
   } else {
     if (Object.keys(selectedAttitudes.value).length >= 2 && !(dimension in selectedAttitudes.value)) {
-      return // Max 2 attitudes
+      return
     }
     selectedAttitudes.value = { ...selectedAttitudes.value, [dimension]: level }
   }
@@ -47,7 +41,6 @@ function selectAttitude(dimension: string, level: string) {
 
 function quickPick() {
   if (props.disabled) return
-  // No attitude selections — submit with empty array
   emit('select', { optionId: props.choice.id, attitudeSelections: [] })
 }
 
@@ -60,25 +53,60 @@ function confirmChoice() {
   emit('select', { optionId: props.choice.id, attitudeSelections })
   selectedAttitudes.value = {}
 }
+
+function formatDimension(dim: string): string {
+  const mapping: Record<string, string> = {
+    caution: '謹慎度',
+    empathy: '同理心',
+    honor: '榮譽感',
+    curiosity: '好奇心',
+    violence: '暴力傾向'
+  }
+  return mapping[dim] || dim
+}
+
+function formatLevel(level: string): string {
+  const mapping: Record<string, string> = {
+    reckless: '魯莽', bold: '大膽', careful: '小心', timid: '膽怯',
+    ruthless: '冷酷', pragmatic: '實用', compassionate: '同理', selfless: '無私',
+    deceitful: '欺瞞', flexible: '靈活', honest: '誠實', righteous: '正直',
+    indifferent: '冷漠', practical: '務實', curious: '好奇', obsessed: '狂熱',
+    pacifist: '和平', defensive: '防衛', balanced: '平衡', aggressive: '侵略'
+  }
+  return mapping[level] || level
+}
 </script>
 
 <template>
   <div class="choice-card" :class="{ disabled }">
-    <!-- Main vignette (the ONLY thing the player sees by default) -->
+    <div class="card-header">
+      <span class="category-tag" :class="choice.intent_category">
+        {{ choice.intent_category?.toUpperCase() }}
+      </span>
+      <span class="direction-hint" v-if="choice.direction_hint">
+        {{ choice.direction_hint }}
+      </span>
+    </div>
+
+    <!-- Main vignette -->
     <p class="vignette">{{ choice.vignette }}</p>
 
-    <!-- Quick-pick: just click the card to choose this option immediately -->
+    <!-- Quick-pick button -->
     <button
       class="pick-btn"
       :disabled="disabled"
       @click="quickPick"
     >
-      揀呢個
+      <span class="shine"></span>
+      選 擇 此 途
     </button>
 
-    <!-- Optional: expand for attitude fine-tuning. Power users only. -->
+    <!-- Attitude accordion -->
     <details class="attitude-section" @toggle="isExpanded = ($event.target as HTMLDetailsElement).open">
-      <summary>微調態度（可選）</summary>
+      <summary class="attitude-summary">
+        <span class="summary-arrow">✦</span>
+        微調態度 (選填，最多2個)
+      </summary>
       <div v-if="isExpanded" class="attitude-options">
         <div class="attitude-chips">
           <div
@@ -90,9 +118,10 @@ function confirmChoice() {
             }"
             @click.stop="selectAttitude(att.dimension, att.level)"
           >
-            <span class="att-dim">{{ att.dimension }}:</span>
-            <span class="att-level">{{ att.level }}</span>
-            <span v-if="att.effect" class="att-effect">— {{ att.effect }}</span>
+            <span class="att-dim">{{ formatDimension(att.dimension) }}</span>
+            <span class="att-divider">·</span>
+            <span class="att-level">{{ formatLevel(att.level) }}</span>
+            <span v-if="att.effect" class="att-effect">({{ att.effect }})</span>
           </div>
         </div>
         <button
@@ -101,7 +130,7 @@ function confirmChoice() {
           class="confirm-btn"
           :disabled="disabled"
         >
-          確認（已選 {{ Object.keys(selectedAttitudes).length }} 個態度）
+          確認態度（已選 {{ Object.keys(selectedAttitudes).length }} 個）
         </button>
       </div>
     </details>
@@ -110,129 +139,189 @@ function confirmChoice() {
 
 <style scoped>
 .choice-card {
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 1rem;
-  position: relative;
-  transition: all 0.2s;
+  background: rgba(18, 13, 36, 0.45);
+  border: 1px solid var(--color-glass-border);
+  border-radius: var(--border-radius-m);
+  padding: 1.2rem;
+  transition: var(--transition-smooth);
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  min-height: 140px;
+  gap: 0.8rem;
+  min-height: 180px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
 }
 
 .choice-card:hover:not(.disabled) {
-  border-color: var(--color-accent);
-  background: rgba(0, 0, 0, 0.4);
+  border-color: rgba(212, 175, 55, 0.45);
+  background: rgba(26, 20, 48, 0.65);
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-glow);
 }
 
 .choice-card.disabled {
-  opacity: 0.5;
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.75rem;
+}
+
+.category-tag {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+  letter-spacing: 0.05em;
+}
+
+.category-tag.action { background: rgba(231, 76, 60, 0.25); color: #e74c3c; border: 1px solid rgba(231, 76, 60, 0.3); }
+.category-tag.talk { background: rgba(52, 152, 219, 0.25); color: #3498db; border: 1px solid rgba(52, 152, 219, 0.3); }
+.category-tag.explore { background: rgba(46, 204, 113, 0.25); color: #2ecc71; border: 1px solid rgba(46, 204, 113, 0.3); }
+.category-tag.creative { background: rgba(155, 89, 182, 0.25); color: #9b59b6; border: 1px solid rgba(155, 89, 182, 0.3); }
+
+.direction-hint {
+  color: var(--color-text-muted);
+  font-style: italic;
+  font-weight: 500;
 }
 
 .vignette {
-  font-size: 0.95rem;
-  line-height: 1.5;
+  font-size: 0.92rem;
+  line-height: 1.6;
   color: var(--color-text);
+  opacity: 0.9;
   flex: 1;
   margin: 0;
 }
 
+/* Premium Choice Button */
 .pick-btn {
+  position: relative;
   width: 100%;
-  padding: 0.6rem;
+  padding: 0.65rem;
   background: transparent;
   color: var(--color-accent);
   border: 1px solid var(--color-accent);
-  border-radius: 4px;
-  font-size: 0.9rem;
+  border-radius: var(--border-radius-s);
+  font-size: 0.88rem;
+  font-weight: 600;
   cursor: pointer;
-  font-weight: 500;
-  transition: all 0.15s;
+  transition: var(--transition-smooth);
+  overflow: hidden;
+  letter-spacing: 0.05em;
 }
 
 .pick-btn:hover:not(:disabled) {
   background: var(--color-accent);
-  color: white;
-}
-
-.pick-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+  color: #07050d;
+  box-shadow: 0 4px 10px rgba(212, 175, 55, 0.3);
 }
 
 .attitude-section {
-  border-top: 1px solid var(--color-border);
-  padding-top: 0.5rem;
-  margin-top: 0.25rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  padding-top: 0.6rem;
+  margin-top: 0.2rem;
 }
 
-.attitude-section summary {
+.attitude-summary {
   cursor: pointer;
-  font-size: 0.75rem;
+  font-size: 0.78rem;
   color: var(--color-text-muted);
   user-select: none;
   list-style: none;
-  padding: 0.3rem 0;
-  opacity: 0.6;
+  padding: 0.2rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: var(--transition-smooth);
 }
 
-.attitude-section summary::before {
-  content: '▸ ';
-  display: inline-block;
+.attitude-summary:hover {
+  color: var(--color-accent);
+}
+
+.summary-arrow {
+  font-size: 0.6rem;
   transition: transform 0.2s;
+  color: var(--color-accent);
 }
 
-.attitude-section[open] summary::before {
-  content: '▾ ';
+.attitude-section[open] .summary-arrow {
+  transform: rotate(45deg);
 }
 
-.attitude-section summary::-webkit-details-marker {
+.attitude-summary::-webkit-details-marker {
   display: none;
+}
+
+.attitude-options {
+  animation: slide-down 0.25s ease-out;
+}
+
+@keyframes slide-down {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .attitude-chips {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
-  margin: 0.5rem 0;
+  gap: 0.4rem;
+  margin: 0.6rem 0;
 }
 
 .attitude-chip {
-  padding: 0.3rem 0.5rem;
-  background: rgba(0, 0, 0, 0.4);
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
+  padding: 0.4rem 0.6rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--color-glass-border);
+  border-radius: var(--border-radius-s);
   cursor: pointer;
-  font-size: 0.75rem;
-  transition: all 0.15s;
+  font-size: 0.78rem;
+  transition: var(--transition-smooth);
   display: flex;
-  gap: 0.3rem;
+  align-items: center;
+  gap: 0.4rem;
   flex-wrap: wrap;
 }
 
-.attitude-chip:hover:not(.disabled) {
-  border-color: var(--color-accent);
+.attitude-chip:hover {
+  border-color: rgba(212, 175, 55, 0.4);
+  background: rgba(212, 175, 55, 0.03);
 }
 
 .attitude-chip.active {
-  background: var(--color-accent);
-  color: white;
+  background: linear-gradient(135deg, var(--color-accent) 0%, #a38120 100%);
+  color: #07050d;
   border-color: var(--color-accent);
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(212, 175, 55, 0.25);
 }
 
 .att-dim {
-  font-weight: 500;
-  opacity: 0.8;
+  opacity: 0.85;
+}
+
+.attitude-chip.active .att-dim {
+  opacity: 1;
+}
+
+.att-divider {
+  opacity: 0.4;
 }
 
 .att-level {
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .att-effect {
   opacity: 0.7;
+  font-size: 0.72rem;
   font-style: italic;
 }
 
@@ -240,16 +329,18 @@ function confirmChoice() {
   width: 100%;
   padding: 0.5rem;
   background: var(--color-accent);
-  color: white;
+  color: #07050d;
   border: none;
-  border-radius: 4px;
-  font-size: 0.85rem;
+  border-radius: var(--border-radius-s);
+  font-size: 0.82rem;
+  font-weight: 600;
   cursor: pointer;
-  font-weight: 500;
+  box-shadow: 0 2px 10px rgba(212, 175, 55, 0.2);
+  transition: var(--transition-smooth);
 }
 
-.confirm-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.confirm-btn:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+  box-shadow: 0 4px 15px rgba(212, 175, 55, 0.4);
 }
 </style>

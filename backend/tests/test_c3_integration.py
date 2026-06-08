@@ -55,7 +55,7 @@ if _REPO_ROOT not in sys.path:
 # test if so (mirrors the pattern in test_scheduler.py).
 apscheduler = pytest.importorskip("apscheduler")
 
-from backend.app_with_memory import app as composed_app  # noqa: E402
+from backend.main import app as composed_app  # noqa: E402
 from backend.demo_integration import (  # noqa: E402
     JOB_MEMORY_HEALTH_MINUTE,
     add_demo_job,

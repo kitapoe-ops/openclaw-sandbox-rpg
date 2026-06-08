@@ -447,6 +447,132 @@ class ActionProcessor:
             # "(無當前狀態 — 健康)" so the LLM still has the section.
             current_state = self._get_current_state(character_id)
 
+            # --- 故事套路系統與偏航發酵引擎實作 ---
+            from backend.demo_mode import is_demo_mode
+            
+            # A. 加載資料庫中的 active_threads (非 demo 模式下)
+            db_active_threads = {}
+            if not is_demo_mode():
+                try:
+                    from backend.db import AsyncSessionLocal
+                    from backend.models import CharacterState
+                    from sqlalchemy import select
+                    async with AsyncSessionLocal() as session:
+                        stmt = select(CharacterState.active_threads).where(CharacterState.character_id == character_id)
+                        result = await session.execute(stmt)
+                        db_active_threads = result.scalar() or {}
+                except Exception as e:
+                    logger.warning(f"Failed to load active_threads from DB: {e}")
+            
+            # 同步給 current_state.active_threads
+            if db_active_threads:
+                current_state.active_threads = dict(db_active_threads)
+            
+            # B. 偏航發酵邏輯更新
+            from backend.trope_router import TropeRouter
+            router = TropeRouter()
+            
+            active_threads = getattr(current_state, "active_threads", {}) or {}
+            active_tids = [tid for tid, data in active_threads.items() if data.get("status") in ("Active", "Evaded")]
+            
+            for tid in active_tids:
+                tdata = active_threads[tid]
+                trope_def = router.get_trope_by_id(tid)
+                if not trope_def:
+                    continue
+                
+                choice_fw = trope_def.get("choice_framework", {})
+                req_verbs = choice_fw.get("required_verbs", [])
+                
+                # 判斷是否為偏航
+                if verb in req_verbs:
+                    # 面對衝突，套路完成
+                    tdata["status"] = "Completed"
+                else:
+                    # 偏航/逃避
+                    if tdata["status"] == "Active":
+                        tdata["status"] = "Evaded"
+                        tdata["escalation_level"] = 1
+                    elif tdata["status"] == "Evaded":
+                        tdata["escalation_level"] = tdata.get("escalation_level", 1) + 1
+            
+            # C. 套路分配器 (Trope Router)
+            # 若當前沒有 active 的套路，嘗試觸發新套路
+            still_active = [tid for tid, data in active_threads.items() if data.get("status") in ("Active", "Evaded")]
+            if not still_active:
+                # 收集匹配條件
+                scene_type = "tavern"
+                if scene_ctx and scene_ctx.get("location_tag"):
+                    scene_type = scene_ctx["location_tag"]
+                elif not is_demo_mode():
+                    try:
+                        from backend.db import AsyncSessionLocal
+                        from backend.models import Scene
+                        async with AsyncSessionLocal() as session:
+                            sc = await session.get(Scene, scene_ctx.get("scene_id") or getattr(current_state, "current_scene_id", ""))
+                            if sc and sc.location_tag:
+                                scene_type = sc.location_tag
+                    except Exception:
+                        pass
+                
+                # 檢查其他已死角色痕跡
+                has_other_player_trace = False
+                if not is_demo_mode():
+                    try:
+                        from backend.db import AsyncSessionLocal
+                        from backend.models import CharacterState
+                        from sqlalchemy import select
+                        async with AsyncSessionLocal() as session:
+                            stmt = select(CharacterState).where(
+                                CharacterState.world_id == getattr(current_state, "world_id", "world_default"),
+                                CharacterState.character_id != character_id,
+                                CharacterState.is_alive == False,
+                                CharacterState.current_scene_id == getattr(current_state, "current_scene_id", "")
+                            )
+                            res = await session.execute(stmt)
+                            if res.scalars().first() is not None:
+                                has_other_player_trace = True
+                    except Exception:
+                        pass
+                else:
+                    # demo/測試模式下，可透過 args 或是 state 傳入 has_other_player_trace 模擬
+                    if args and args.get("has_other_player_trace"):
+                        has_other_player_trace = True
+                
+                npc_status = args.get("npc_status", "hostile_or_searching") if args else "hostile_or_searching"
+                
+                matched = router.find_matching_trope(scene_type, has_other_player_trace, npc_status)
+                if matched:
+                    current_state.active_threads[matched["trope_id"]] = {
+                        "status": "Active",
+                        "escalation_level": 0,
+                        "seeded_round": 1,
+                        "meta": {
+                            "evade_consequence": matched.get("choice_framework", {}).get("evade_consequence", "")
+                        }
+                    }
+            
+            # D. 保存更新後的 active_threads 到資料庫 (非 demo 模式下)
+            if not is_demo_mode():
+                try:
+                    from backend.db import engine
+                    from sqlalchemy import text as _sql_text
+                    import json as _json
+                    async with engine.begin() as conn:
+                        await conn.execute(
+                            _sql_text(
+                                "UPDATE character_states SET active_threads = CAST(:threads AS jsonb), "
+                                "updated_at = now() WHERE character_id = :cid"
+                            ),
+                            {
+                                "threads": _json.dumps(current_state.active_threads, ensure_ascii=False),
+                                "cid": character_id,
+                            }
+                        )
+                except Exception as e:
+                    logger.warning(f"Failed to persist active_threads to DB: {e}")
+            # --- 故事套路系統與偏航發酵引擎實作結束 ---
+
             # 7) Phase F3: build the system prompt via PromptBuilder.
             # This is where the F4 invariant lives: the current
             # state is ALWAYS at the top of the system prompt,

@@ -390,3 +390,77 @@ def test_invalid_state_falls_back_gracefully(no_palace_builder, basic_action_con
     # The character_id round-trips through build() without error
     # (no exception, prompt is a non-empty string).
     assert isinstance(prompt, str) and len(prompt) > 0
+
+
+class TestEquipmentConstraints:
+    class MockWorldDB:
+        def __init__(self):
+            self.items = {
+                "item_hero_sword": {
+                    "id": "item_hero_sword",
+                    "name": "勇者之劍",
+                    "tags": ["sharp", "holy_damage", "heavy", "conductive"]
+                }
+            }
+        def get_item(self, item_id):
+            return self.items.get(item_id)
+
+    def test_equipment_constraints_fallback(self, no_palace_builder, basic_state, basic_action_context):
+        """When world_db is None, prompt equipment section should fallback gracefully."""
+        import asyncio
+        prompt = asyncio.run(
+            no_palace_builder.build(
+                character_id="alice",
+                current_state=basic_state,
+                action_context=basic_action_context,
+                world_db=None
+            )
+        )
+        assert "(無裝備物理約束資訊)" in prompt
+
+    def test_equipment_constraints_no_equipped(self, no_palace_builder, basic_state, basic_action_context):
+        """When world_db is provided but character has no equipped items."""
+        import asyncio
+        db = self.MockWorldDB()
+        # basic_state has no inventory or items.
+        prompt = asyncio.run(
+            no_palace_builder.build(
+                character_id="alice",
+                current_state=basic_state,
+                action_context=basic_action_context,
+                world_db=db
+            )
+        )
+        assert "(無當前裝備)" in prompt
+
+    def test_equipment_constraints_injection(self, no_palace_builder, basic_action_context):
+        """When character has an equipped item, physical tags and constraints are injected."""
+        import asyncio
+        from backend.state_machine import SemanticState
+        
+        db = self.MockWorldDB()
+        state = SemanticState(
+            character_id="alice",
+            tags=[],
+            inventory={"items": [{"item_id": "item_hero_sword", "quantity": 1, "equipped": True}]}
+        )
+        prompt = asyncio.run(
+            no_palace_builder.build(
+                character_id="alice",
+                current_state=state,
+                action_context=basic_action_context,
+                world_db=db
+            )
+        )
+        
+        # Verify section header is present
+        assert "# 角色當前裝備與物理約束" in prompt
+        # Verify item name and tags are present
+        assert "裝備：【勇者之劍】（特性：鋒利, 神聖傷害, 沉重, 導電）" in prompt
+        # Verify physical logic example is present (heavy/sharp translated)
+        assert "「沉重」代表攻擊勢大力沉但硬直大" in prompt
+        assert "「鋒利」代表可以斬斷血肉或物體" in prompt
+        # Verify physical constraints directive is present
+        assert "1. 生成戰鬥或破壞類選項時，必須優先考慮使用【勇者之劍】。" in prompt
+        assert "3. 嚴禁憑空捏造裝備不具備的魔法或物理效果。" in prompt
+

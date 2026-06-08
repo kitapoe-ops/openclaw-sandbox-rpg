@@ -472,6 +472,7 @@ class SemanticState:
         "memories",
         "relationships",
         "inventory",
+        "active_threads",
         "_updated_at",
     )
 
@@ -485,6 +486,7 @@ class SemanticState:
         memories: list[str] | None = None,
         relationships: dict[str, str] | None = None,
         inventory: dict[str, Any] | None = None,
+        active_threads: dict[str, Any] | None = None,
     ) -> None:
         if not isinstance(character_id, str) or not character_id.strip():
             raise StateValidationError(f"character_id must be non-empty str, got {character_id!r}")
@@ -508,6 +510,7 @@ class SemanticState:
         self.memories: list[str] = list(memories or [])
         self.relationships: dict[str, str] = dict(relationships or {})
         self.inventory: dict[str, Any] = dict(inventory or {"items": []})
+        self.active_threads: dict[str, Any] = dict(active_threads or {})
         self._updated_at: datetime = datetime.now(UTC)
 
     # -------- convenience --------

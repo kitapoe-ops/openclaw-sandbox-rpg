@@ -70,6 +70,7 @@ class CharacterState(Base):
     semantic_profile = Column(JSONB, nullable=False)
     is_npc_mode = Column(Boolean, nullable=False, default=False)
     is_alive = Column(Boolean, nullable=False, default=True)
+    active_threads = Column(JSONB, nullable=False, default=dict)
     created_at = Column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
     updated_at = Column(
         DateTime(timezone=True), nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow

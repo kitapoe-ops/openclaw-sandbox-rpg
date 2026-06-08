@@ -9,6 +9,35 @@
 
 OpenClaw Sandbox RPG is a backend-first framework for AI-driven narrative games. It is organized around five independent core engines, four shared subsystems, and a single FastAPI app that exposes them all as REST + WebSocket endpoints. The design constraint throughout is: **persistent state is the source of truth, the LLM is a renderer of state, not the other way around**.
 
+### 🔄 故事生成與奪舍閉環 (The Narrative & Karma Loop)
+
+整個故事引擎的核心閉環（Closed Loop）其實是一個**「行為 → 改變 → 傳承 → 新行為」**的永動機。其完整運作畫面如下：
+
+1. **【起點】：帶着「業力」降生**
+   新玩家（或剛死亡重開的玩家）進入世界時，其角色並非白紙。系統會將**上一手玩家留下的「業力」或「執念」**注入新角色的背景設定。
+   *(例如：作為一個新兵，你無端端對酒館北面的廢棄水井產生極度恐懼，因為上一手玩家剛在此處死亡。)*
+
+2. **【推動】：導演佈局（套路與痕跡的碰撞）**
+   系統（導演）會將兩樣材料結合：
+   - **網文套路庫：** 抽取劇本大綱（例如：【禍水東引】）。
+   - **世界真實痕跡：** 撈取其他非同步玩家做過的「好事」（例如：玩家 A 殺了商人並留下斷劍）。
+   系統結合兩者發送指令：**「本集劇本為『禍水東引』，道具為『斷劍』，即刻開拍！」**
+
+3. **【渲染】：極限施壓與抉擇（LLM 畫師發功）**
+   LLM 嚴格遵守「禁用情緒詞」、「倒數計時器」、「微觀視角」三大寫作鐵律，渲染出張力場景，並提供 4 個帶有**代價與風險**的網文選項（隱忍、反殺、嫁禍、逃遁）。
+
+4. **【刻印】：無聲改寫世界**
+   玩家作出抉擇與行動。系統的「守門人」將此行動轉化為「世界參數改變」（例如：商人狀態 = 已死；房間 = 滿地鮮血；守衛狀態 = 敵對）。
+
+5. **【分流】：生與死的終極判定**
+   - **👉 情況 A（玩家存活）：** 玩家行動製造新「痕跡」，角色攜帶新道具與狀態，重回**【推動】**階段，抽取下一個套路，進入下一輪。
+   - **👉 情況 B（玩家死亡，觸發奪舍）：** 玩家角色死亡成為世界的「歷史事件」。其死亡前的恐懼、仇恨被提取為新「業力」。系統創建全新角色（例如拾荒者），將業力注入其腦海並送回**【起點】**。
+
+#### 💡 點解呢個叫「真正嘅閉環」？
+- **世界參數閉環：** 你今日劈爛的桌子，會成為明日另一個玩家（甚至你自己的新角色）用來做掩護的爛木板。
+- **敘事邏輯閉環：** 故事生成不需要無中生有，它只負責將「玩家 A 的破壞」+「網文套路」包裝成「玩家 B 的危機」。
+- **生死輪迴閉環（奪舍）：** 死亡不再是終點，而是產生下一個故事動機的原料。
+
 ---
 
 ## 2. Three-Layer Architecture
@@ -193,7 +222,8 @@ async def lifespan(app: FastAPI):
         scheduler.shutdown()
 ```
 
-`app_with_memory.py` is the actual entry point. It imports `main.py`'s `app` and includes the memory router, then mounts the scheduler via the lifespan context manager. `main.py` is never modified.
+`main.py` is the actual entry point for the production stack. It configures the main `FastAPI` instance, serves the Vue 3 SPA frontend, and handles the lifespan. `app_with_memory.py` acts as a compatibility testing shim, registering testing routers (`_e1_router`, `_d4_list_router`, `_e6a_router`, and `_e6b_router`) directly onto the `main.app` instance, and importing `app` at the end of the file to break circular imports.
+
 
 ---
 

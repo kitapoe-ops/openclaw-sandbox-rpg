@@ -72,7 +72,7 @@ except ImportError:  # pragma: no cover - exercised only when dep missing
 from fastapi import FastAPI
 
 # Reuse the Wave 2 + memory router composition (frozen).
-from .app_with_memory import app as composed_app
+from .main import app as composed_app
 
 logger = logging.getLogger(__name__)
 

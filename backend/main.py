@@ -19,6 +19,7 @@ from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api import action, character, scene, world
+from .memory_palace_integration_endpoint import router as memory_router
 from .demo_mode import is_demo_mode
 from .scenes_demo import DEMO_SCENE, DEMO_STARTER
 from .ws import registry, scene_lock_manager, websocket_endpoint
@@ -196,12 +197,24 @@ app.include_router(character.router, prefix="/api/character", tags=["character"]
 app.include_router(action.router, prefix="/api/action", tags=["action"])
 app.include_router(scene.router, prefix="/api/scene", tags=["scene"])
 app.include_router(world.router, prefix="/api/world", tags=["world"])
+app.include_router(memory_router)
+
+# Compose E1, D4 v2, E6a, E6b testing routers
+from .app_with_memory import _e1_router, _d4_list_router, _e6a_router, _e6b_router, multiplayer_ws
+
+app.include_router(_e1_router)
+app.include_router(_d4_list_router)
+app.include_router(_e6a_router)
+app.include_router(_e6b_router)
 
 
 # WebSocket
 @app.websocket("/ws/game/{character_id}")
 async def ws_game(websocket: WebSocket, character_id: str):
     await websocket_endpoint(websocket, character_id)
+
+app.add_api_websocket_route("/ws/multiplayer/{scene_id}/{player_id}", multiplayer_ws)
+
 
 
 # ============================================

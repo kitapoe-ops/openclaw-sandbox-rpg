@@ -67,7 +67,8 @@ npm install
 npm run dev
 ```
 
-開 `http://localhost:5173`，預設顯示 demo 角色。
+開 `http://localhost:8000` 或是 `http://localhost:5173`，預設顯示角色與場景。
+
 
 ---
 
@@ -263,10 +264,11 @@ python -m venv .venv
 .venv/Scripts/python.exe -m pip install -r backend/requirements.txt
 ```
 
-### 2. Run the full test suite (expect 161 passed in ~5 seconds)
+### 2. Run the full test suite (expect 313 passed in ~8 seconds, excluding smoke tests)
 ```bash
-.venv/Scripts/python.exe -m pytest backend/tests/ -q
+.venv/Scripts/python.exe -m pytest backend/tests/ -k "not test_production_smoke"
 ```
+
 
 ### 3. Start the app (uses in-memory persistence + pure-Python vector store)
 ```bash
@@ -303,13 +305,17 @@ curl -X POST http://localhost:8000/memory/recall \
 ```
 
 ### 6. Open the demo frontend
-Open `demo.html` in a browser. The page will use the same API on port 8000.
+In your browser at `http://localhost:8000` (production) or `http://localhost:5173` (dev):
+
+- The page loads the lobby screen
+
 
 ### 7. (Optional) Run the demo cron
 The `memory_health_minute` job hits `/memory/health` every minute. Watch the backend logs to see the cron firing.
 
 ## What you should see
-- **Step 2:** `161 passed in 5.27s` — no failures, 0 new warnings
+- **Step 2:** `313 passed in 8.14s` — no failures, 0 new warnings
+
 - **Step 3:** Uvicorn banner on `http://0.0.0.0:8000`
 - **Step 4:** JSON with both backends healthy
 - **Step 5:** A memory_id (uuid4) on remember, an array of `{memory_id, content, similarity, ...}` on recall

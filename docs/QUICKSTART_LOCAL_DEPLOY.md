@@ -13,8 +13,9 @@ This guide covers the **local-only deployment** of OpenClaw Sandbox RPG on a sin
 
 | Component | Port | Process | Purpose |
 |-----------|------|---------|---------|
-| FastAPI backend | **8000** | `uvicorn backend.app_with_memory:app` | All 23 endpoints (18 gameplay + 4 memory + 1 demo) |
-| Static demo server | **5173** | `python backend/scripts/serve_demo.py` | Serves `demo.html` (and the whole repo root) with CORS-friendly headers |
+| FastAPI backend | **8000** | `uvicorn backend.main:app` | Backend API + Static Vue SPA fallback |
+| Vue 3 SPA Dev Server | **5173** | `npm run dev` (in `frontend/`) | Premium UI Developer server (Vite) |
+
 
 **Scope (hard caps — do not exceed):**
 
@@ -22,15 +23,13 @@ This guide covers the **local-only deployment** of OpenClaw Sandbox RPG on a sin
 - **Up to 100 NPCs** per scene, each with Memory Palace + character parameters
 - **Single-machine only** — no cluster, no remote DB, no load balancer
 
-**What's NOT in scope** (per `PHASE_G1_SUMMARY.md` and user scope-lock):
+**What is now IN SCOPE** (Phase L2 Shipped):
 
-- ❌ Docker / docker-compose deploy
-- ❌ Pi5 deploy (Phase D5 removed; G2 skipped)
-- ❌ Cloud / Vercel / Cloudflare / production WSGI behind nginx
-- ❌ Multi-tenant or public-internet exposure
-- ❌ Real `MiniMax-M3` cloud LLM (optional via env var, see §7)
+- ✅ Production Postgres 15 database integration
+- ✅ Hosted deployment using Cloudflared Tunnel (rpg.kitahim.uk)
+- ✅ Seamless Vue 3 SPA compilation and backend integration
+- ✅ Fail-loud production safety checks (preventing fallback in production env)
 
-If you need any of the above, **stop and discuss scope first**. This guide assumes local-only.
 
 ---
 
@@ -38,10 +37,12 @@ If you need any of the above, **stop and discuss scope first**. This guide assum
 
 | Requirement | Version | Notes |
 |-------------|---------|-------|
-| Python | **3.11+** | Tested on 3.14.3; 3.11 / 3.12 also work |
-| Disk | ~500 MB | `.venv` + LanceDB + aiosqlite + demo.html ≈ 350 MB |
-| LM Studio | **optional** | Only needed for the local **R1-14B audit** path; without it the system uses `MockLLMClient` (audit disabled, R1 fail-closed becomes "no R1") |
-| Network | **none** | Backend + frontend are both localhost; no external calls unless MiniMax is wired (see §7) |
+| Python | **3.11+** | Tested on 3.14.3; 3.11 / 3.12 / 3.13 also work |
+| Disk | ~500 MB | `.venv` + LanceDB + aiosqlite + frontend assets ≈ 350 MB |
+| Node.js | **20+** | Required to build and run the Vue 3 Vite frontend |
+| LM Studio | **optional** | Only needed for the local **R1-14B audit** path; without it the system uses `MockLLMClient` |
+| Network | **none** | Backend + frontend are both localhost; no external calls unless MiniMax is wired |
+
 
 > **Already cloned?** If you have the repo + a working `.venv` from `README.md` §Quick Start, you can skip to §3.3.
 
@@ -61,29 +62,29 @@ python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r backend/requirements.txt
 # macOS / Linux: python3 -m venv .venv && .venv/bin/pip install -r backend/requirements.txt
 
-# 3. (Optional but recommended) verify the install
-.venv\Scripts\python.exe -m pytest backend/tests/ -q
-# Expected: 322 passed in ~ 30 s
+# 3. (Optional but recommended) verify the install (exclude smoke test if Postgres is offline)
+.venv\Scripts\python.exe -m pytest backend/tests/ -k "not test_production_smoke"
+# Expected: 313 passed in ~ 8 s
 # If 0 tests run or modules missing, re-run step 2.
 
 # 4. Start the backend (port 8000)
-.venv\Scripts\python.exe -m uvicorn backend.app_with_memory:app --port 8000
+.venv\Scripts\python.exe -m uvicorn backend.main:app --port 8000
 # Leave this terminal open. Expected log:
 #   [Mode] DEMO MODE — no DB required
-#   [Startup] Ready. Try: curl http://localhost:8000/health
+#   [Startup] Ready
 ```
 
 In a **second terminal**:
 
 ```powershell
-# 5. Start the demo frontend (port 5173)
-.venv\Scripts\python.exe backend/scripts/serve_demo.py
-# Expected log:
-#   [serve_demo] Serving demo.html from C:\...\sandbox-rpg-tmp
-#   [serve_demo] Open http://localhost:5173/demo.html
+# 5. Start the frontend developer server (port 5173)
+cd frontend
+npm install
+npm run dev
 ```
 
-Open **http://localhost:5173/demo.html** in your browser. You should see the character list and scene map render within ~ 1 s.
+Open **http://localhost:5173** in your browser. You should see the login/lobby screen render within ~ 1 s.
+
 
 **Total wall-clock:** ~ 3 minutes from a clean clone to a working UI (most of it spent on `pip install`).
 
@@ -100,9 +101,10 @@ curl.exe http://localhost:8000/memory/health
 curl.exe http://localhost:8000/health
 # Expected: {"status":"ok","version":"0.4.0","mode":"demo",...}
 
-# 4.3 Frontend reachable
-curl.exe -I http://localhost:5173/demo.html
-# Expected: HTTP/1.0 200 OK, Content-Type: text/html, Access-Control-Allow-Origin: *
+# 4.3 Frontend reachable via API fallback or Vite server
+curl.exe -I http://localhost:5173/
+# Expected: HTTP/1.1 200 OK
+
 
 # 4.4 E2E: remember + recall round-trip
 #   (requires Python to build a 384-dim embedding — see snippet below)
@@ -150,32 +152,19 @@ Similarity **1.0** confirms the same vector round-trips end-to-end (embed → PG
 
 ## 5. Troubleshooting
 
-| Symptom | Cause | Fix |
-|---------|-------|-----|
-| `Address already in use` on port 8000 | Another process owns the port | `netstat -ano \| findstr ":8000 "`, then `taskkill /PID <pid> /F`. Or restart uvicorn with `--port 8001` and update the URLs in `demo.html` (search for `localhost:8000`) |
-| `Address already in use` on port 5173 | `serve_demo.py` already running, or another dev server (Vite, etc.) | `netstat -ano \| findstr ":5173 "` and kill. `serve_demo.py` sets `SO_REUSEADDR`, so a quick restart usually works |
-| CORS error in browser console: "blocked by CORS policy" | Opened `demo.html` via `file://` or via a non-5173 port | **Always use `serve_demo.py`** — it serves on the same port that backend's CORS allowlist expects (5173) |
-| `curl` is `Invoke-WebRequest` and complains about missing args | PowerShell aliases `curl` to `Invoke-WebRequest` | Use `curl.exe` (the real binary) or `Invoke-WebRequest -UseBasicParsing http://...` |
-| `ModuleNotFoundError: No module named 'fastapi'` (or similar) on uvicorn start | venv not activated, or step 2 skipped | Re-run step 2: `.venv\Scripts\python.exe -m pip install -r backend/requirements.txt` |
-| `/memory/health` returns `{"postgres": false, ...}` | `PERSISTENCE_MODE=postgres` set without a working `DATABASE_URL` | Unset both, or use the default (aiosqlite under `./data/memory_palace_integration.db`, created on first request). The default **always** reports `postgres: true` because it routes through the same SQLAlchemy engine |
-| R1 audit times out / 429 from LM Studio | LM Studio server not on port 1234, or model still loading | The audit hook is **fail-closed** by design — if R1 is unavailable, action commits are blocked. Open LM Studio → Developer → Local Server → Enable, port 1234. Until then, the LLM path runs in mock mode (no audit, no fail-closed) |
-| `demo.html` loads but every fetch returns ECONNREFUSED | Backend not started, or on a different port | Confirm `http://localhost:8000/health` returns JSON. If you started on `--port 8001`, edit the `API_BASE` constant at the top of `demo.html` |
-| `aiosqlite` "database is locked" under heavy E2E | The demo data dir (`.//data/...`) collided with a previous run | Stop the backend, delete `data/memory_palace_integration.db`, restart |
-| Test suite reports import errors for `apscheduler` or `lancedb` | Step 2 was skipped or interrupted | `pip install -r backend/requirements.txt` again — Phase B2 added `apscheduler>=3.10,<4.0` |
+| `Address already in use` on port 8000 | Another process owns the port | Kill previous process or run backend on port 8001 |
+| `Address already in use` on port 5173 | Vite dev server already running | Kill previous Vite process |
+| CORS error in browser console | Incorrect origin configuration | Run frontend and backend on expected origins or set CORS_ORIGINS environment variable |
+| `ModuleNotFoundError: No module named 'fastapi'` | venv not activated | Activate virtual environment: `.venv\Scripts\activate` |
+| R1 audit times out | LM Studio server down or loading | Verify LM Studio server is running on port 1234 |
+
 
 ---
 
 ## 6. Scope Lock (re-stated)
 
-> **This guide is local-only by design.** Do not attempt any of the following:
->
-> 1. Running the backend on `0.0.0.0` exposed to a LAN
-> 2. Putting it behind nginx / Caddy / a reverse proxy
-> 3. Deploying to Pi5, a VPS, Vercel, Cloudflare, Fly.io, or any cloud
-> 4. Running docker-compose in production mode
-> 5. Exposing the WS endpoint to the public internet
->
-> Per `PHASE_G1_SUMMARY.md`: **G2 (Real Docker E2E) and G3 (Context Pruning) are permanently skipped** — local-only scope. If a future requirement needs anything above, it is a scope change, not a deploy task.
+> **This guide focuses on local development deployment.** For full-scale production deployment including Cloudflare Tunnel, database setup, and process daemonization, refer to `deploy/` scripts and `L2_E_deploy.ps1`.
+
 
 ---
 
@@ -212,12 +201,13 @@ $env:ANTHROPIC_API_KEY = "sk-...your-key..."
 
 | Step | Expected |
 |------|----------|
-| `pip install` finishes | `Successfully installed fastapi-0.110.0 ...` (no errors) |
-| `pytest -q` | `322 passed in ~ 30 s` |
-| Backend boot log | `[Mode] DEMO MODE — no DB required` → `[Startup] Ready` → `Uvicorn running on http://127.0.0.1:8000` |
-| `serve_demo.py` log | `[serve_demo] Serving demo.html from ...` → `[serve_demo] Open http://localhost:5173/demo.html` |
-| Browser at `/demo.html` | Character list + scene map render; clicking an action triggers a `POST /api/action/process` round-trip (visible in DevTools Network tab) |
-| `curl /memory/health` | `{"postgres":true,"vector_store":true}` |
+| `pip install` finishes | Successfully installed deps |
+| `pytest` | Unit tests pass |
+| Backend boot log | `[Mode] DEMO MODE` → `[Startup] Ready` |
+| Frontend Dev Server | `Local: http://localhost:5173/` |
+| Browser at localhost | Login/lobby page renders |
+| `curl /health` | `{"status":"ok", ...}` |
+
 
 If all of the above match, **you are locally deployed**. 🎉
 

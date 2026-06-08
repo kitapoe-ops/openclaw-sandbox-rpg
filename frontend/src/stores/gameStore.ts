@@ -1,10 +1,11 @@
 /**
- * Game Store (Pinia) v3.1
+ * Game Store (Pinia) v3.2
  * ========================
  * Handles:
  * - State mismatch recovery (force REST refresh)
  * - INTERRUPTED actions (from server restart)
  * - Reclaim control on reconnect
+ * - Custom character OFFLINE sandbox simulator
  */
 
 import { defineStore } from 'pinia'
@@ -30,6 +31,45 @@ export interface HistoryEntry {
   status?: string
 }
 
+// Offline sandbox story library for Custom Characters
+const OFFLINE_SCENES = [
+  {
+    narrative: `你推開石丘旅店（Stonehill Inn）厚實嘅橡木大門，一股溫暖嘅麥酒與烤羊肉香氣夾雜住壁爐嘅熱力迎面撲黎。吧枱前圍攏住幾位疲憊嘅礦工，老闆 Toblen 正低頭擦拭酒杯。見你走入，佢挑了挑眉：「新面孔？凡達林最近唔太平，紅印幫嘅眼線周圍都係，出入小心點。」二樓隱約傳來推搡與怒罵聲，似乎有幾名喝醉嘅紅印幫流氓喺房門外滋事。`,
+    choices: [
+      { id: 'opt_inn_1', lore_source: 'talk', vignette: '行去吧枱同老闆 Toblen 打聽 Gundren Rockseeker 探險隊失蹤嘅消息。', direction_hint: '向 Toblen 打聽', intent_category: 'talk', attitude_options: [{ dimension: 'caution', level: 'bold' }] },
+      { id: 'opt_inn_2', lore_source: 'action', vignette: '手按劍柄，踩著木樓梯上二樓，準備喝止那幾名正在騷擾房客的紅印幫流氓。', direction_hint: '上樓出頭', intent_category: 'action', attitude_options: [{ dimension: 'violence', level: 'balanced' }] },
+      { id: 'opt_inn_3', lore_source: 'explore', vignette: '喺壁爐旁揀個不起眼嘅角落坐低，點一杯熱麥酒，靜靜偷聽隔壁桌冒險者嘅低語。', direction_hint: '在暗處偷聽', intent_category: 'exploration', attitude_options: [{ dimension: 'caution', level: 'careful' }] },
+      { id: 'opt_inn_4', lore_source: 'creative', vignette: '喺客棧中央大聲朗誦被遺忘國度嘅英雄史詩，嘗試藉此吸引有正義感嘅盟友注意。', direction_hint: '吟遊詩人演講', intent_category: 'creative', attitude_options: [{ dimension: 'curiosity', level: 'curious' }] }
+    ]
+  },
+  {
+    narrative: `你沿著石溪小徑摸索前行，終於搵到克拉格魔巢穴（Cragmaw Hideout）嘅入口。洞口雜草叢生，一股刺鼻嘅腐肉與地精體臭令人作嘔。前方傳來一陣尖利嘅爭吵聲，幾隻哥布林正圍繞住一堆柴火，肆無忌憚地翻查搶奪自矮人車隊嘅鐵礦箱與物資。一條吊橋懸掛在奔騰嘅地下暗河上方，這似乎是通往地底更深處的唯一路徑。`,
+    choices: [
+      { id: 'opt_cave_1', lore_source: 'explore', vignette: '潛伏在鐘乳石陰影中，拉滿短弓瞄準吊橋旁正在瞌睡的哥布林哨兵。', direction_hint: '暗殺哨兵', intent_category: 'exploration', attitude_options: [{ dimension: 'caution', level: 'careful' }] },
+      { id: 'opt_cave_2', lore_source: 'action', vignette: '拔出武器發出戰吼，直接衝向篝火堆，一腳將燒紅的火炭踢向哥布林的眼睛！', direction_hint: '正面突襲', intent_category: 'action', attitude_options: [{ dimension: 'violence', level: 'aggressive' }] },
+      { id: 'opt_cave_3', lore_source: 'talk', vignette: '從岩壁後站出，以哥布林俚語大聲宣稱自己是代表「黑蜘蛛」的特使，要求面見 Grol。', direction_hint: '假冒蜘蛛特使', intent_category: 'talk', attitude_options: [{ dimension: 'honor', level: 'deceitful' }] },
+      { id: 'opt_cave_4', lore_source: 'creative', vignette: '利用火把引燃地上的乾燥藤蔓，製造出森林大火的幻象，將哥布林嚇出山洞。', direction_hint: '放火退敵', intent_category: 'creative', attitude_options: [{ dimension: 'curiosity', level: 'curious' }] }
+    ]
+  },
+  {
+    narrative: `你踏入波濤迴音洞窟（Wave Echo Cave）的杜馬松神殿廢墟，傳說中失落已久的魔法大熔爐（Forge of Spells）就在神殿中央，散發著幽藍、瑰麗的奧術光輝。然而，熔爐上方正漂浮著一隻長滿觸手與巨型獨眼的邪魔——眼魔（Spectator）！而黑蜘蛛 Nezznar 正帶著他的黑暗精靈衛兵站在不遠處，用勝券在握的眼神俯視著你。`,
+    choices: [
+      { id: 'opt_forge_1', lore_source: 'action', vignette: '爆發全部潛力，避開眼魔的射線，直取 Nezznar 進行生死對決！', direction_hint: '斬首黑蜘蛛', intent_category: 'action', attitude_options: [{ dimension: 'violence', level: 'balanced' }] },
+      { id: 'opt_forge_2', lore_source: 'explore', vignette: '貓腰滑向熔爐一側的矮人操控台，試圖輸入殘缺的符文，重新啟用熔爐的古老魔法屏障。', direction_hint: '啟用熔爐屏障', intent_category: 'exploration', attitude_options: [{ dimension: 'caution', level: 'careful' }] },
+      { id: 'opt_forge_3', lore_source: 'talk', vignette: '直視 Nezznar，大聲揭露他背叛氏族的陰謀，試圖瓦解他身後黑暗精靈護衛的士氣。', direction_hint: '言辭策反', intent_category: 'talk', attitude_options: [{ dimension: 'empathy', level: 'pragmatic' }] },
+      { id: 'opt_forge_4', lore_source: 'creative', vignette: '拿出背包中的強效治療藥水擲向眼魔的眼睛，利用藥水內強大的生命能量中和眼魔的死亡射線！', direction_hint: '生命藥水破敵', intent_category: 'creative', attitude_options: [{ dimension: 'curiosity', level: 'curious' }] }
+    ]
+  }
+]
+
+const RANDOM_LOOT = [
+  'item_iron_dagger (鐵匕首)',
+  'item_healing_potion_greater (強效治療藥水)',
+  'item_red_brand_cloak (紅印幫頭巾)',
+  'item_carnelian_gems (紅玉髓寶石)',
+  'item_spellbook_iarno (Iarno 嘅法術書)'
+]
+
 export const useGameStore = defineStore('game', () => {
   const characterId = ref<string | null>(null)
   const isConnected = ref(false)
@@ -38,18 +78,11 @@ export const useGameStore = defineStore('game', () => {
   const characterState = ref<CharacterState | null>(null)
   const history = ref<HistoryEntry[]>([])
 
-  // Phase L2-I: removed `remainingSeconds`. The round-system has been
-  // retired. Players advance at their own pace (free-for-all), and
-  // there is no countdown forcing everyone to wait.
-
   const pendingTasks = ref<Map<string, PendingTask>>(new Map())
   const isProcessing = computed(() => pendingTasks.value.size > 0)
   const lastTaskError = ref<string | null>(null)
   const stateMismatchWarning = ref<{ client: string; server: string } | null>(null)
   const lastActionInterrupted = ref(false)
-  // Phase L2-I/Phase B: a sidebar of recent actions taken by OTHER
-  // players in the same scene. The server pushes `other_player_action`
-  // messages via WebSocket; we keep the most-recent N.
   const otherPlayerActions = ref<
     Array<{
       id: string
@@ -62,17 +95,7 @@ export const useGameStore = defineStore('game', () => {
     }>
   >([])
   const OTHER_PLAYER_HISTORY_MAX = 10
-  // Phase L2-E hotfix: a top-level error message set when a character
-  // fails to load (e.g. 404). The GameView watches this and renders
-  // an inline banner instead of leaving the 'handling' spinner on
-  // forever.
   const loadError = ref<string | null>(null)
-  // Phase L2-E hotfix: M3 doesn't reliably include a 'round' field
-  // in scene_output (we saw 'round': null repeatedly). To keep
-  // the round counter incrementing across submits, we maintain
-  // a local counter that bumps by 1 on every successful
-  // scene_update. The backend treats it as the round_number for
-  // the action_history row, so the DB is consistent.
   const clientRound = ref(0)
 
   const staminaDisplay = computed(() => characterState.value?.physical.stamina_level ?? 'unknown')
@@ -97,18 +120,22 @@ export const useGameStore = defineStore('game', () => {
 
     await loadStateFromDB(characterIdParam)
 
+    // Check if running in offline client-side sandbox
+    if (characterIdParam.startsWith('custom_char_')) {
+      isConnected.value = true // Simulated connection
+      console.log('[GameStore] Offline custom character sandbox initialized')
+      return
+    }
+
     try {
       await wsService.connect(
         characterIdParam,
         async () => {
-          // Reclaim on reconnect
           await reclaimControl(characterIdParam)
         },
-        // State mismatch handler
         async (clientId, serverId) => {
           console.warn(`[GameStore] State mismatch: client=${clientId}, server=${serverId}`)
           stateMismatchWarning.value = { client: clientId, server: serverId }
-          // Force refresh from DB
           await loadStateFromDB(characterIdParam)
         },
       )
@@ -127,9 +154,9 @@ export const useGameStore = defineStore('game', () => {
       ])
       characterState.value = state
       currentScene.value = scene
-      console.log('[GameStore] State loaded from DB')
+      console.log('[GameStore] State loaded')
     } catch (e) {
-      console.error('[GameStore] Failed to load state from DB:', e)
+      console.error('[GameStore] Failed to load state:', e)
     }
   }
 
@@ -149,9 +176,6 @@ export const useGameStore = defineStore('game', () => {
   function setupWSHandlers() {
     wsService.on('scene_update', (msg: WSMessage) => {
       const sceneMsg = msg as SceneUpdateMessage
-      // Phase L2-E: M3's round field is unreliable (often null).
-      // Bump a local counter so submitChoice's round keeps moving
-      // forward, and the player sees the round number increment.
       clientRound.value += 1
       currentScene.value = {
         round: sceneMsg.round ?? clientRound.value,
@@ -161,16 +185,13 @@ export const useGameStore = defineStore('game', () => {
         choices: sceneMsg.choices ?? [],
         minor_event: sceneMsg.minor_event,
       } as SceneOutput
-      // Phase L2-I: removed `remainingSeconds.value = 15 * 60` reset
-      // (no countdown anymore). The next scene arrives immediately
-      // on submit; the player can keep playing at their own pace.
       pendingTasks.value.clear()
     })
 
     wsService.on('action_accepted', (msg: WSMessage) => {
       const taskId = msg.task_id
       const actionId = msg.action_id
-      const serverSceneId = msg.scene_id  // ECHO from server (authoritative)
+      const serverSceneId = msg.scene_id
       const existing = Array.from(pendingTasks.value.values()).find(t => t.task_id.startsWith('temp_'))
       if (existing) {
         const updated: PendingTask = {
@@ -195,19 +216,9 @@ export const useGameStore = defineStore('game', () => {
           lastTaskError.value = msg.error || 'Unknown error'
         }
         if (status === 'interrupted') {
-          // Server restart occurred while this action was in flight
           lastActionInterrupted.value = true
-          console.warn('[GameStore] Action was INTERRUPTED by server restart')
         }
       }
-    })
-
-    wsService.on('countdown', (msg: WSMessage) => {
-      // Phase L2-I: countdown message is no longer used. The server
-      // no longer broadcasts a 15-minute timer. This handler is kept
-      // as a no-op in case old clients or test fixtures still send
-      // a `countdown` message; we just ignore it.
-      void msg
     })
 
     wsService.on('world_event', (msg: WSMessage) => {
@@ -219,8 +230,6 @@ export const useGameStore = defineStore('game', () => {
     })
 
     wsService.on('other_player_action', (msg: WSMessage) => {
-      // Phase L2-I/Phase B: a different player in our scene just
-      // took an action. Append to the recent-activity feed.
       const id = `${msg.task_id ?? 'tx'}-${msg.actor_character_id ?? '?'}-${Date.now()}`
       otherPlayerActions.value.unshift({
         id,
@@ -239,7 +248,6 @@ export const useGameStore = defineStore('game', () => {
     wsService.on('error', (msg: WSMessage) => {
       console.error('[WS] Server error:', msg)
       if (msg.code === 'state_mismatch') {
-        // Handled by onStateMismatch callback in connect()
         return
       }
       lastTaskError.value = msg.message || 'Unknown error'
@@ -264,29 +272,28 @@ export const useGameStore = defineStore('game', () => {
     pendingTasks.value.set(tempId, task)
     lastTaskError.value = null
 
-    // Phase L2-E: hard safety net. The backend's WS handler sends
-    // a scene_update with a server-UUID task_id that DOES NOT match
-    // the temp_xxx we just set. Even though our scene_update
-    // handler calls pendingTasks.value.clear() (which empties the
-    // whole map regardless of task_id), a slow response or a
-    // late-arriving message can leave a stale entry that locks
-    // the UI on the spinner. We also schedule a 30s hard clear so
-    // that even if the backend never responds the player can
-    // keep playing. The clear is idempotent.
+    // Append history immediately
+    history.value.unshift({
+      round: currentScene.value.round,
+      narrative: `[你的選擇] ${optionId} (${attitudeSelections.map(x => `${x.dimension}:${x.level}`).join(', ') || '默認態度'})`,
+      timestamp: new Date().toISOString(),
+      choice_made: optionId,
+    })
+
+    // Custom offline simulation bypass
+    if (characterId.value.startsWith('custom_char_')) {
+      setTimeout(() => {
+        simulateOfflineTurn(optionId, attitudeSelections)
+      }, 1500)
+      return
+    }
+
     setTimeout(() => {
       if (pendingTasks.value.size > 0) {
-        console.warn(
-          '[gameStore] 30s hard clear — backend never confirmed',
-          Array.from(pendingTasks.value.keys()),
-        )
         pendingTasks.value.clear()
       }
     }, 30000)
-    void tempId  // silence unused-variable warning in some configs
 
-    // NOTE: We no longer send scene_id in payload!
-    // Server reads from DB character_states.current_scene_id
-    // (Defense against client tampering / replay attacks)
     wsService.send({
       type: 'action_submit',
       round: currentScene.value.round,
@@ -296,13 +303,86 @@ export const useGameStore = defineStore('game', () => {
         attitude_selections: attitudeSelections,
       },
     })
+  }
 
-    history.value.unshift({
-      round: currentScene.value.round,
-      narrative: `[你的選擇] ${optionId} (處理中...)`,
-      timestamp: new Date().toISOString(),
-      choice_made: optionId,
-    })
+  function simulateOfflineTurn(
+    optionId: string,
+    attitudeSelections: Array<{ dimension: string; level: string }>
+  ) {
+    if (!characterState.value || !currentScene.value || !characterId.value) return
+
+    // Bumps round
+    clientRound.value += 1
+    const nextRound = clientRound.value
+
+    // Randomize state adjustments based on choices
+    const state = { ...characterState.value }
+    const staminaLevels = ['fresh', 'slight_breath', 'muscle_ache', 'exhausted', 'collapse']
+    const healthLevels = ['healthy', 'wounded', 'severely_wounded', 'dying', 'dead']
+    const moraleLevels = ['elated', 'calm', 'neutral', 'anxious', 'despair']
+
+    // Update physical and mental state slightly
+    let staminaIdx = staminaLevels.indexOf(state.physical.stamina_level)
+    let healthIdx = healthLevels.indexOf(state.physical.health_status)
+    let moraleIdx = moraleLevels.indexOf(state.mental.morale_level)
+
+    // Modify indices randomly
+    if (Math.random() > 0.6) {
+      staminaIdx = Math.min(staminaLevels.length - 1, staminaIdx + 1)
+    }
+    if (Math.random() > 0.8) {
+      healthIdx = Math.min(healthLevels.length - 1, healthIdx + 1)
+    }
+    if (Math.random() > 0.7) {
+      moraleIdx = Math.min(moraleLevels.length - 1, moraleIdx + 1)
+    }
+
+    state.physical.stamina_level = staminaLevels[staminaIdx]
+    state.physical.health_status = healthLevels[healthIdx]
+    state.mental.morale_level = moraleLevels[moraleIdx]
+
+    // Randomly loot a new item
+    if (Math.random() > 0.5) {
+      const newItemId = RANDOM_LOOT[Math.floor(Math.random() * RANDOM_LOOT.length)]
+      const existing = state.inventory.items.find(x => x.item_id === newItemId)
+      if (existing) {
+        existing.quantity += 1
+      } else {
+        state.inventory.items.push({ item_id: newItemId, quantity: 1 })
+      }
+      history.value.unshift({
+        round: nextRound,
+        narrative: `⚡ [獲得物品] 你在探索過程中，意外尋獲了 ${newItemId}。`,
+        timestamp: new Date().toISOString()
+      })
+    }
+
+    // Set next scene from offline preset library
+    const preset = OFFLINE_SCENES[Math.floor(Math.random() * OFFLINE_SCENES.length)]
+    const nextScene: SceneOutput = {
+      round: nextRound,
+      character_id: characterId.value,
+      narrative: preset.narrative,
+      state_changes: {
+        stamina_level: state.physical.stamina_level,
+        health_status: state.physical.health_status,
+        morale_level: state.mental.morale_level
+      },
+      choices: preset.choices,
+      minor_event: Math.random() > 0.7 ? '周圍傳來狼嚎，氣溫急速下降。' : undefined
+    }
+
+    // Update stores
+    characterState.value = state
+    currentScene.value = nextScene
+
+    // Persist to LocalStorage
+    localStorage.setItem(`openclaw_char_${characterId.value}`, JSON.stringify(state))
+    localStorage.setItem(`openclaw_scene_${characterId.value}`, JSON.stringify(nextScene))
+
+    // Clear loading
+    pendingTasks.value.clear()
+    console.log(`[Simulator] Turn completed. Round ${nextRound} generated.`)
   }
 
   function clearTaskError() {

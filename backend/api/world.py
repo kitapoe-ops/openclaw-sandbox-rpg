@@ -17,6 +17,7 @@ DB mode:
   models.
 """
 from datetime import UTC, datetime
+import json
 from pathlib import Path
 from typing import Any
 
@@ -49,38 +50,45 @@ router = APIRouter()
 _WORLDS_DIR = Path(__file__).resolve().parent.parent.parent / "worlds"
 
 
-def _resolve_world_yaml(world_id: str) -> Path | None:
+def _resolve_world_file(world_id: str) -> Path | None:
     """
-    Map a world_id to a YAML file inside `worlds/`.
+    Map a world_id to a JSON or YAML file inside `worlds/`.
 
-    The loader registers by file stem (e.g. `dnd_5e_forgotten_realms.yaml`
-    -> `dnd_5e_forgotten_realms`). The YAML's own `world_meta.id` may differ
-    (e.g. `dnd_5e_forgotten_realms_phandalin`), so we prefer the file stem
-    as the canonical key. We also try the meta-id filename as a fallback.
+    Prioritizes JSON files over YAML files.
     """
-    candidate = _WORLDS_DIR / f"{world_id}.yaml"
-    if candidate.exists():
-        return candidate
+    for ext in ["json", "yaml"]:
+        candidate = _WORLDS_DIR / f"{world_id}.{ext}"
+        if candidate.exists():
+            return candidate
+            
     # Fallback: scan worlds/ and match by world_meta.id
     if _WORLDS_DIR.exists():
-        for yaml_file in _WORLDS_DIR.glob("*.yaml"):
-            try:
-                with open(yaml_file, encoding="utf-8") as f:
-                    head = f.read(4096)
-                if f'id: "{world_id}"' in head or f"id: '{world_id}'" in head:
-                    return yaml_file
-            except OSError:
-                continue
+        for ext in ["json", "yaml"]:
+            for file_path in _WORLDS_DIR.glob(f"*.{ext}"):
+                try:
+                    with open(file_path, encoding="utf-8") as f:
+                        head = f.read(4096)
+                    # For both JSON and YAML, check if the id is present
+                    if f'"id": "{world_id}"' in head or f"'id': '{world_id}'" in head or f'id: "{world_id}"' in head or f"id: '{world_id}'" in head:
+                        return file_path
+                except OSError:
+                    continue
     return None
 
 
-def _load_yaml_world(world_id: str) -> dict[str, Any] | None:
-    """Read a world YAML directly (cheap one-shot, no lazy loader required)."""
-    yaml_path = _resolve_world_yaml(world_id)
-    if yaml_path is None:
+def _load_world_file(world_id: str) -> dict[str, Any] | None:
+    """Read a world JSON or YAML directly (cheap one-shot, no lazy loader required)."""
+    file_path = _resolve_world_file(world_id)
+    if file_path is None:
         return None
-    with open(yaml_path, encoding="utf-8") as f:
-        return yaml.safe_load(f)
+    try:
+        with open(file_path, encoding="utf-8") as f:
+            if file_path.suffix == ".json":
+                return json.load(f)
+            else:
+                return yaml.safe_load(f)
+    except Exception:
+        return None
 
 
 def _demo_list_worlds() -> list[dict[str, Any]]:
@@ -88,36 +96,54 @@ def _demo_list_worlds() -> list[dict[str, Any]]:
     if not _WORLDS_DIR.exists():
         return []
     out: list[dict[str, Any]] = []
-    for yaml_file in sorted(_WORLDS_DIR.glob("*.yaml")):
+    
+    # Scan both yaml and json
+    files = list(_WORLDS_DIR.glob("*.yaml")) + list(_WORLDS_DIR.glob("*.json"))
+    
+    # Prioritize JSON if duplicates exist
+    grouped_files = {}
+    for f in files:
+        stem = f.stem
+        if stem not in grouped_files:
+            grouped_files[stem] = f
+        else:
+            if f.suffix == ".json":
+                grouped_files[stem] = f
+
+    for file_path in sorted(grouped_files.values(), key=lambda x: x.stem):
         try:
-            with open(yaml_file, encoding="utf-8") as f:
-                head = f.read(2048)
-            world_id = yaml_file.stem
-            # Cheap metadata extraction (avoids full YAML parse)
+            world_id = file_path.stem
             name = world_id
             version = "unknown"
             description = ""
+            
             try:
-                data = yaml.safe_load(head.split("\n# ===", 1)[0])
-                if isinstance(data, dict):
-                    meta = data.get("world_meta", {}) or {}
-                    name = meta.get("name", world_id)
-                    version = meta.get("version", "unknown")
-                    description = (meta.get("description", "") or "").strip()
-                    # Prefer the meta.id when present, but keep the file stem
-                    # as the canonical key (loader uses stem too).
-                    meta_id = meta.get("id")
-                    if meta_id:
-                        world_id = world_id  # keep stem for routing
+                if file_path.suffix == ".json":
+                    with open(file_path, encoding="utf-8") as f:
+                        data = json.load(f)
+                        meta = data.get("world_meta", {}) or {}
+                        name = meta.get("name", world_id)
+                        version = meta.get("version", "unknown")
+                        description = (meta.get("description", "") or "").strip()
+                else:
+                    with open(file_path, encoding="utf-8") as f:
+                        head = f.read(2048)
+                    data = yaml.safe_load(head.split("\n# ===", 1)[0])
+                    if isinstance(data, dict):
+                        meta = data.get("world_meta", {}) or {}
+                        name = meta.get("name", world_id)
+                        version = meta.get("version", "unknown")
+                        description = (meta.get("description", "") or "").strip()
             except Exception:
                 pass
+                
             out.append(
                 {
                     "world_id": world_id,
                     "name": name,
                     "version": version,
                     "description": description,
-                    "yaml_path": str(yaml_file),
+                    "yaml_path": str(file_path),  # Keep the key name as yaml_path for backwards compatibility
                 }
             )
         except OSError:
@@ -129,7 +155,7 @@ def _demo_world_state(world_id: str) -> dict[str, Any]:
     """
     Build the same shape as DB-mode /state for demo mode, sourced from YAML.
     """
-    data = _load_yaml_world(world_id)
+    data = _load_world_file(world_id)
     if data is None:
         raise HTTPException(status_code=404, detail=f"World {world_id} not found")
 
@@ -166,7 +192,7 @@ def _demo_world_state(world_id: str) -> dict[str, Any]:
 
 def _demo_world_parameters(world_id: str) -> dict[str, Any]:
     """Return the `world_parameters` list from YAML, with current_level defaults."""
-    data = _load_yaml_world(world_id)
+    data = _load_world_file(world_id)
     if data is None:
         raise HTTPException(status_code=404, detail=f"World {world_id} not found")
 

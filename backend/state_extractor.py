@@ -174,45 +174,127 @@ class StateExtractor:
         failure. Never raises — extraction is best-effort.
         """
         # System prompt: STRICT extraction discipline
-        # Gemma 4 12B-specific: T=0.0 + 嚴格 JSON 規範 + 顯式 output format marker
+        # Separates rules, definitions, and output format strictly.
+        # Allows Markdown code block output.
         system_prompt = (
-            "你是 OpenClaw Sandbox RPG 嘅 state extractor（守門人）。\n"
-            "Your task: extract EXPLICIT state changes from the narrative.\n"
-            "OUTPUT FORMAT: JSON only, no prose, no markdown, no explanation.\n"
-            "Your response MUST start with { and end with }.\n"
+            "你是 OpenClaw Sandbox RPG 的 State Extractor（守門人）。\n"
+            "你的唯一任務是分析「遊戲敘事 (Narrative)」，並嚴格根據「當前狀態 (Current State)」推斷出發生了什麼物理或數值改變。\n"
             "\n"
-            "## 強制規則\n"
-            "1. **只返回 JSON object**。Start with {, end with }.\n"
-            "2. **只抽取 narrative 內 EXPLICITLY 提到嘅事實**。\n"
-            "   - 唔做 inference\n"
-            "   - 唔做 assumption\n"
-            "   - 唔補完 narrative 冇講嘅嘢\n"
-            "3. 每個改變都必須有 `evidence` field，引用 narrative 原文 verbatim。\n"
-            "4. 如果 narrative 冇提到任何改變，返回空 mutations `{}`。\n"
-            "5. NPC id 用小寫 snake_case (e.g. 'npc_halia_thornton')。\n"
-            "6. evidence 必須係 narrative 內 verbatim 嘅一句或半句，唔可以 paraphrase。\n"
+            "## 鐵律 (Hard Rules)\n"
+            "1. 必須基於敘事中「已經發生且明確」的物理改變。不作任何主觀猜測、不計算潛在意圖。\n"
+            "2. 角色「感覺」、「似乎」、「打算」不構成狀態改變。\n"
+            "3. 如果沒有發生任何實質改變，必須回傳空的 JSON 物件，即所有的 changes 為空列表且 location_change 為 null：\n"
+            "   {\"npc_status_changes\": [], \"inventory_changes\": [], \"character_state_changes\": [], \"location_change\": null}\n"
+            "4. 任何改變必須附帶 `evidence`，且必須 100% verbatim (一字不漏) 引用敘事中的原文。\n"
+            "5. NPC id 用小寫 snake_case (例如 'npc_halia_thornton')。\n"
+            "6. location_change 必須是具體的 scene_id (例如 'loc_phandalin_tresendar')，絕對不能填寫敘事中的中文文字！如果敘事中沒有明確指出場景 ID，請填寫 null。\n"
             "\n"
-            "## JSON Schema (嚴格遵守)\n"
-            '{"npc_status_changes": [...], "inventory_changes": [...], "character_state_changes": [...], "location_change": "..."}\n'
+            "## 輸出格式 (Output Format)\n"
+            "你必須將結果以 JSON 格式輸出，並使用 ```json 和 ``` 包裹。不要在代碼塊外寫任何廢話。你的 Reasoning 思考過程可以放在 Markdown 代碼塊之外或以模型自帶的思考欄位輸出，但最終結果必須有且僅有一個 ```json 代碼塊包裹。\n"
             "\n"
-            "## Few-shot 範例 (照樣做)\n"
+            "## JSON Schema 結構要求\n"
+            "{\n"
+            "  \"npc_status_changes\": [\n"
+            "    {\n"
+            "      \"npc_id\": \"string (NPC 的 canonical ID)\",\n"
+            "      \"new_status\": \"string ('alive' | 'dead' | 'fled' | 'unconscious' | 'hostile' | 'neutral' | 'friendly' | 'absent')\",\n"
+            "      \"evidence\": \"string (一字不漏引用的敘事原文)\"\n"
+            "    }\n"
+            "  ],\n"
+            "  \"inventory_changes\": [\n"
+            "    {\n"
+            "      \"action\": \"string ('add' | 'remove')\",\n"
+            "      \"item_id\": \"string (Canonical item id)\",\n"
+            "      \"quantity\": \"integer (預設為 1)\",\n"
+            "      \"evidence\": \"string (一字不漏引用的敘事原文)\"\n"
+            "    }\n"
+            "  ],\n"
+            "  \"character_state_changes\": [\n"
+            "    {\n"
+            "      \"stamina_level\": \"string | null (例如 'fresh' | 'exhausted')\",\n"
+            "      \"health_status\": \"string | null (例如 'healthy' | 'wounded' | 'critical')\",\n"
+            "      \"morale_level\": \"string | null (例如 'calm' | 'panicked')\",\n"
+            "      \"evidence\": \"string (一字不漏引用的敘事原文)\"\n"
+            "    }\n"
+            "  ],\n"
+            "  \"location_change\": \"string | null (Canonical scene_id)\"\n"
+            "}\n"
+            "\n"
+            "## Few-shot 範例\n"
             "\n"
             "Input narrative: '你用鐵劍刺穿了 Harbin 的胸膛，他倒在地上不再動彈。'\n"
             "Output:\n"
-            '{"npc_status_changes": [{"npc_id": "npc_harbin_west", "new_status": "dead", "evidence": "你用鐵劍刺穿了 Harbin 的胸膛，他倒在地上不再動彈"}], "inventory_changes": [], "character_state_changes": [], "location_change": null}\n'
+            "```json\n"
+            "{\n"
+            "  \"npc_status_changes\": [\n"
+            "    {\n"
+            "      \"npc_id\": \"npc_harbin_west\",\n"
+            "      \"new_status\": \"dead\",\n"
+            "      \"evidence\": \"你用鐵劍刺穿了 Harbin 的胸膛，他倒在地上不再動彈\"\n"
+            "    }\n"
+            "  ],\n"
+            "  \"inventory_changes\": [],\n"
+            "  \"character_state_changes\": [],\n"
+            "  \"location_change\": null\n"
+            "}\n"
+            "```\n"
             "\n"
             "Input narrative: 'Sister Garaele 微笑著遞給你一個小袋子，裡面裝著三枚銀幣。'\n"
             "Output:\n"
-            '{"npc_status_changes": [], "inventory_changes": [{"action": "add", "item_id": "small_pouch", "quantity": 1, "evidence": "Sister Garaele 微笑著遞給你一個小袋子"}, {"action": "add", "item_id": "silver_coin", "quantity": 3, "evidence": "裡面裝著三枚銀幣"}], "character_state_changes": [], "location_change": null}\n'
+            "```json\n"
+            "{\n"
+            "  \"npc_status_changes\": [],\n"
+            "  \"inventory_changes\": [\n"
+            "    {\n"
+            "      \"action\": \"add\",\n"
+            "      \"item_id\": \"small_pouch\",\n"
+            "      \"quantity\": 1,\n"
+            "      \"evidence\": \"Sister Garaele 微笑著遞給你一個小袋子\"\n"
+            "    },\n"
+            "    {\n"
+            "      \"action\": \"add\",\n"
+            "      \"item_id\": \"silver_coin\",\n"
+            "      \"quantity\": 3,\n"
+            "      \"evidence\": \"裡面裝著三枚銀幣\"\n"
+            "    }\n"
+            "  ],\n"
+            "  \"character_state_changes\": [],\n"
+            "  \"location_change\": null\n"
+            "}\n"
+            "```\n"
             "\n"
             "Input narrative: '你站在 Phandalin 鎮中心，四周的木屋包圍著你。'\n"
             "Output:\n"
-            '{"npc_status_changes": [], "inventory_changes": [], "character_state_changes": [], "location_change": null}\n'
-            "  (narrative 只描述場景，冇 state 改變，return empty)\n"
+            "```json\n"
+            "{\n"
+            "  \"npc_status_changes\": [],\n"
+            "  \"inventory_changes\": [],\n"
+            "  \"character_state_changes\": [],\n"
+            "  \"location_change\": null\n"
+            "}\n"
+            "```\n"
             "\n"
-            "## Final reminder\n"
-            "Return JSON only. No preamble. No explanation. No code fences.\n"
-            "First character MUST be {. Last character MUST be }."
+            "Input narrative: 'Harbin 似乎對你抱有敵意，但他還沒有明顯動手。'\n"
+            "Output:\n"
+            "```json\n"
+            "{\n"
+            "  \"npc_status_changes\": [],\n"
+            "  \"inventory_changes\": [],\n"
+            "  \"character_state_changes\": [],\n"
+            "  \"location_change\": null\n"
+            "}\n"
+            "```\n"
+            "\n"
+            "Input narrative: '你離開了 Phandalin 鎮，踏入 Tresendar Manor 的廢墟。'\n"
+            "Output:\n"
+            "```json\n"
+            "{\n"
+            "  \"npc_status_changes\": [],\n"
+            "  \"inventory_changes\": [],\n"
+            "  \"character_state_changes\": [],\n"
+            "  \"location_change\": \"loc_phandalin_tresendar\"\n"
+            "}\n"
+            "```\n"
         )
 
         # User message: per-round context
@@ -226,11 +308,13 @@ class StateExtractor:
             current_character_state, ensure_ascii=False, default=str
         )
         user_message = (
-            f"## 當前角色狀態\n{char_summary}\n\n"
-            f"## 當前場景 NPC 狀態\n{current_npc_summary}\n\n"
-            f"## 玩家嘅選擇\n{choice_summary}\n\n"
-            f"## Narrative (本輪)\n{narrative}\n\n"
-            "## 輸出 (JSON only, no prose, no markdown):"
+            f"### [Current State]\n"
+            f"當前角色狀態: {char_summary}\n"
+            f"當前 NPC 狀態: {current_npc_summary}\n"
+            f"玩家嘅選擇: {choice_summary}\n\n"
+            f"### [Narrative to Analyze]\n"
+            f"{narrative}\n\n"
+            f"### 提取結果:"
         )
 
         try:
@@ -246,8 +330,8 @@ class StateExtractor:
                     "temperature": 0,  # greedy, deterministic
                     "top_p": 1,
                     "top_k": 1,  # Gemma supports top_k=1 for hard greedy
-                    "max_tokens": 500,
-                    "stop": ["```", "<end_of_turn>"],
+                    "max_tokens": 1200,  # 增加到 1200 因中文字符 count 高
+                    "stop": ["<end_of_turn>"],  # Remove "```" from stop tokens to allow markdown code fence output
                     "seed": 42,
                 },
             )
@@ -259,6 +343,7 @@ class StateExtractor:
             text = (msg.get("content") or "").strip()
             if not text:
                 text = (msg.get("reasoning_content") or "").strip()
+            print(f"\n[DEBUG StateExtractor Raw Text]:\n{text}\n")
             if not text:
                 logger.warning("[StateExtractor] Both content and reasoning_content empty")
                 return StateMutation()
@@ -266,21 +351,41 @@ class StateExtractor:
             logger.warning(f"[StateExtractor] LLM call failed: {e}")
             return StateMutation()
 
-        # Parse the JSON. Try strict parse, then fall back to
-        # brace-balanced extraction (LM Studio can occasionally
-        # prepend a stray space or newline).
+        # Defensively parse the JSON.
+        import re
         parsed: dict[str, Any] | None = None
-        try:
-            parsed = json.loads(text)
-        except json.JSONDecodeError:
-            # Find first '{' and matching '}'
-            start = text.find("{")
+        
+        # Split CoT (Reasoning) process to avoid interference from JSON snippets inside <think>
+        main_content = text
+        if "</think>" in text:
+            main_content = text.split("</think>")[-1].strip()
+        
+        # 1. Search for ```json ... ``` code fence block (allowing unclosed fences)
+        json_match = re.search(r"```json\s*(.*?)\s*(?:```|$)", main_content, re.DOTALL)
+        if json_match:
+            try:
+                parsed = json.loads(json_match.group(1).strip())
+            except json.JSONDecodeError:
+                pass
+        
+        # 2. Fallback: Search for the first { and the last } in the cleaned main_content
+        if parsed is None:
+            fallback_match = re.search(r"(\{.*\})", main_content, re.DOTALL)
+            if fallback_match:
+                try:
+                    parsed = json.loads(fallback_match.group(1).strip())
+                except json.JSONDecodeError:
+                    pass
+
+        # 3. Fallback: Brace-balanced extraction (original logic for deep defense)
+        if parsed is None:
+            start = main_content.find("{")
             if start >= 0:
                 depth = 0
                 in_string = False
                 escape = False
-                for end in range(start, len(text)):
-                    ch = text[end]
+                for end in range(start, len(main_content)):
+                    ch = main_content[end]
                     if escape:
                         escape = False
                         continue
@@ -298,7 +403,7 @@ class StateExtractor:
                         depth -= 1
                         if depth == 0:
                             try:
-                                parsed = json.loads(text[start : end + 1])
+                                parsed = json.loads(main_content[start : end + 1])
                             except json.JSONDecodeError:
                                 pass
                             break

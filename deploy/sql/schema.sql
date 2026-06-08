@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS character_states (
     semantic_profile JSONB NOT NULL,                -- Full semantic state (stamina, health, morale, etc.)
     is_npc_mode     BOOLEAN NOT NULL DEFAULT FALSE, -- true when no active player
     is_alive        BOOLEAN NOT NULL DEFAULT TRUE,
+    active_threads  JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

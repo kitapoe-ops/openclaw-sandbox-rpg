@@ -176,6 +176,34 @@ class TestWorldApi:
         r = client.get("/api/world/this_world_does_not_exist_xyz/state")
         assert r.status_code == 404
 
+    def test_world_json_starting_story(self, monkeypatch):
+        """
+        Verify that our JSON world loader successfully loads from JSON,
+        and parses the `starting_story` metadata successfully.
+        """
+        monkeypatch.setenv("DEMO_MODE", "true")
+        import importlib
+        from backend import demo_mode
+        from backend.world_lore_loader import world_lore_loader
+        
+        importlib.reload(demo_mode)
+        
+        # Manually scan and register to make sure we registered the JSON
+        import asyncio
+        async def run_scan():
+            return await world_lore_loader.scan_and_register()
+        
+        asyncio.run(run_scan())
+        
+        # Get the database instance
+        async def get_db():
+            return await world_lore_loader.get_world_db("dnd_5e_forgotten_realms")
+            
+        db = asyncio.run(get_db())
+        assert db is not None
+        assert db.starting_story is not None
+        assert db.starting_story.get("title") == "凡達林礦坑的危機 (The Phandalin Crisis)"
+
 
 class TestCORS:
     """Verify CORS is restrictive (not wildcard)."""

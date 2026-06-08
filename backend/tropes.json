@@ -1,0 +1,50 @@
+{
+  "tropes": [
+    {
+      "trope_id": "trope_scapegoat_01",
+      "trope_name": "禍水東引 / 背黑鍋",
+      "tags": ["combat", "social", "high_tension"],
+      "trigger_conditions": {
+        "requires_other_player_trace": true,
+        "scene_types": ["tavern", "alley", "shop"],
+        "npc_status": "hostile_or_searching"
+      },
+      "narrative_directive": {
+        "plot_beat": "主角被誤認為是另一個留下痕跡的玩家（即『奪舍前身』的仇家），遭到NPC的圍堵或質問。",
+        "tonal_focus": "緊張、誤會、網文裝逼打臉前奏",
+        "mandatory_elements": [
+          "NPC提到前身的外貌特徵或特有裝備",
+          "玩家必須在極短時間內做出合理解釋或動手"
+        ]
+      },
+      "choice_framework": {
+        "required_verbs": ["talk", "say", "attack", "flee"],
+        "evade_consequence": "通緝令已發酵，賞金獵人正在追蹤",
+        "escalation_threshold": 3
+      }
+    },
+    {
+      "trope_id": "trope_encounter_01",
+      "trope_name": "路見不平 / 英雄救美",
+      "tags": ["combat", "social", "moral"],
+      "trigger_conditions": {
+        "requires_other_player_trace": false,
+        "scene_types": ["alley", "forest", "road"],
+        "npc_status": "any"
+      },
+      "narrative_directive": {
+        "plot_beat": "主角偶然目擊惡霸正在欺壓無辜百姓，周圍氣氛緊張，命運面臨抉擇。",
+        "tonal_focus": "正義、衝突、網文行俠仗義套路",
+        "mandatory_elements": [
+          "看見惡霸在勒索或威脅無辜平民",
+          "無辜者發出求救，呼喚有正義感的人出手"
+        ]
+      },
+      "choice_framework": {
+        "required_verbs": ["attack", "talk", "cast", "negotiate"],
+        "evade_consequence": "惡霸氣焰更盛，受害者慘遭毒手，主角心魔漸生",
+        "escalation_threshold": 3
+      }
+    }
+  ]
+}

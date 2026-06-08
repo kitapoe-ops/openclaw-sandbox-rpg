@@ -232,6 +232,8 @@ class SoulTransferRecord:
     # Vessel TTL: if vessel is destroyed within `vessel_ttl_turns`,
     # the soul dies too (rule 4). Set to 0 to disable.
     vessel_ttl_turns: int = 3
+    # Carried active threads (karma heritage)
+    carried_threads: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -261,7 +263,8 @@ CREATE TABLE IF NOT EXISTS soul_transfers (
     audit_json TEXT NOT NULL,
     applied INTEGER NOT NULL DEFAULT 0,
     applied_at TEXT,
-    vessel_ttl_turns INTEGER NOT NULL DEFAULT 3
+    vessel_ttl_turns INTEGER NOT NULL DEFAULT 3,
+    carried_threads_json TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE INDEX IF NOT EXISTS idx_transfer_source
@@ -632,6 +635,7 @@ class SemanticSoulTransfer:
         scene_id: str,
         carried_memories: list[str] | None = None,
         requester_id: str | None = None,
+        source_active_threads: dict | None = None,
     ) -> SoulTransferRecord:
         """Run the full transfer flow. Returns SoulTransferRecord.
 
@@ -676,6 +680,18 @@ class SemanticSoulTransfer:
 
         carried = list(carried_memories or [])
 
+        # Process carried active threads (karma heritage)
+        carried_threads = {}
+        if source_active_threads:
+            for tid, data in source_active_threads.items():
+                if data.get("status") in ("Active", "Evaded"):
+                    carried_threads[tid] = {
+                        "status": data.get("status"),
+                        "escalation_level": data.get("escalation_level", 0),
+                        "seeded_round": 1,
+                        "meta": dict(data.get("meta", {}))
+                    }
+
         # 4. Build record
         record = SoulTransferRecord(
             transfer_id=str(uuid.uuid4()),
@@ -702,6 +718,7 @@ class SemanticSoulTransfer:
             applied=False,
             applied_at=None,
             vessel_ttl_turns=3,
+            carried_threads=carried_threads,
         )
 
         # 5. Atomic write
@@ -715,6 +732,7 @@ class SemanticSoulTransfer:
         new_tags_json = json.dumps(record.new_tags, ensure_ascii=False)
         carried_json = json.dumps(record.carried_memories, ensure_ascii=False)
         audit_json = json.dumps(record.audit, ensure_ascii=False)
+        carried_threads_json = json.dumps(record.carried_threads, ensure_ascii=False)
         conn = self._connect()
         try:
             conn.execute(
@@ -723,8 +741,8 @@ class SemanticSoulTransfer:
                 (transfer_id, source_character_id, target_vessel_id, scene_id,
                  created_at, new_tags_json, carried_memories_json,
                  downgraded_from, downgraded_to, downgrade_method,
-                 audit_json, applied, applied_at, vessel_ttl_turns)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)
+                 audit_json, applied, applied_at, vessel_ttl_turns, carried_threads_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)
                 """,
                 (
                     record.transfer_id,
@@ -739,6 +757,7 @@ class SemanticSoulTransfer:
                     record.downgrade_method,
                     audit_json,
                     record.vessel_ttl_turns,
+                    carried_threads_json,
                 ),
             )
             conn.commit()
@@ -749,7 +768,7 @@ class SemanticSoulTransfer:
             if self._mem_conn is None:
                 conn.close()
 
-    async def apply_transfer(self, record: SoulTransferRecord) -> dict[str, Any]:
+    async def apply_transfer(self, record: SoulTransferRecord, session: Any = None) -> dict[str, Any]:
         """Mark a persisted record as 'applied' to its vessel.
 
         Called by the caller AFTER they've actually written the
@@ -769,6 +788,17 @@ class SemanticSoulTransfer:
             conn.commit()
             record.applied = cursor.rowcount == 1
             record.applied_at = _now_iso() if record.applied else None
+            
+            # If SQLAlchemy session is provided, sync the threads heritage to vessel DB state
+            if record.applied and session is not None and record.carried_threads:
+                try:
+                    from backend.models import CharacterState
+                    cs = await session.get(CharacterState, record.target_vessel_id)
+                    if cs:
+                        cs.active_threads = dict(record.carried_threads)
+                except Exception as e:
+                    logger.warning(f"Failed to apply carried_threads to vessel {record.target_vessel_id} in DB: {e}")
+            
             return {"rows_updated": cursor.rowcount, "transfer_id": record.transfer_id}
         except Exception:
             conn.rollback()
@@ -787,6 +817,12 @@ class SemanticSoulTransfer:
             ).fetchone()
             if row is None:
                 return None
+            
+            try:
+                carried_threads = json.loads(row["carried_threads_json"]) if row["carried_threads_json"] else {}
+            except Exception:
+                carried_threads = {}
+
             return SoulTransferRecord(
                 transfer_id=row["transfer_id"],
                 source_character_id=row["source_character_id"],
@@ -802,6 +838,7 @@ class SemanticSoulTransfer:
                 applied=bool(row["applied"]),
                 applied_at=row["applied_at"],
                 vessel_ttl_turns=row["vessel_ttl_turns"],
+                carried_threads=carried_threads,
             )
         finally:
             if self._mem_conn is None:
@@ -819,25 +856,34 @@ class SemanticSoulTransfer:
                 """,
                 (vessel_id,),
             ).fetchall()
-            return [
-                SoulTransferRecord(
-                    transfer_id=r["transfer_id"],
-                    source_character_id=r["source_character_id"],
-                    target_vessel_id=r["target_vessel_id"],
-                    scene_id=r["scene_id"],
-                    created_at=r["created_at"],
-                    new_tags=json.loads(r["new_tags_json"]),
-                    carried_memories=json.loads(r["carried_memories_json"]),
-                    downgraded_from=r["downgraded_from"],
-                    downgraded_to=r["downgraded_to"],
-                    downgrade_method=r["downgrade_method"],
-                    audit=json.loads(r["audit_json"]),
-                    applied=bool(r["applied"]),
-                    applied_at=r["applied_at"],
-                    vessel_ttl_turns=r["vessel_ttl_turns"],
+            
+            results = []
+            for r in rows:
+                try:
+                    carried_threads = json.loads(r["carried_threads_json"]) if r["carried_threads_json"] else {}
+                except Exception:
+                    carried_threads = {}
+                
+                results.append(
+                    SoulTransferRecord(
+                        transfer_id=r["transfer_id"],
+                        source_character_id=r["source_character_id"],
+                        target_vessel_id=r["target_vessel_id"],
+                        scene_id=r["scene_id"],
+                        created_at=r["created_at"],
+                        new_tags=json.loads(r["new_tags_json"]),
+                        carried_memories=json.loads(r["carried_memories_json"]),
+                        downgraded_from=r["downgraded_from"],
+                        downgraded_to=r["downgraded_to"],
+                        downgrade_method=r["downgrade_method"],
+                        audit=json.loads(r["audit_json"]),
+                        applied=bool(r["applied"]),
+                        applied_at=r["applied_at"],
+                        vessel_ttl_turns=r["vessel_ttl_turns"],
+                        carried_threads=carried_threads,
+                    )
                 )
-                for r in rows
-            ]
+            return results
         finally:
             if self._mem_conn is None:
                 conn.close()

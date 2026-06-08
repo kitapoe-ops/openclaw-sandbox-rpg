@@ -10,6 +10,7 @@ Reference: docs/SCHEMAS/world_parameter.yaml
            docs/SCHEMAS/location.schema.json
            docs/SCHEMAS/quest.schema.json
 """
+import json
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +38,43 @@ class WorldLoreDB:
         self.world_parameters: dict[str, Any] = {}
         self.attitude_dimensions: dict[str, Any] = {}
         self.physics_lock_rules: dict[str, list[str]] = {}
+        self.starting_story: dict[str, Any] = {}
+
+    def _load_config_dict(self, config: dict[str, Any]) -> None:
+        """Helper to populate internal dictionaries from a parsed configuration dictionary."""
+        # Load eternal rules
+        self.eternal_rules = config.get("eternal", {}).get("physical_rules", [])
+
+        # Load world parameters
+        for param in config.get("world_parameters", []):
+            self.world_parameters[param["id"]] = param
+
+        # Load attitude dimensions
+        for dim in config.get("attitude_dimensions", []):
+            self.attitude_dimensions[dim["id"]] = dim
+
+        # Load NPCs
+        for npc in config.get("npcs", []):
+            self.npcs[npc["id"]] = npc
+
+        # Load items
+        for item in config.get("items", []):
+            self.items[item["id"]] = item
+
+        # Load locations
+        for loc in config.get("locations", []):
+            self.locations[loc["id"]] = loc
+
+        # Load quests
+        for quest in config.get("quests", []):
+            self.quests[quest["id"]] = quest
+
+        # Load physics lock rules
+        for rule in config.get("physics_lock_rules", {}).get("forbidden_actions", []):
+            self.physics_lock_rules[rule["state"]] = rule["forbidden"]
+
+        # Load starting story
+        self.starting_story = config.get("starting_story", {})
 
     def load_from_yaml(self, yaml_path: Path) -> bool:
         """
@@ -47,41 +85,21 @@ class WorldLoreDB:
         try:
             with open(yaml_path, encoding="utf-8") as f:
                 config = yaml.safe_load(f)
-
-            # Load eternal rules
-            self.eternal_rules = config.get("eternal", {}).get("physical_rules", [])
-
-            # Load world parameters
-            for param in config.get("world_parameters", []):
-                self.world_parameters[param["id"]] = param
-
-            # Load attitude dimensions
-            for dim in config.get("attitude_dimensions", []):
-                self.attitude_dimensions[dim["id"]] = dim
-
-            # Load NPCs
-            for npc in config.get("npcs", []):
-                self.npcs[npc["id"]] = npc
-
-            # Load items
-            for item in config.get("items", []):
-                self.items[item["id"]] = item
-
-            # Load locations
-            for loc in config.get("locations", []):
-                self.locations[loc["id"]] = loc
-
-            # Load quests
-            for quest in config.get("quests", []):
-                self.quests[quest["id"]] = quest
-
-            # Load physics lock rules
-            for rule in config.get("physics_lock_rules", {}).get("forbidden_actions", []):
-                self.physics_lock_rules[rule["state"]] = rule["forbidden"]
-
+            self._load_config_dict(config)
             return True
         except Exception as e:
-            print(f"Failed to load world config: {e}")
+            print(f"Failed to load world config from YAML: {e}")
+            return False
+
+    def load_from_json(self, json_path: Path) -> bool:
+        """Load world configuration from JSON file."""
+        try:
+            with open(json_path, encoding="utf-8") as f:
+                config = json.load(f)
+            self._load_config_dict(config)
+            return True
+        except Exception as e:
+            print(f"Failed to load world config from JSON: {e}")
             return False
 
     def get_npc(self, npc_id: str) -> dict[str, Any] | None:

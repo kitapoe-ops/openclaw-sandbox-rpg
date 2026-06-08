@@ -46,12 +46,16 @@ class WorldMetadata:
     world_id: str
     name: str
     version: str
-    yaml_path: Path
+    file_path: Path
     file_size_bytes: int
     is_parsed: bool = False
     is_indexed: bool = False
     parse_started_at: float | None = None
     parse_completed_at: float | None = None
+
+    @property
+    def yaml_path(self) -> Path:
+        return self.file_path
 
 
 class WorldLoreLoader:
@@ -71,38 +75,61 @@ class WorldLoreLoader:
     async def scan_and_register(self) -> int:
         """
         Phase 1: Scan worlds/ directory and register metadata.
-        Called on FastAPI startup. Non-blocking (no YAML parsing).
+        Called on FastAPI startup. Non-blocking (no YAML/JSON parsing).
         """
         async with self._meta_lock:
             count = 0
-            for yaml_file in self._worlds_dir.glob("*.yaml"):
+            # Scan both .yaml and .json files
+            files = list(self._worlds_dir.glob("*.yaml")) + list(self._worlds_dir.glob("*.json"))
+            
+            # Group by stem, prioritizing .json if both exist
+            grouped_files = {}
+            for f in files:
+                stem = f.stem
+                if stem not in grouped_files:
+                    grouped_files[stem] = f
+                else:
+                    # If we already have a file, prioritize .json
+                    if f.suffix == ".json":
+                        grouped_files[stem] = f
+
+            for file_path in grouped_files.values():
                 try:
                     # Read only the top-level metadata fields (cheap)
-                    with open(yaml_file, encoding="utf-8") as f:
+                    with open(file_path, encoding="utf-8") as f:
                         # Read first 1KB to extract metadata
                         head = f.read(1024)
 
                     # Quick parse of just world_meta section
-                    # (YAML full parse deferred to lazy load)
-                    world_id = yaml_file.stem  # e.g., "dnd_5e_forgotten_realms"
-                    name = self._extract_field(head, "name:") or world_id
-                    version = self._extract_field(head, "version:") or "unknown"
+                    world_id = file_path.stem  # e.g., "dnd_5e_forgotten_realms"
+                    
+                    name = None
+                    version = None
+                    if file_path.suffix == ".json":
+                        name = self._extract_field_json(head, "name")
+                        version = self._extract_field_json(head, "version")
+                    else:
+                        name = self._extract_field(head, "name:")
+                        version = self._extract_field(head, "version:")
+
+                    name = name or world_id
+                    version = version or "unknown"
 
                     metadata = WorldMetadata(
                         world_id=world_id,
                         name=name,
                         version=version,
-                        yaml_path=yaml_file,
-                        file_size_bytes=yaml_file.stat().st_size,
+                        file_path=file_path,
+                        file_size_bytes=file_path.stat().st_size,
                     )
                     self._metadata[world_id] = metadata
                     self._locks[world_id] = asyncio.Lock()
                     count += 1
                     logger.info(
-                        f"[WorldLoreLoader] Registered: {world_id} ({yaml_file.stat().st_size} bytes)"
+                        f"[WorldLoreLoader] Registered: {world_id} ({file_path.stat().st_size} bytes, type={file_path.suffix})"
                     )
                 except Exception as e:
-                    logger.exception(f"[WorldLoreLoader] Failed to register {yaml_file}: {e}")
+                    logger.exception(f"[WorldLoreLoader] Failed to register {file_path}: {e}")
             return count
 
     async def schedule_indexing(self) -> None:
@@ -117,7 +144,7 @@ class WorldLoreLoader:
     async def get_world_db(self, world_id: str) -> WorldLoreDB | None:
         """
         Phase 2: Get a parsed WorldLoreDB instance (lazy).
-        First call triggers YAML parse + cache. Subsequent calls return cache.
+        First call triggers YAML/JSON parse + cache. Subsequent calls return cache.
         """
         # Check cache
         if world_id in self._instances:
@@ -137,12 +164,18 @@ class WorldLoreLoader:
             if not metadata:
                 return None
 
-            # Parse YAML (this is the heavy operation)
+            # Parse file (this is the heavy operation)
             try:
                 logger.info(f"[WorldLoreLoader] Lazy parsing: {world_id}")
                 metadata.parse_started_at = time.time()
-                instance = WorldLoreDB(world_id, metadata.yaml_path)
-                success = instance.load_from_yaml(metadata.yaml_path)
+                instance = WorldLoreDB(world_id, metadata.file_path)
+                
+                # Check file extension to load properly
+                if metadata.file_path.suffix == ".json":
+                    success = instance.load_from_json(metadata.file_path)
+                else:
+                    success = instance.load_from_yaml(metadata.file_path)
+
                 if not success:
                     logger.error(f"[WorldLoreLoader] Parse failed for {world_id}")
                     return None
@@ -186,6 +219,20 @@ class WorldLoreLoader:
                     return value
         except Exception:
             pass
+        return None
+
+    def _extract_field_json(self, text: str, field: str) -> str | None:
+        """Extract a JSON field value from the first 1KB of a text using regex."""
+        import re
+        # Match "field": "value" or 'field': 'value'
+        pattern = rf'"{field}"\s*:\s*"([^"]+)"'
+        match = re.search(pattern, text)
+        if match:
+            return match.group(1)
+        pattern_single = rf"'{field}'\s*:\s*'([^']+)'"
+        match_single = re.search(pattern_single, text)
+        if match_single:
+            return match_single.group(1)
         return None
 
     def get_metadata(self, world_id: str) -> WorldMetadata | None:

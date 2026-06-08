@@ -815,15 +815,10 @@ class MiniMaxM3Client(LLMClient):
         temperature: float,
         max_tokens: int,
     ) -> dict[str, Any]:
-        """Build the chat-completions payload, with M3 prompt-cache hints."""
-        # Phase D6 R1 finding MEDIUM #6: add cache_control breakpoints on
-        # the system message and the first user message (typically the
-        # world_lore block). M3 supports Anthropic-style breakpoints.
+        """Build the chat-completions payload."""
         decorated: list[dict[str, Any]] = []
-        for idx, m in enumerate(messages):
+        for m in messages:
             entry: dict[str, Any] = {"role": m.get("role", "user"), "content": m.get("content", "")}
-            if idx < 2:  # system + first user block
-                entry["cache_control"] = {"type": "ephemeral"}
             decorated.append(entry)
 
         return {

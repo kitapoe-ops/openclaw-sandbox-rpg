@@ -685,6 +685,7 @@ items:
       - "戴上後可以施法"
       - "可以給法師角色使用，會有 [魔法裝備] 標籤"
       - "裂痕可以作為弱點攻擊"
+    tags: ["magical", "fragile", "light"]
     rarity: "rare"
     narrative_tags: ["magic_item", "attunement_required", "wizard_legacy"]
 
@@ -709,6 +710,7 @@ items:
     interaction_patterns:
       - "用喺 Tower of Iarno 嘅傳送門，可中斷傳送"
       - "可保留作證物"
+    tags: ["holy_property", "fragile", "magical"]
     rarity: "uncommon"
     narrative_tags: ["holy_relic", "quest_item"]
 
@@ -720,6 +722,7 @@ items:
       標準嘅皮革護甲，啡色，適合冒險者初期使用。
     interaction_patterns:
       - "穿上後獲得 [輕度保護] 標籤"
+    tags: ["flexible", "protective", "flammable"]
     rarity: "common"
 
   - id: "item_iron_dagger"
@@ -730,7 +733,16 @@ items:
     interaction_patterns:
       - "近戰攻擊"
       - "投擲"
+    tags: ["sharp", "light", "metallic"]
     rarity: "common"
+
+  - id: "item_hero_sword"
+    name: "勇者之劍"
+    type: "weapon"
+    description: "傳說中具有神聖屬性的厚重長劍。"
+    tags: ["sharp", "holy_damage", "heavy", "conductive"]
+    rarity: "rare"
+    narrative_tags: ["heavy_weapon", "holy_attribute"]
 
   # ... (再加 290+ 件物品)
 

@@ -73,8 +73,10 @@ npm run dev
 │   ├── world_lore_db.py
 │   ├── llm_client.py
 │   ├── config.py
+│   ├── app_with_memory.py  # Compatibility shim for testing routes
 │   └── main.py
 │
+
 ├── frontend/            # Vue 3 frontend
 │   ├── src/
 │   │   ├── components/  # Vue components
@@ -153,8 +155,14 @@ npm run dev
 
 ```bash
 cd backend
+# Run all tests (requires active Postgres)
 pytest tests/ -v
+
+# Or run tests excluding production smoke tests if local DB is offline:
+pytest tests/ -v -k "not test_production_smoke"
+
 pytest tests/ --cov=. --cov-report=html
+
 ```
 
 ### Frontend Tests
