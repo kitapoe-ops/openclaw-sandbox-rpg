@@ -95,20 +95,44 @@ async def get_current_scene(character_id: str) -> dict[str, Any]:
                     status_code=404, detail=f"Scene {char.current_scene_id} not found"
                 )
 
-            # Phase L2-E hotfix: round = max(prior round) + 1.
-            # Previously hardcoded to 1, which meant the choice
-            # card always showed 'Round 1' and never incremented.
+            # Query the latest COMPLETED action history to restore the latest narrative, choices, and state changes
+            from ..models import ActionHistory, ExecutionStatus
+            from sqlalchemy import desc
+
+            stmt_history = (
+                select(ActionHistory)
+                .where(
+                    ActionHistory.character_id == character_id,
+                    ActionHistory.execution_status == ExecutionStatus.COMPLETED
+                )
+                .order_by(desc(ActionHistory.created_at))
+                .limit(1)
+            )
+            history_result = await session.execute(stmt_history)
+            latest_action = history_result.scalar_one_or_none()
+
             current_round = await _current_round_from_db_async(character_id)
 
-            return {
-                "round": current_round,
-                "character_id": character_id,
-                "scene_id": scene.id,
-                "narrative": scene.description,
-                "choices": DEMO_SCENE["choices"],  # TODO: persist scene choices
-                "state_changes": {},
-                "minor_event": None,
-            }
+            if latest_action:
+                return {
+                    "round": current_round,
+                    "character_id": character_id,
+                    "scene_id": latest_action.scene_id,
+                    "narrative": latest_action.llm_narrative_output or scene.description,
+                    "choices": latest_action.llm_choices_output or DEMO_SCENE["choices"],
+                    "state_changes": latest_action.llm_state_changes or {},
+                    "minor_event": None,
+                }
+            else:
+                return {
+                    "round": current_round,
+                    "character_id": character_id,
+                    "scene_id": scene.id,
+                    "narrative": scene.description,
+                    "choices": DEMO_SCENE["choices"],
+                    "state_changes": {},
+                    "minor_event": None,
+                }
     except Exception as e:
         # DB error — fall back to demo
         demo = get_demo_scene("loc_phandalin_town")

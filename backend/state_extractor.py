@@ -105,6 +105,9 @@ class CharacterStateChange(BaseModel):
     """Coarse-grained character state change. The backend
     applies these via jsonb_set on character_states.semantic_profile."""
 
+    stamina: str | None = None
+    health: str | None = None
+    morale: str | None = None
     stamina_level: str | None = None
     health_status: str | None = None
     morale_level: str | None = None
@@ -211,9 +214,9 @@ class StateExtractor:
             "  ],\n"
             "  \"character_state_changes\": [\n"
             "    {\n"
-            "      \"stamina_level\": \"string | null (例如 'fresh' | 'exhausted')\",\n"
-            "      \"health_status\": \"string | null (例如 'healthy' | 'wounded' | 'critical')\",\n"
-            "      \"morale_level\": \"string | null (例如 'calm' | 'panicked')\",\n"
+            "      \"stamina\": \"string | null (例如 'fresh' | 'exhausted')\",\n"
+            "      \"health\": \"string | null (例如 'healthy' | 'wounded' | 'critical')\",\n"
+            "      \"morale\": \"string | null (例如 'calm' | 'panicked')\",\n"
             "      \"evidence\": \"string (一字不漏引用的敘事原文)\"\n"
             "    }\n"
             "  ],\n"

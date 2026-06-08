@@ -113,9 +113,10 @@ def is_demo_mode() -> bool:
       - "false" : always use DB
       - "auto"  : try DB first, fall back to demo if connection fails
     """
-    if DEMO_MODE_FLAG == "true":
+    flag = os.getenv("DEMO_MODE", "auto").lower()
+    if flag == "true":
         return True
-    if DEMO_MODE_FLAG == "false":
+    if flag == "false":
         return False
     # auto: try to detect DB availability
     return not _test_db_connection()
@@ -124,61 +125,30 @@ def is_demo_mode() -> bool:
 def _test_db_connection() -> bool:
     """
     Try to connect to PostgreSQL. Returns True if reachable.
-
-    Result is cached per process to avoid the runtime warning that
-    arises when `asyncio.run` is invoked from inside a running event
-    loop (e.g. from FastAPI's async /health handler when called via
-    the TestClient / anyio BlockingPortal).
+    Uses synchronous psycopg2.connect to avoid any event loop conflict.
     """
     global _db_reachable_cache
     if _db_reachable_cache is not None:
         return _db_reachable_cache
 
-    # If a loop is already running in this thread, we cannot safely
-    # call `asyncio.run` (it raises RuntimeError). In that case we
-    # conservatively assume the DB is unreachable, but only as a
-    # default for the first call — subsequent calls hit the cache.
     try:
-        import asyncio
+        import psycopg2
 
-        asyncio.get_running_loop()
-        # Loop is running — cannot probe synchronously. Default to
-        # "unreachable" (demo mode) and cache the result.
-        logger.debug(
-            "DB connection probe skipped: a running event loop was "
-            "detected in this thread. Assuming demo mode."
+        db_url = os.getenv(
+            "DATABASE_URL",
+            "postgresql+asyncpg://rpg_user:1891879700000@localhost/sandbox_rpg",
         )
-        _db_reachable_cache = False
-        return False
-    except RuntimeError:
-        # No running loop — safe to use asyncio.run below.
-        pass
-
-    try:
-        from sqlalchemy import text
-        from sqlalchemy.ext.asyncio import create_async_engine
-
-        async def check():
-            engine = create_async_engine(
-                os.getenv(
-                    "DATABASE_URL",
-                    "postgresql+asyncpg://rpg_user:***password@localhost/sandbox_rpg",
-                ),
-                pool_pre_ping=False,
-            )
-            try:
-                async with engine.connect() as conn:
-                    await conn.execute(text("SELECT 1"))
-                return True
-            except Exception:
-                return False
-            finally:
-                await engine.dispose()
-
-        result = asyncio.run(check())
-        _db_reachable_cache = result
-        return result
+        # Convert asyncpg scheme to psycopg2 compatible scheme
+        if db_url.startswith("postgresql+asyncpg://"):
+            db_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
+        
+        # Probe database with a short timeout (3 seconds) to prevent blocking
+        conn = psycopg2.connect(db_url, connect_timeout=3)
+        conn.close()
+        _db_reachable_cache = True
+        return True
     except Exception as e:
         logger.debug(f"DB connection test failed: {e}")
         _db_reachable_cache = False
         return False
+

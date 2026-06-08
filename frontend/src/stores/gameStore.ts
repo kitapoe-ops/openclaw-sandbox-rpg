@@ -154,6 +154,9 @@ export const useGameStore = defineStore('game', () => {
       ])
       characterState.value = state
       currentScene.value = scene
+      if (scene && typeof scene.round === 'number') {
+        clientRound.value = scene.round
+      }
       console.log('[GameStore] State loaded')
     } catch (e) {
       console.error('[GameStore] Failed to load state:', e)
@@ -214,9 +217,11 @@ export const useGameStore = defineStore('game', () => {
         task.status = status
         if (status === 'failed') {
           lastTaskError.value = msg.error || 'Unknown error'
+          pendingTasks.value.delete(taskId)
         }
         if (status === 'interrupted') {
           lastActionInterrupted.value = true
+          pendingTasks.value.delete(taskId)
         }
       }
     })
@@ -251,6 +256,7 @@ export const useGameStore = defineStore('game', () => {
         return
       }
       lastTaskError.value = msg.message || 'Unknown error'
+      pendingTasks.value.clear()
     })
   }
 

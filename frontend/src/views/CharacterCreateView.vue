@@ -6,6 +6,10 @@ import { gameApi } from '@/services/api'
 const router = useRouter()
 const characterName = ref('')
 const selectedStarter = ref<string | null>(null)
+const password = ref('')
+const confirmPassword = ref('')
+const passwordError = ref('')
+const submitError = ref('')
 const isCreating = ref(false)
 
 const starters = [
@@ -31,16 +35,28 @@ const starters = [
 
 async function createCharacter() {
   if (!characterName.value || !selectedStarter.value || isCreating.value) return
+  if (!password.value) {
+    passwordError.value = '請輸入存取密碼'
+    return
+  }
+  if (password.value !== confirmPassword.value) {
+    passwordError.value = '兩次輸入的密碼不一致'
+    return
+  }
+  passwordError.value = ''
+  submitError.value = ''
   isCreating.value = true
   try {
     const res = await gameApi.createCharacter({
       name: characterName.value,
       world_id: 'dnd_5e_forgotten_realms',
-      starter_id: selectedStarter.value
+      starter_id: selectedStarter.value,
+      password: password.value
     })
     router.push({ name: 'game', params: { characterId: res.character_id } })
-  } catch (e) {
+  } catch (e: any) {
     console.error('Failed to create character:', e)
+    submitError.value = e?.response?.data?.detail || e?.message || '創建角色失敗，可能已達 4 人上限'
   } finally {
     isCreating.value = false
   }
@@ -70,6 +86,37 @@ async function createCharacter() {
           </div>
         </div>
 
+        <div class="input-group">
+          <label for="char-password">設定角色存取密碼</label>
+          <div class="input-wrapper">
+            <input 
+              id="char-password"
+              v-model="password" 
+              type="password" 
+              placeholder="請設定密碼..." 
+              required
+              :disabled="isCreating"
+            />
+            <span class="focus-border"></span>
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label for="char-confirm-password">確認角色密碼</label>
+          <div class="input-wrapper">
+            <input 
+              id="char-confirm-password"
+              v-model="confirmPassword" 
+              type="password" 
+              placeholder="請再次輸入密碼..." 
+              required
+              :disabled="isCreating"
+            />
+            <span class="focus-border"></span>
+          </div>
+          <span v-if="passwordError" class="error-text">{{ passwordError }}</span>
+        </div>
+
         <h2>選擇身世背景</h2>
         <div class="starters">
           <div
@@ -86,9 +133,13 @@ async function createCharacter() {
           </div>
         </div>
 
+        <div v-if="submitError" class="submit-error-msg">
+          {{ submitError }}
+        </div>
+
         <button
           @click="createCharacter"
-          :disabled="!characterName || !selectedStarter || isCreating"
+          :disabled="!characterName || !selectedStarter || !password || !confirmPassword || isCreating"
           class="create-btn"
         >
           <span class="btn-shine"></span>
@@ -100,6 +151,24 @@ async function createCharacter() {
 </template>
 
 <style scoped>
+.error-text {
+  color: #e74c3c;
+  font-size: 0.8rem;
+  margin-top: 0.3rem;
+  font-weight: 500;
+}
+
+.submit-error-msg {
+  color: #ff4d4d;
+  background: rgba(231, 76, 60, 0.15);
+  border: 1px solid rgba(231, 76, 60, 0.3);
+  padding: 0.8rem;
+  border-radius: var(--border-radius-s);
+  font-size: 0.9rem;
+  text-align: center;
+  margin-top: 0.5rem;
+}
+
 .character-create-container {
   display: flex;
   align-items: center;

@@ -18,6 +18,19 @@ const client: AxiosInstance = axios.create({
   },
 })
 
+// Automatically append X-Character-Password header if available in localStorage
+client.interceptors.request.use((config) => {
+  const match = config.url?.match(/\/(character|scene|action)\/([^/?]+)/)
+  if (match && match[2]) {
+    const characterId = match[2]
+    const pwd = localStorage.getItem(`openclaw_pwd_${characterId}`)
+    if (pwd) {
+      config.headers['X-Character-Password'] = pwd
+    }
+  }
+  return config
+})
+
 // ============================================
 // Character API
 // ============================================
@@ -67,6 +80,24 @@ export interface SceneOutput {
 
 export const gameApi = {
   // Character
+  async listCharacters(): Promise<Array<{ character_id: string; name: string; starter_id: string }>> {
+    const res = await client.get('/api/character')
+    return res.data
+  },
+
+  async verifyPassword(characterId: string, password: string): Promise<boolean> {
+    try {
+      const res = await client.post(`/api/character/${characterId}/verify`, { password })
+      if (res.data?.ok) {
+        localStorage.setItem(`openclaw_pwd_${characterId}`, password)
+        return true
+      }
+      return false
+    } catch (e) {
+      return false
+    }
+  },
+
   async getCharacter(characterId: string): Promise<CharacterState> {
     if (characterId.startsWith('custom_char_')) {
       const stored = localStorage.getItem(`openclaw_char_${characterId}`)
@@ -79,12 +110,11 @@ export const gameApi = {
     return res.data
   },
 
-  async createCharacter(data: { name: string; world_id: string; starter_id: string }): Promise<{ character_id: string }> {
-    const characterId = `custom_char_${Date.now()}`
+  async createCharacter(data: { name: string; world_id: string; starter_id: string; password?: string }): Promise<{ character_id: string }> {
+    let characterId = `player_char_${Date.now()}`
     
     // Assign starter assets and semantics
     let starterName = '艾德溫 — 退伍軍人'
-    let starterDesc = '曾經嘅王國士兵，戰後失去一切。'
     let stamina = 'fresh'
     let health = 'healthy'
     let morale = 'calm'
@@ -100,7 +130,6 @@ export const gameApi = {
 
     if (data.starter_id === 'char_starter_02') {
       starterName = '莉拉 — 神秘旅人'
-      starterDesc = '無人知佢從邊度嚟。知道好多秘密。'
       items = [
         { item_id: '盜賊工具 (thieves_tools)', quantity: 1 },
         { item_id: '解毒劑 (antitoxin)', quantity: 1 }
@@ -112,7 +141,6 @@ export const gameApi = {
       }
     } else if (data.starter_id === 'char_starter_03') {
       starterName = '湯姆 — 年輕學徒'
-      starterDesc = '充滿熱誠嘅新手魔法師，滿腦書本知識。'
       items = [
         { item_id: '法術書 (spellbook)', quantity: 1 },
         { item_id: '法術卷軸 (scroll_magic)', quantity: 2 }
@@ -205,18 +233,25 @@ export const gameApi = {
       ]
     }
 
+    const res = await client.post('/api/character/', {
+      character_id: characterId,
+      name: data.name,
+      world_id: data.world_id,
+      starter_id: data.starter_id,
+      password: data.password
+    })
+
+    if (res.data?.character_id === 'char_demo_player') {
+      characterId = `custom_char_${Date.now()}`
+      customState.character_id = characterId
+      initialScene.character_id = characterId
+    }
+
     localStorage.setItem(`openclaw_char_${characterId}`, JSON.stringify(customState))
     localStorage.setItem(`openclaw_scene_${characterId}`, JSON.stringify(initialScene))
-    
-    try {
-      await client.post('/api/character/', {
-        character_id: characterId,
-        name: data.name,
-        world_id: data.world_id,
-        starter_id: data.starter_id
-      })
-    } catch (e) {
-      console.warn('Backend Character post skipped, running in sandbox client-side mode.')
+
+    if (data.password) {
+      localStorage.setItem(`openclaw_pwd_${characterId}`, data.password)
     }
 
     return { character_id: characterId }
@@ -247,6 +282,11 @@ export const gameApi = {
   async getWorldState(worldId: string): Promise<any> {
     const res = await client.get(`/api/world/${worldId}/state`)
     return res.data
+  },
+
+  async resetCharacters(): Promise<boolean> {
+    const res = await client.post('/api/character/reset')
+    return res.status === 200
   },
 }
 

@@ -335,7 +335,42 @@ async def _process_action(
             from .scene_locks import scene_lock_manager
             from ..llm_client import get_llm_client
             lock = await scene_lock_manager.get_lock(authoritative_scene_id)
-            async with lock:
+            try:
+                await asyncio.wait_for(lock.acquire(), timeout=15.0)
+            except asyncio.TimeoutError:
+                logger.error(
+                    f"[Task {task_id}] Failed to acquire scene lock for "
+                    f"{authoritative_scene_id} within 15.0s"
+                )
+                try:
+                    from ..db import engine
+                    from sqlalchemy import text as _sql_text
+                    async with engine.begin() as conn:
+                        await conn.execute(
+                            _sql_text(
+                                "UPDATE action_history SET execution_status = 'FAILED', "
+                                "completed_at = now(), error_message = :err "
+                                "WHERE id = CAST(:id AS uuid)"
+                            ),
+                            {"err": "scene_lock_timeout", "id": str(action_id)},
+                        )
+                except Exception:
+                    pass
+                try:
+                    await websocket.send_json(
+                        {
+                            "type": "task_status",
+                            "task_id": task_id,
+                            "action_id": str(action_id),
+                            "status": "failed",
+                            "error": "Scene is busy. Please try again later.",
+                        }
+                    )
+                except Exception:
+                    pass
+                return
+
+            try:
                 logger.info(
                     f"[Task {task_id}] Locked scene {authoritative_scene_id}, calling LLM"
                 )
@@ -366,7 +401,7 @@ async def _process_action(
                 except Exception:
                     pass
 
-                # 2. Load last 3 actions for context
+                # 2. Load last 5 actions for context
                 prior_actions = []
                 try:
                     async with _engine.begin() as conn:
@@ -374,7 +409,7 @@ async def _process_action(
                             _sql_text_ctx(
                                 "SELECT round_number, player_choice, llm_narrative_output "
                                 "FROM action_history WHERE character_id = :cid "
-                                "ORDER BY created_at DESC LIMIT 3"
+                                "ORDER BY created_at DESC LIMIT 5"
                             ),
                             {"cid": character_id},
                         )
@@ -397,22 +432,22 @@ async def _process_action(
                     "\n"
                     "## 鐵律 (Hard Rules)\n"
                     "1. 遊戲完全使用語意標籤來描述狀態，**不要有任何數值上的顯示或計算** (例如禁止輸出 HP-10)。\n"
-                    "2. **只返回 JSON**。不要有任何解釋、思考、Markdown 包装。\n"
+                    "2. **只返回 JSON**。不要有實現、解釋、思考、Markdown 包装。\n"
                     "3. JSON 結構要求:\n"
                     '   {"narrative": "<一段敘事文字 3-4 句>", '
                     '"choices": [{"id": "opt_1", "vignette": "<選擇 1 句>"}, ...], '
-                    '"state_changes": {"stamina_level": "<stamina_label>" | null, '
-                    '"health_status": "<health_label>" | null, '
-                    '"morale_level": "<morale_label>" | null}, '
+                    '"state_changes": {"stamina": "<stamina_label>" | null, '
+                    '"health": "<health_label>" | null, '
+                    '"morale": "<morale_label>" | null}, '
                     '"new_scene_id": "<scene_id>" | null}\n'
                     "4. **choices 必須有 4 個，每個方向唔同**，不可為空。\n"
                     "   建議 4 個方向:\n"
                     "   - 1 個 **戰鬥/動作** 方向 (action: 攻擊、施法、逃跑)\n"
                     "   - 1 個 **社交/對話** 方向 (talk: 問路、求助、欺騙)\n"
                     "   - 1 個 **探索/調查** 方向 (explore: 搜查、跟蹤、發掘)\n"
-                    "   - 1 個 **創意/異想天開** 方向 (creative: 玩遊戲、講笑話、奇怪主意)\n"
+                    "   - 1 個 **創意/意料之外** 方向 (creative: 玩遊戲、講笑話、奇怪主意)\n"
                     "5. narrative 必須是完整段落，不可以包含<think>開頭的思考。\n"
-                    "6. 請延續之前的劇情（見 user_message 嘅 prior_actions），不要無關聯地重新開始。\n"
+                    "6. 請仔細閱讀並延續過去最多 5 回合的劇情（見 user_message 嘅 prior_actions），並使最新產生的 4 個選擇與這 5 回合的進展有強烈的前後連貫性、因果關係與對話關聯性。\n"
                     "\n"
                     "## 語意狀態階梯 (Semantic State Tiers)\n"
                     "當前角色狀態完全遵循以下語意階梯。當狀態改變時，你必須從以下合法的標籤中選擇，且狀態變更必須符合常理（通常是逐級遞增/遞減，或保持不變）：\n"
@@ -440,9 +475,9 @@ async def _process_action(
                     "\n"
                     f"## 當前角色\n"
                     f"名字: {character_state.get('name', character_id)}\n"
-                    f"體力: {phys.get('stamina_level', 'fresh')}\n"
-                    f"健康: {phys.get('health_status', 'healthy')}\n"
-                    f"士氣: {ment.get('morale_level', 'calm')}\n"
+                    f"體力: {phys.get('stamina') or phys.get('stamina_level', 'fresh')}\n"
+                    f"健康: {phys.get('health') or phys.get('health_status', 'healthy')}\n"
+                    f"士氣: {ment.get('morale') or ment.get('morale_level', 'calm')}\n"
                     "\n"
                     f"## 當前場景\n"
                     f"{scene_desc or authoritative_scene_id}\n"
@@ -470,10 +505,17 @@ async def _process_action(
                 user_message_parts.append(json.dumps(choice_obj, ensure_ascii=False))
                 user_message = "\n".join(user_message_parts)
 
-                raw = await client.generate(
-                    system_prompt=system_prompt,
-                    user_message=user_message,
-                )
+                try:
+                    raw = await asyncio.wait_for(
+                        client.generate(
+                            system_prompt=system_prompt,
+                            user_message=user_message,
+                        ),
+                        timeout=45.0,
+                    )
+                except asyncio.TimeoutError:
+                    logger.error(f"[Task {task_id}] LLM generation timed out after 45s")
+                    raise RuntimeError("LLM generation timed out")
                 # Phase L2-E hotfix: M3 with thinking mode often prepends
                 # \n<think>\n... to the output. We strip thinking blocks
                 # first, then attempt JSON parse, then a strict regex
@@ -536,6 +578,8 @@ async def _process_action(
                         }
                     )
                 logger.info(f"[Task {task_id}] LLM complete")
+            finally:
+                lock.release()
         except Exception as e:
             logger.exception(f"[Task {task_id}] LLM call failed: {e}")
             # Mark FAILED
@@ -551,6 +595,19 @@ async def _process_action(
                         ),
                         {"err": f"llm_call_failed: {e}"[:500], "id": str(action_id)},
                     )
+            except Exception:
+                pass
+            # Notify client that the task failed to prevent frontend hang
+            try:
+                await websocket.send_json(
+                    {
+                        "type": "task_status",
+                        "task_id": task_id,
+                        "action_id": str(action_id),
+                        "status": "failed",
+                        "error": f"LLM call failed: {e}",
+                    }
+                )
             except Exception:
                 pass
             return  # Don't broadcast
@@ -585,41 +642,56 @@ async def _process_action(
                 )
                 if scene_output.get("state_changes"):
                     cs = scene_output["state_changes"]
-                    for k, db_key, profile_section in (
-                        ("stamina_level", "stamina_level", "physical"),
-                        ("health_status", "health_status", "physical"),
-                        ("morale_level", "morale_level", "mental"),
-                    ):
-                        if k in cs and cs[k]:
-                            # Build the path as a SQL ARRAY literal.
-                            # jsonb_set needs a real ARRAY[...] expression,
-                            # not bound positional params — asyncpg does
-                            # not allow bound params inside an ARRAY
-                            # literal. The values are constants, not
-                            # user-controlled, so string concat is safe.
-                            path_array = (
-                                "ARRAY['" + profile_section
-                                + "','" + db_key + "']::text[]"
-                            )
-                            # Cast :val explicitly to text via SQL fragment
-                            # (asyncpg's bind params don't support inline ::text
-                            # casts). Build the value as a quoted SQL literal
-                            # since :val is always a primitive (str from M3).
-                            val_literal = "'" + str(cs[k]).replace("'", "''") + "'::text"
-                            await conn.execute(
-                                _sql_text(
-                                    "UPDATE character_states "
-                                    "SET semantic_profile = jsonb_set("
-                                    "    COALESCE(semantic_profile, '{}'::jsonb), "
-                                    "    " + path_array + ", "
-                                    "    to_jsonb(" + val_literal + ") "
-                                    "), updated_at = now() "
-                                    "WHERE character_id = :cid"
-                                ),
-                                {
-                                    "cid": character_id,
-                                },
-                            )
+                    state_updates = []
+
+                    # 1. stamina
+                    stamina_val = cs.get("stamina") or cs.get("stamina_level")
+                    if stamina_val:
+                        state_updates.append(("stamina", "physical", stamina_val))
+                        state_updates.append(("stamina_level", "physical", stamina_val))
+
+                    # 2. health
+                    health_val = cs.get("health") or cs.get("health_status")
+                    if health_val:
+                        state_updates.append(("health", "physical", health_val))
+                        state_updates.append(("health_status", "physical", health_val))
+
+                    # 3. morale
+                    morale_val = cs.get("morale") or cs.get("morale_level")
+                    if morale_val:
+                        state_updates.append(("morale", "mental", morale_val))
+                        state_updates.append(("morale_level", "mental", morale_val))
+
+                    for db_key, profile_section, val_str in state_updates:
+                        # Build the path as a SQL ARRAY literal.
+                        # jsonb_set needs a real ARRAY[...] expression,
+                        # not bound positional params — asyncpg does
+                        # not allow bound params inside an ARRAY
+                        # literal. The values are constants, not
+                        # user-controlled, so string concat is safe.
+                        path_array = (
+                            "ARRAY['" + profile_section
+                            + "','" + db_key + "']::text[]"
+                        )
+                        # Cast :val explicitly to text via SQL fragment
+                        # (asyncpg's bind params don't support inline ::text
+                        # casts). Build the value as a quoted SQL literal
+                        # since :val is always a primitive (str from M3).
+                        val_literal = "'" + str(val_str).replace("'", "''") + "'::text"
+                        await conn.execute(
+                            _sql_text(
+                                "UPDATE character_states "
+                                "SET semantic_profile = jsonb_set("
+                                "    COALESCE(semantic_profile, '{}'::jsonb), "
+                                "    " + path_array + ", "
+                                "    to_jsonb(" + val_literal + ") "
+                                "), updated_at = now() "
+                                "WHERE character_id = :cid"
+                            ),
+                            {
+                                "cid": character_id,
+                            },
+                        )
                 if scene_output.get("new_scene_id"):
                     new_sid = scene_output["new_scene_id"]
                     # Phase L2-E hotfix: validate the scene exists in DB
@@ -667,6 +739,19 @@ async def _process_action(
                     )
             except Exception:
                 pass
+            # Notify client that the task failed to prevent frontend hang
+            try:
+                await websocket.send_json(
+                    {
+                        "type": "task_status",
+                        "task_id": task_id,
+                        "action_id": str(action_id),
+                        "status": "failed",
+                        "error": f"DB write failed: {e}",
+                    }
+                )
+            except Exception:
+                pass
             return  # Don't broadcast
 
         # ============================================================
@@ -678,7 +763,7 @@ async def _process_action(
                 "type": "scene_update",
                 "task_id": task_id,
                 "action_id": str(action_id),
-                "round": scene_output.get("round"),
+                "round": scene_output.get("round") or (int(msg.get("round", 0) or 0) + 1),
                 "scene_id": authoritative_scene_id,
                 "narrative": scene_output.get("narrative"),
                 "choices": scene_output.get("choices"),
