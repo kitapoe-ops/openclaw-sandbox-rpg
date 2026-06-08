@@ -109,9 +109,7 @@ async def test_scene_npc_state_table_exists():
             )
         )
         rows = [r[0] for r in result]
-        assert "scene_npc_states" in rows, (
-            f"scene_npc_states table not found; got {rows}"
-        )
+        assert "scene_npc_states" in rows, f"scene_npc_states table not found; got {rows}"
 
 
 # ============================================================
@@ -164,6 +162,5 @@ def test_other_player_action_message_type_exists():
         encoding="utf-8",
     ).read()
     assert "other_player_action" in ws_ts, (
-        "frontend/src/services/websocket.ts should include the "
-        "other_player_action message type"
+        "frontend/src/services/websocket.ts should include the " "other_player_action message type"
     )

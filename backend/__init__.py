@@ -20,4 +20,3 @@ if "pytest" not in sys.modules:
         _root_env_path = Path(__file__).resolve().parent.parent / ".env"
         if _root_env_path.exists():
             load_dotenv(dotenv_path=_root_env_path)
-

@@ -60,7 +60,7 @@ def _resolve_world_file(world_id: str) -> Path | None:
         candidate = _WORLDS_DIR / f"{world_id}.{ext}"
         if candidate.exists():
             return candidate
-            
+
     # Fallback: scan worlds/ and match by world_meta.id
     if _WORLDS_DIR.exists():
         for ext in ["json", "yaml"]:
@@ -69,7 +69,12 @@ def _resolve_world_file(world_id: str) -> Path | None:
                     with open(file_path, encoding="utf-8") as f:
                         head = f.read(4096)
                     # For both JSON and YAML, check if the id is present
-                    if f'"id": "{world_id}"' in head or f"'id': '{world_id}'" in head or f'id: "{world_id}"' in head or f"id: '{world_id}'" in head:
+                    if (
+                        f'"id": "{world_id}"' in head
+                        or f"'id': '{world_id}'" in head
+                        or f'id: "{world_id}"' in head
+                        or f"id: '{world_id}'" in head
+                    ):
                         return file_path
                 except OSError:
                     continue
@@ -96,10 +101,10 @@ def _demo_list_worlds() -> list[dict[str, Any]]:
     if not _WORLDS_DIR.exists():
         return []
     out: list[dict[str, Any]] = []
-    
+
     # Scan both yaml and json
     files = list(_WORLDS_DIR.glob("*.yaml")) + list(_WORLDS_DIR.glob("*.json"))
-    
+
     # Prioritize JSON if duplicates exist
     grouped_files = {}
     for f in files:
@@ -116,7 +121,7 @@ def _demo_list_worlds() -> list[dict[str, Any]]:
             name = world_id
             version = "unknown"
             description = ""
-            
+
             try:
                 if file_path.suffix == ".json":
                     with open(file_path, encoding="utf-8") as f:
@@ -136,14 +141,16 @@ def _demo_list_worlds() -> list[dict[str, Any]]:
                         description = (meta.get("description", "") or "").strip()
             except Exception:
                 pass
-                
+
             out.append(
                 {
                     "world_id": world_id,
                     "name": name,
                     "version": version,
                     "description": description,
-                    "yaml_path": str(file_path),  # Keep the key name as yaml_path for backwards compatibility
+                    "yaml_path": str(
+                        file_path
+                    ),  # Keep the key name as yaml_path for backwards compatibility
                 }
             )
         except OSError:

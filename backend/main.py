@@ -156,6 +156,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
 # Phase L2-E hotfix: disable ALL caching for HTML and JS bundle
 # responses. Telegram's in-app browser, mobile Safari, and many
 # Android browsers cache aggressively even on hard reload,
@@ -211,6 +212,7 @@ app.include_router(_e6b_router)
 # Health endpoint is always mounted so the frontend can show/hide the
 # panel; the preview endpoint returns 404 when disabled.
 from .api.prompt_inspector import router as prompt_inspector_router
+
 app.include_router(prompt_inspector_router)
 logger.info(
     "Prompt Inspector mounted. Health: GET /api/prompt-inspector/health. "
@@ -223,8 +225,8 @@ logger.info(
 async def ws_game(websocket: WebSocket, character_id: str):
     await websocket_endpoint(websocket, character_id)
 
-app.add_api_websocket_route("/ws/multiplayer/{scene_id}/{player_id}", multiplayer_ws)
 
+app.add_api_websocket_route("/ws/multiplayer/{scene_id}/{player_id}", multiplayer_ws)
 
 
 # ============================================
@@ -285,6 +287,7 @@ if _FRONTEND_DIST.exists() and _FRONTEND_INDEX.exists():
         # Don't shadow /api or /docs or /ws or /health
         if full_path.startswith(("api/", "docs", "redoc", "openapi.json", "ws/", "health")):
             from fastapi import HTTPException
+
             raise HTTPException(status_code=404, detail="Not Found")
         # Try to serve a static file first (e.g. /favicon.ico)
         candidate = _FRONTEND_DIST / full_path

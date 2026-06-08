@@ -16,12 +16,14 @@ router = APIRouter()
 async def list_characters() -> list[dict[str, Any]]:
     """Get all characters (without passwords) for player selection."""
     if is_demo_mode():
-        return [{
-            "character_id": "char_demo_player",
-            "name": "Rockseeker 家族嘅探子",
-            "starter_id": "char_starter_01",
-        }]
-    
+        return [
+            {
+                "character_id": "char_demo_player",
+                "name": "Rockseeker 家族嘅探子",
+                "starter_id": "char_starter_01",
+            }
+        ]
+
     try:
         from ..db import get_db_session
         from ..models import CharacterState
@@ -35,7 +37,7 @@ async def list_characters() -> list[dict[str, Any]]:
                     "character_id": char.character_id,
                     "name": char.name,
                     "starter_id": char.semantic_profile.get("starter_id", "char_starter_01"),
-                    "created_at": char.created_at.isoformat() if char.created_at else None
+                    "created_at": char.created_at.isoformat() if char.created_at else None,
                 }
                 for char in chars
             ]
@@ -71,9 +73,7 @@ async def get_character(character_id: str, request: Request) -> dict[str, Any]:
             if not char:
                 # Phase L2-B: fail-loud. Don't fall back to demo data
                 # in full mode. Return 404 explicitly.
-                raise HTTPException(
-                    status_code=404, detail=f"Character {character_id} not found"
-                )
+                raise HTTPException(status_code=404, detail=f"Character {character_id} not found")
 
             # Verify password if set
             stored_pwd = char.semantic_profile.get("password")
@@ -120,14 +120,16 @@ async def create_character(character_data: dict[str, Any]) -> dict[str, Any]:
             count_result = await session.execute(count_stmt)
             count = count_result.scalar() or 0
             if count >= 4:
-                raise HTTPException(status_code=400, detail="角色已達上限（最多 4 名玩家）。無法創建新角色。")
+                raise HTTPException(
+                    status_code=400, detail="角色已達上限（最多 4 名玩家）。無法創建新角色。"
+                )
 
             # 2. Extract input data
             cid = character_data.get("character_id")
             name = character_data.get("name")
             password = character_data.get("password")
             starter_id = character_data.get("starter_id", "char_starter_01")
-            
+
             # Map world_id safely to DB seed world
             world_id = "dnd_5e_forgotten_realms_phandalin"
             default_scene_id = "loc_phandalin_town"
@@ -136,41 +138,41 @@ async def create_character(character_data: dict[str, Any]) -> dict[str, Any]:
                 raise HTTPException(status_code=400, detail="缺少角色 ID 或名稱")
 
             # 3. Setup semantic profile based on starter
-            starter_name = '艾德溫 — 退伍軍人'
-            stamina = 'fresh'
-            health = 'healthy'
-            morale = 'calm'
+            starter_name = "艾德溫 — 退伍軍人"
+            stamina = "fresh"
+            health = "healthy"
+            morale = "calm"
             items = [
-                { "item_id": "精緻口糧 (rations_fine)", "quantity": 2 },
-                { "item_id": "強效治療藥水 (healing_potion)", "quantity": 1 }
+                {"item_id": "精緻口糧 (rations_fine)", "quantity": 2},
+                {"item_id": "強效治療藥水 (healing_potion)", "quantity": 1},
             ]
-            equipment = { 
-                "weapon": "精鋼長劍 (Longsword)", 
-                "armor": "鎖子甲 (Chain Mail)", 
-                "accessory_1": "家族徽章 (Heirloom)" 
+            equipment = {
+                "weapon": "精鋼長劍 (Longsword)",
+                "armor": "鎖子甲 (Chain Mail)",
+                "accessory_1": "家族徽章 (Heirloom)",
             }
 
-            if starter_id == 'char_starter_02':
-                starter_name = '莉拉 — 神秘旅人'
+            if starter_id == "char_starter_02":
+                starter_name = "莉拉 — 神秘旅人"
                 items = [
-                    { "item_id": "盜賊工具 (thieves_tools)", "quantity": 1 },
-                    { "item_id": "解毒劑 (antitoxin)", "quantity": 1 }
+                    {"item_id": "盜賊工具 (thieves_tools)", "quantity": 1},
+                    {"item_id": "解毒劑 (antitoxin)", "quantity": 1},
                 ]
-                equipment = { 
-                    "weapon": "精緻短弓 (Shortbow)", 
-                    "armor": "皮革護甲 (Leather Armor)", 
-                    "accessory_1": "陰影護身符" 
+                equipment = {
+                    "weapon": "精緻短弓 (Shortbow)",
+                    "armor": "皮革護甲 (Leather Armor)",
+                    "accessory_1": "陰影護身符",
                 }
-            elif starter_id == 'char_starter_03':
-                starter_name = '湯姆 — 年輕學徒'
+            elif starter_id == "char_starter_03":
+                starter_name = "湯姆 — 年輕學徒"
                 items = [
-                    { "item_id": "法術書 (spellbook)", "quantity": 1 },
-                    { "item_id": "法術卷軸 (scroll_magic)", "quantity": 2 }
+                    {"item_id": "法術書 (spellbook)", "quantity": 1},
+                    {"item_id": "法術卷軸 (scroll_magic)", "quantity": 2},
                 ]
-                equipment = { 
-                    "weapon": "防護法杖 (Staff of Defense)", 
-                    "armor": "法師長袍 (Robe of Mage)", 
-                    "accessory_1": "魔法防護戒指" 
+                equipment = {
+                    "weapon": "防護法杖 (Staff of Defense)",
+                    "armor": "法師長袍 (Robe of Mage)",
+                    "accessory_1": "魔法防護戒指",
                 }
 
             profile = {
@@ -180,28 +182,22 @@ async def create_character(character_data: dict[str, Any]) -> dict[str, Any]:
                     "stamina_level": stamina,
                     "stamina_context": "精神飽滿",
                     "health_status": health,
-                    "active_effects": []
+                    "active_effects": [],
                 },
-                "mental": {
-                    "morale_level": morale,
-                    "alertness_level": "focused"
-                },
+                "mental": {"morale_level": morale, "alertness_level": "focused"},
                 "attitude": {
                     "caution": "careful",
                     "empathy": "compassionate",
                     "honor": "honest",
                     "curiosity": "curious",
-                    "violence": "defensive"
+                    "violence": "defensive",
                 },
-                "inventory": {
-                    "items": items,
-                    "equipment": equipment
-                },
+                "inventory": {"items": items, "equipment": equipment},
                 "memories": [
                     f"你是 {name}，以「{starter_name}」的身分抵達凡達林。",
-                    "你暗中攜帶著冒險所必需的行囊，決意查明失落礦坑的命運。"
+                    "你暗中攜帶著冒險所必需的行囊，決意查明失落礦坑的命運。",
                 ],
-                "relationships": {}
+                "relationships": {},
             }
 
             # 4. Save to DB
@@ -212,16 +208,16 @@ async def create_character(character_data: dict[str, Any]) -> dict[str, Any]:
                 current_scene_id=default_scene_id,
                 semantic_profile=profile,
                 is_npc_mode=False,
-                is_alive=True
+                is_alive=True,
             )
             session.add(new_char)
             await session.commit()
-            
+
             return {
                 "character_id": cid,
                 "name": name,
                 "world_id": world_id,
-                "message": "Character created successfully in DB"
+                "message": "Character created successfully in DB",
             }
     except HTTPException:
         raise
@@ -266,16 +262,17 @@ async def reset_world() -> dict[str, Any]:
         from ..db import engine, get_db_session
         from ..models import CharacterState
         from sqlalchemy import text
-        
+
         async with engine.begin() as conn:
             # 清空動作歷史與角色狀態，以及場景NPC狀態
             await conn.execute(text("DELETE FROM action_history"))
             await conn.execute(text("DELETE FROM character_states"))
             await conn.execute(text("DELETE FROM scene_npc_states"))
-        
+
         # 重新種植 Demo 數據
         from ..scenes_demo import DEMO_SCENE, DEMO_STARTER
         from ..models import Scene, World
+
         async with get_db_session() as session:
             # World
             world_obj = await session.get(World, DEMO_STARTER["world_id"])
@@ -352,4 +349,3 @@ def _demo_to_response(demo: dict[str, Any]) -> dict[str, Any]:
         **demo["semantic_profile"],
         "mode": "demo",
     }
-

@@ -24,9 +24,7 @@ from datetime import datetime
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-from ..db import get_db_session
 from .connection_manager import registry
-from .scene_locks import scene_lock_manager
 
 logger = logging.getLogger(__name__)
 
@@ -56,10 +54,9 @@ async def websocket_endpoint(
             from ..db import AsyncSessionLocal
             from ..models import CharacterState
             from sqlalchemy import select
+
             async with AsyncSessionLocal() as session:
-                stmt = select(CharacterState).where(
-                    CharacterState.character_id == character_id
-                )
+                stmt = select(CharacterState).where(CharacterState.character_id == character_id)
                 result = await session.execute(stmt)
                 cs_row = result.scalar_one_or_none()
                 if cs_row is not None:
@@ -67,9 +64,7 @@ async def websocket_endpoint(
                     if scene_id:
                         await registry.set_scene(character_id, scene_id)
         except Exception as e:
-            logger.warning(
-                f"[WS {connection_id}] Could not pre-load scene for {character_id}: {e}"
-            )
+            logger.warning(f"[WS {connection_id}] Could not pre-load scene for {character_id}: {e}")
 
         await websocket.send_json(
             {
@@ -191,10 +186,9 @@ async def _process_action(
         from ..db import AsyncSessionLocal
         from ..models import CharacterState
         from sqlalchemy import select
+
         async with AsyncSessionLocal() as session:
-            stmt = select(CharacterState).where(
-                CharacterState.character_id == character_id
-            )
+            stmt = select(CharacterState).where(CharacterState.character_id == character_id)
             result = await session.execute(stmt)
             cs_row = result.scalar_one_or_none()
             if cs_row is None:
@@ -260,6 +254,7 @@ async def _process_action(
             from sqlalchemy import text as _sql_text
             import uuid as _uuid
             import json as _json
+
             action_id = _uuid.uuid4()
             choice_payload = msg.get("choice") or msg.get("player_input") or {}
             player_choice_json = _json.dumps(choice_payload, ensure_ascii=False, default=str)
@@ -301,6 +296,7 @@ async def _process_action(
         # Mark as PROCESSING (raw SQL)
         from ..db import engine
         from sqlalchemy import text as _sql_text
+
         try:
             async with engine.begin() as conn:
                 await conn.execute(
@@ -334,6 +330,7 @@ async def _process_action(
         try:
             from .scene_locks import scene_lock_manager
             from ..llm_client import get_llm_client
+
             lock = await scene_lock_manager.get_lock(authoritative_scene_id)
             try:
                 await asyncio.wait_for(lock.acquire(), timeout=15.0)
@@ -345,6 +342,7 @@ async def _process_action(
                 try:
                     from ..db import engine
                     from sqlalchemy import text as _sql_text
+
                     async with engine.begin() as conn:
                         await conn.execute(
                             _sql_text(
@@ -371,9 +369,7 @@ async def _process_action(
                 return
 
             try:
-                logger.info(
-                    f"[Task {task_id}] Locked scene {authoritative_scene_id}, calling LLM"
-                )
+                logger.info(f"[Task {task_id}] Locked scene {authoritative_scene_id}, calling LLM")
                 client = get_llm_client()
                 # Build a rich system_prompt + user_message that
                 # carries the FULL game context. Without this, M3
@@ -397,7 +393,9 @@ async def _process_action(
                         )
                         row = r.first()
                         if row:
-                            scene_desc = f"場景名: {row[0]}\n場景描述: {row[1]}\n氣氛: {row[2] or 'neutral'}"
+                            scene_desc = (
+                                f"場景名: {row[0]}\n場景描述: {row[1]}\n氣氛: {row[2] or 'neutral'}"
+                            )
                 except Exception:
                     pass
 
@@ -414,11 +412,13 @@ async def _process_action(
                             {"cid": character_id},
                         )
                         for row in r:
-                            prior_actions.append({
-                                "round": row[0],
-                                "choice": row[1],
-                                "narrative": row[2],
-                            })
+                            prior_actions.append(
+                                {
+                                    "round": row[0],
+                                    "choice": row[1],
+                                    "narrative": row[2],
+                                }
+                            )
                 except Exception:
                     pass
 
@@ -521,6 +521,7 @@ async def _process_action(
                 # first, then attempt JSON parse, then a strict regex
                 # search for a JSON object in the cleaned text.
                 import re as _re
+
                 cleaned = _re.sub(r"<think>.*?</think>", "", raw, flags=_re.DOTALL).strip()
                 cleaned = _re.sub(r"^<think>.*?(?=\n\n|\Z)", "", cleaned, flags=_re.DOTALL).strip()
                 # Find first '{' and the matching '}' (balanced braces)
@@ -586,6 +587,7 @@ async def _process_action(
             try:
                 from ..db import engine
                 from sqlalchemy import text as _sql_text
+
                 async with engine.begin() as conn:
                     await conn.execute(
                         _sql_text(
@@ -617,6 +619,7 @@ async def _process_action(
             from ..db import engine
             from sqlalchemy import text as _sql_text
             import json as _json
+
             async with engine.begin() as conn:
                 choices_json = _json.dumps(
                     scene_output.get("choices", []), ensure_ascii=False, default=str
@@ -669,10 +672,7 @@ async def _process_action(
                         # not allow bound params inside an ARRAY
                         # literal. The values are constants, not
                         # user-controlled, so string concat is safe.
-                        path_array = (
-                            "ARRAY['" + profile_section
-                            + "','" + db_key + "']::text[]"
-                        )
+                        path_array = "ARRAY['" + profile_section + "','" + db_key + "']::text[]"
                         # Cast :val explicitly to text via SQL fragment
                         # (asyncpg's bind params don't support inline ::text
                         # casts). Build the value as a quoted SQL literal
@@ -728,6 +728,7 @@ async def _process_action(
             try:
                 from ..db import engine
                 from sqlalchemy import text as _sql_text
+
                 async with engine.begin() as conn:
                     await conn.execute(
                         _sql_text(
@@ -777,9 +778,7 @@ async def _process_action(
         # the registry so future cross-player broadcasts go to the
         # right audience.
         if scene_output.get("new_scene_id"):
-            await registry.set_scene(
-                character_id, scene_output["new_scene_id"]
-            )
+            await registry.set_scene(character_id, scene_output["new_scene_id"])
         else:
             await registry.set_scene(character_id, authoritative_scene_id)
 
@@ -807,9 +806,7 @@ async def _process_action(
                 "scene_id": authoritative_scene_id,
                 "choice_text": choice_text,
                 "world_event": scene_output.get("minor_event"),
-                "world_state_change": (
-                    bool(scene_output.get("state_changes"))
-                ),
+                "world_state_change": (bool(scene_output.get("state_changes"))),
                 "timestamp": datetime.utcnow().isoformat(),
             },
             exclude_character_id=character_id,
@@ -825,7 +822,6 @@ async def _process_action(
         # Q7 CRITICAL: Always release in-memory flag
         # ============================================================
         registry.release_inflight(character_id)
-
 
 
 async def _send_error(websocket: WebSocket, character_id: str, message: dict):

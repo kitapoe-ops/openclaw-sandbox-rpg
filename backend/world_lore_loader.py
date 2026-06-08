@@ -81,7 +81,7 @@ class WorldLoreLoader:
             count = 0
             # Scan both .yaml and .json files
             files = list(self._worlds_dir.glob("*.yaml")) + list(self._worlds_dir.glob("*.json"))
-            
+
             # Group by stem, prioritizing .json if both exist
             grouped_files = {}
             for f in files:
@@ -102,7 +102,7 @@ class WorldLoreLoader:
 
                     # Quick parse of just world_meta section
                     world_id = file_path.stem  # e.g., "dnd_5e_forgotten_realms"
-                    
+
                     name = None
                     version = None
                     if file_path.suffix == ".json":
@@ -169,7 +169,7 @@ class WorldLoreLoader:
                 logger.info(f"[WorldLoreLoader] Lazy parsing: {world_id}")
                 metadata.parse_started_at = time.time()
                 instance = WorldLoreDB(world_id, metadata.file_path)
-                
+
                 # Check file extension to load properly
                 if metadata.file_path.suffix == ".json":
                     success = instance.load_from_json(metadata.file_path)
@@ -224,6 +224,7 @@ class WorldLoreLoader:
     def _extract_field_json(self, text: str, field: str) -> str | None:
         """Extract a JSON field value from the first 1KB of a text using regex."""
         import re
+
         # Match "field": "value" or 'field': 'value'
         pattern = rf'"{field}"\s*:\s*"([^"]+)"'
         match = re.search(pattern, text)

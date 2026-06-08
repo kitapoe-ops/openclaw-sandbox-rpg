@@ -997,7 +997,7 @@ class MockLLMClient(LLMClient):
             '{"direction": "social", "vignette": "嘗試與對方對話"},'
             '{"direction": "explore", "vignette": "繼續觀察四周"},'
             '{"direction": "creative", "vignette": "用環境物品製作陷阱"}'
-            ']}'
+            "]}"
         )
         self.calls: int = 0
 

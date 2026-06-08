@@ -689,7 +689,7 @@ class SemanticSoulTransfer:
                         "status": data.get("status"),
                         "escalation_level": data.get("escalation_level", 0),
                         "seeded_round": 1,
-                        "meta": dict(data.get("meta", {}))
+                        "meta": dict(data.get("meta", {})),
                     }
 
         # 4. Build record
@@ -768,7 +768,9 @@ class SemanticSoulTransfer:
             if self._mem_conn is None:
                 conn.close()
 
-    async def apply_transfer(self, record: SoulTransferRecord, session: Any = None) -> dict[str, Any]:
+    async def apply_transfer(
+        self, record: SoulTransferRecord, session: Any = None
+    ) -> dict[str, Any]:
         """Mark a persisted record as 'applied' to its vessel.
 
         Called by the caller AFTER they've actually written the
@@ -788,17 +790,20 @@ class SemanticSoulTransfer:
             conn.commit()
             record.applied = cursor.rowcount == 1
             record.applied_at = _now_iso() if record.applied else None
-            
+
             # If SQLAlchemy session is provided, sync the threads heritage to vessel DB state
             if record.applied and session is not None and record.carried_threads:
                 try:
                     from backend.models import CharacterState
+
                     cs = await session.get(CharacterState, record.target_vessel_id)
                     if cs:
                         cs.active_threads = dict(record.carried_threads)
                 except Exception as e:
-                    logger.warning(f"Failed to apply carried_threads to vessel {record.target_vessel_id} in DB: {e}")
-            
+                    logger.warning(
+                        f"Failed to apply carried_threads to vessel {record.target_vessel_id} in DB: {e}"
+                    )
+
             return {"rows_updated": cursor.rowcount, "transfer_id": record.transfer_id}
         except Exception:
             conn.rollback()
@@ -817,9 +822,11 @@ class SemanticSoulTransfer:
             ).fetchone()
             if row is None:
                 return None
-            
+
             try:
-                carried_threads = json.loads(row["carried_threads_json"]) if row["carried_threads_json"] else {}
+                carried_threads = (
+                    json.loads(row["carried_threads_json"]) if row["carried_threads_json"] else {}
+                )
             except Exception:
                 carried_threads = {}
 
@@ -856,14 +863,16 @@ class SemanticSoulTransfer:
                 """,
                 (vessel_id,),
             ).fetchall()
-            
+
             results = []
             for r in rows:
                 try:
-                    carried_threads = json.loads(r["carried_threads_json"]) if r["carried_threads_json"] else {}
+                    carried_threads = (
+                        json.loads(r["carried_threads_json"]) if r["carried_threads_json"] else {}
+                    )
                 except Exception:
                     carried_threads = {}
-                
+
                 results.append(
                     SoulTransferRecord(
                         transfer_id=r["transfer_id"],

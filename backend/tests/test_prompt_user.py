@@ -98,10 +98,12 @@ class TestSceneNpcStates:
         assert _format_scene_npc_states(None) == "(無 scene context — NPC 狀態未知)"
 
     def test_renders_name_status_location(self):
-        scene = make_scene_context(npcs=[
-            {"npc_id": "e1", "name": "Eldrin", "status": "hostile", "location": "tavern"},
-            {"npc_id": "m1", "name": "Mira", "status": "neutral"},
-        ])
+        scene = make_scene_context(
+            npcs=[
+                {"npc_id": "e1", "name": "Eldrin", "status": "hostile", "location": "tavern"},
+                {"npc_id": "m1", "name": "Mira", "status": "neutral"},
+            ]
+        )
         result = _format_scene_npc_states(scene)
         assert "Eldrin" in result
         assert "hostile" in result
@@ -110,10 +112,7 @@ class TestSceneNpcStates:
         assert "neutral" in result
 
     def test_caps_at_six_npcs(self):
-        npcs = [
-            {"npc_id": f"n{i}", "name": f"NPC{i}", "status": "neutral"}
-            for i in range(10)
-        ]
+        npcs = [{"npc_id": f"n{i}", "name": f"NPC{i}", "status": "neutral"} for i in range(10)]
         scene = make_scene_context(npcs=npcs)
         result = _format_scene_npc_states(scene)
         # Should mention first 6 only
@@ -134,18 +133,20 @@ class TestActiveEscalationThreads:
         assert "無 active threads" in _format_active_escalation_threads(state)
 
     def test_renders_trope_id_with_level(self):
-        state = make_state(active_threads={
-            "trope_scapegoat_01": {"status": "Active", "escalation_level": 2}
-        })
+        state = make_state(
+            active_threads={"trope_scapegoat_01": {"status": "Active", "escalation_level": 2}}
+        )
         result = _format_active_escalation_threads(state)
         assert "level=2" in result
         assert "Active" in result or "發酵" in result
 
     def test_skips_resolved_threads(self):
-        state = make_state(active_threads={
-            "trope_a": {"status": "Resolved", "escalation_level": 0},
-            "trope_b": {"status": "Active", "escalation_level": 1},
-        })
+        state = make_state(
+            active_threads={
+                "trope_a": {"status": "Resolved", "escalation_level": 0},
+                "trope_b": {"status": "Active", "escalation_level": 1},
+            }
+        )
         result = _format_active_escalation_threads(state)
         assert "trope_b" in result or "trope_b" in result.replace("_", " ")
 
@@ -156,19 +157,16 @@ class TestOtherPlayerFootprints:
         assert _format_other_player_footprints(None) == "(無環境痕跡)"
 
     def test_renders_marker_with_actor_and_turn(self):
-        scene = make_scene_context(footprints=[
-            {"marker": "地上有血跡", "actor": "Bob", "turn": 3}
-        ])
+        scene = make_scene_context(footprints=[{"marker": "地上有血跡", "actor": "Bob", "turn": 3}])
         result = _format_other_player_footprints(scene)
         assert "地上有血跡" in result
         assert "Bob" in result
         assert "3" in result
 
     def test_caps_at_six_footprints(self):
-        scene = make_scene_context(footprints=[
-            {"marker": f"痕跡{i}", "actor": f"A{i}", "turn": i}
-            for i in range(10)
-        ])
+        scene = make_scene_context(
+            footprints=[{"marker": f"痕跡{i}", "actor": f"A{i}", "turn": i} for i in range(10)]
+        )
         result = _format_other_player_footprints(scene)
         for i in range(6):
             assert f"痕跡{i}" in result
@@ -199,9 +197,9 @@ class TestTropeDirective:
     def test_renders_trope_name_with_directive(self):
         """Trope directive should include plot_beat + tonal_focus from tropes.json."""
         # tropes.json ships with trope_scapegoat_01; we use it for a smoke test
-        state = make_state(active_threads={
-            "trope_scapegoat_01": {"status": "Active", "escalation_level": 0}
-        })
+        state = make_state(
+            active_threads={"trope_scapegoat_01": {"status": "Active", "escalation_level": 0}}
+        )
         result = _format_trope_directive(state)
         # Should at least contain the trope name
         assert len(result) > 5
@@ -267,11 +265,13 @@ class TestBuildUserPrompt:
         )
         # Module 1 should have HP: but no numeric value
         import re
+
         m = re.search(r"HP:\s*(\S+)", result)
         if m:
             label = m.group(1)
-            assert not label.replace("+", "").replace(" ", "").isdigit(), \
-                f"HP label looks numeric: {label!r}"
+            assert (
+                not label.replace("+", "").replace(" ", "").isdigit()
+            ), f"HP label looks numeric: {label!r}"
 
 
 # --------------------------------------------------------------------------
@@ -297,13 +297,22 @@ class TestBuildUserPromptSections:
     def test_returns_all_section_keys(self):
         state = make_state()
         sections = build_user_prompt_sections(
-            character_id="alice", current_state=state,
-            verb="look", target=None, args_str="",
+            character_id="alice",
+            current_state=state,
+            verb="look",
+            target=None,
+            args_str="",
         )
         for key in (
-            "character_id", "health_status", "inventory_with_physical_tags",
-            "scene_npc_states", "active_escalation_threads",
-            "other_player_footprints", "verb", "target", "args_str",
+            "character_id",
+            "health_status",
+            "inventory_with_physical_tags",
+            "scene_npc_states",
+            "active_escalation_threads",
+            "other_player_footprints",
+            "verb",
+            "target",
+            "args_str",
             "current_trope_directive",
         ):
             assert key in sections, f"missing key: {key}"
@@ -311,7 +320,10 @@ class TestBuildUserPromptSections:
     def test_target_defaults_to_placeholder(self):
         state = make_state()
         sections = build_user_prompt_sections(
-            character_id="alice", current_state=state,
-            verb="look", target=None, args_str="",
+            character_id="alice",
+            current_state=state,
+            verb="look",
+            target=None,
+            args_str="",
         )
         assert sections["target"] == "(nothing)"

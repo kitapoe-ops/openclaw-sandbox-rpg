@@ -141,7 +141,7 @@ def _test_db_connection() -> bool:
         # Convert asyncpg scheme to psycopg2 compatible scheme
         if db_url.startswith("postgresql+asyncpg://"):
             db_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
-        
+
         # Probe database with a short timeout (3 seconds) to prevent blocking
         conn = psycopg2.connect(db_url, connect_timeout=3)
         conn.close()
@@ -151,4 +151,3 @@ def _test_db_connection() -> bool:
         logger.debug(f"DB connection test failed: {e}")
         _db_reachable_cache = False
         return False
-

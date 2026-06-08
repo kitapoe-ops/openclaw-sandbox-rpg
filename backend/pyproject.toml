@@ -49,6 +49,8 @@ ignore = [
 # inside their body to break circular deps).
 "tests/*" = ["F401", "F811", "F841", "F821", "E402"]
 "__init__.py" = ["F401"]  # re-exports
+"main.py" = ["E402"]      # circular import resolution imports
+"app_with_memory.py" = ["E402"]
 
 [tool.ruff.format]
 # Use double quotes (PEP 8 + ruff default)

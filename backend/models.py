@@ -138,6 +138,7 @@ class SceneNpcState(Base):
     that reads can be a single indexed SELECT and writes are atomic
     on (scene_id, npc_id).
     """
+
     __tablename__ = "scene_npc_states"
 
     scene_id = Column(String(128), ForeignKey("scenes.id"), primary_key=True)

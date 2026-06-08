@@ -137,9 +137,7 @@ class ConnectionRegistry:
                 await ws.send_json(message)
                 sent += 1
             except Exception as e:
-                logger.warning(
-                    f"[Registry] Scene broadcast to {char_id} failed: {e}"
-                )
+                logger.warning(f"[Registry] Scene broadcast to {char_id} failed: {e}")
         return sent
 
     async def characters_in_scene(self, scene_id: str) -> list[str]:

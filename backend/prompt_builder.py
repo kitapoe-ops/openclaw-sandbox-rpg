@@ -336,12 +336,17 @@ class PromptBuilder:
     def _format_trope_section(self, current_state: SemanticState) -> str:
         """Format active tropes and their narrative directives/consequences."""
         active_threads = getattr(current_state, "active_threads", {}) or {}
-        active_ids = [tid for tid, data in active_threads.items() if data.get("status") in ("Active", "Evaded")]
+        active_ids = [
+            tid
+            for tid, data in active_threads.items()
+            if data.get("status") in ("Active", "Evaded")
+        ]
         if not active_ids:
             return "(無作用中故事套路)"
 
         # 載入 tropes
         from backend.trope_router import TropeRouter
+
         router = TropeRouter()
 
         lines = []
@@ -349,7 +354,7 @@ class PromptBuilder:
             tdata = active_threads[tid]
             status = tdata.get("status")
             escalation = tdata.get("escalation_level", 0)
-            
+
             trope_def = router.get_trope_by_id(tid)
             if not trope_def:
                 continue
@@ -373,12 +378,14 @@ class PromptBuilder:
                 lines.append("- 必須包含的元素：")
                 for i, elem in enumerate(mandatory_elements, 1):
                     lines.append(f"  {i}. {elem}")
-            
+
             if status == "Evaded" and escalation >= esc_threshold:
                 lines.append("偏航後果引爆：")
-                lines.append(f"- 警告：玩家多次逃避或偏離此套路，後果已發酵！你必須在 narrative 中強制呈現以下後果，並限制玩家的選項：{evade_conseq}。")
+                lines.append(
+                    f"- 警告：玩家多次逃避或偏離此套路，後果已發酵！你必須在 narrative 中強制呈現以下後果，並限制玩家的選項：{evade_conseq}。"
+                )
 
-            lines.append("") # 空行分隔
+            lines.append("")  # 空行分隔
 
         return "\n".join(lines).strip() if lines else "(無作用中故事套路)"
 

@@ -21,6 +21,7 @@ ANNOTATION = (
     "This phase's headline number above is preserved as shipped; full regression baseline is `pytest backend/tests/ -q`.\n"
 )
 
+
 def find_status_blockquote(lines):
     """Return index of the first non-empty blockquote that holds a status line.
 
@@ -34,12 +35,31 @@ def find_status_blockquote(lines):
             return None
         if s.startswith(">"):
             body = s.lstrip(">").strip()
-            if any(kw in body for kw in ("Status", "Ship", "tests", "test", "PASS", "pass", "regression", "shipped", "wiring")):
+            if any(
+                kw in body
+                for kw in (
+                    "Status",
+                    "Ship",
+                    "tests",
+                    "test",
+                    "PASS",
+                    "pass",
+                    "regression",
+                    "shipped",
+                    "wiring",
+                )
+            ):
                 return i
         # Fallback: `**Status:**` or `**??Status:**` style (no blockquote)
-        if s.startswith("**Status:") or s.startswith("**Status") or s.startswith("**??") and "Status" in s:
+        if (
+            s.startswith("**Status:")
+            or s.startswith("**Status")
+            or s.startswith("**??")
+            and "Status" in s
+        ):
             return i
     return None
+
 
 def find_insertion_point(lines, status_idx):
     """Given the start of the status block, find the end of the contiguous
@@ -72,6 +92,7 @@ def find_insertion_point(lines, status_idx):
         return i
     return len(lines)
 
+
 def process_file(path: Path) -> str:
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines(keepends=True)
@@ -90,6 +111,7 @@ def process_file(path: Path) -> str:
     path.write_text(new_text, encoding="utf-8")
     return f"annotated (inserted at line {insert_at+1})"
 
+
 def main():
     targets = sorted(DOCS.glob("PHASE_*_SUMMARY.md"))
     if not targets:
@@ -104,6 +126,7 @@ def main():
             print(f"  {p.name}: ERROR {e}", file=sys.stderr)
             return 2
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())

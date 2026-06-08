@@ -107,9 +107,7 @@ def _format_health_status(current_state: SemanticState) -> str:
     return " + ".join(tags[:2]) if len(tags) > 1 else tags[0]
 
 
-def _format_inventory_with_physical_tags(
-    current_state: SemanticState, world_db: Any = None
-) -> str:
+def _format_inventory_with_physical_tags(current_state: SemanticState, world_db: Any = None) -> str:
     """Render equipped items with their physical tags.
 
     HIDDEN 2026-06-08: the items/equipment system is disabled at the
@@ -124,10 +122,7 @@ def _format_inventory_with_physical_tags(
         A short placeholder + the physical-rules reminder, e.g.
         ``"(無裝備 — 系統已關閉。物理約束仍然適用: 不得捏造不存在的魔法效果或裝備或道具。"``
     """
-    return (
-        "(無裝備 — 系統已關閉。物理約束仍然適用: "
-        "不得捏造不存在的魔法效果或裝備或道具。)"
-    )
+    return "(無裝備 — 系統已關閉。物理約束仍然適用: " "不得捏造不存在的魔法效果或裝備或道具。)"
 
 
 def _format_scene_npc_states(scene_context: dict[str, Any] | None) -> str:
@@ -199,6 +194,7 @@ def _format_active_escalation_threads(current_state: SemanticState) -> str:
     # Lazy import to avoid circular import at module load
     try:
         from .trope_router import TropeRouter
+
         router = TropeRouter()
     except Exception:
         router = None
@@ -276,6 +272,7 @@ def _format_trope_directive(current_state: SemanticState) -> str:
         return "(無 trope directive)"
     try:
         from .trope_router import TropeRouter
+
         router = TropeRouter()
     except Exception:
         return "(trope router unavailable)"
@@ -369,7 +366,9 @@ def build_user_prompt_sections(
     return {
         "character_id": character_id,
         "health_status": _format_health_status(current_state),
-        "inventory_with_physical_tags": _format_inventory_with_physical_tags(current_state, world_db),
+        "inventory_with_physical_tags": _format_inventory_with_physical_tags(
+            current_state, world_db
+        ),
         "scene_npc_states": _format_scene_npc_states(scene_context),
         "active_escalation_threads": _format_active_escalation_threads(current_state),
         "other_player_footprints": _format_other_player_footprints(scene_context),

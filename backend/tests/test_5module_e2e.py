@@ -42,21 +42,23 @@ def make_processor_with_mock(mock_canned: str | None = None) -> ActionProcessor:
 
 
 # A canned response that includes all 4 choices + a valid state_mutations
-SAMPLE_5MODULE_RESPONSE = json.dumps({
-    "narrative": "你凝視遠方，感受到風中帶有陌生的味道。",
-    "state_mutations": {
-        "target": "alice",
-        "add_state": ["警覺"],
-        "remove_state": [],
-        "reason": "玩家進入警戒狀態",
-    },
-    "choices": [
-        {"direction": "combat", "vignette": "拔劍備戰"},
-        {"direction": "social", "vignette": "向神秘人打招呼"},
-        {"direction": "explore", "vignette": "悄悄繞路"},
-        {"direction": "creative", "vignette": "用繩子製作陷阱"},
-    ],
-})
+SAMPLE_5MODULE_RESPONSE = json.dumps(
+    {
+        "narrative": "你凝視遠方，感受到風中帶有陌生的味道。",
+        "state_mutations": {
+            "target": "alice",
+            "add_state": ["警覺"],
+            "remove_state": [],
+            "reason": "玩家進入警戒狀態",
+        },
+        "choices": [
+            {"direction": "combat", "vignette": "拔劍備戰"},
+            {"direction": "social", "vignette": "向神秘人打招呼"},
+            {"direction": "explore", "vignette": "悄悄繞路"},
+            {"direction": "creative", "vignette": "用繩子製作陷阱"},
+        ],
+    }
+)
 
 
 # --------------------------------------------------------------------------
@@ -74,8 +76,11 @@ class Test5ModulePromptStructure:
 
         state = SemanticState(character_id="alice", tags=["健康"])
         prompt = build_user_prompt(
-            character_id="alice", current_state=state,
-            verb="look", target=None, args_str="",
+            character_id="alice",
+            current_state=state,
+            verb="look",
+            target=None,
+            args_str="",
         )
 
         # All 5 module headers
@@ -88,8 +93,11 @@ class Test5ModulePromptStructure:
 
         state = SemanticState(character_id="bob", tags=["健康"])
         prompt = build_user_prompt(
-            character_id="bob", current_state=state,
-            verb="attack", target="goblin", args_str=" with weapon=sword",
+            character_id="bob",
+            current_state=state,
+            verb="attack",
+            target="goblin",
+            args_str=" with weapon=sword",
         )
 
         assert "Character: bob" in prompt
@@ -107,31 +115,37 @@ class TestValidateAndExtractChoices:
     """The action-processor helper that turns LLM output into UI choices."""
 
     def test_accepts_well_formed_choices(self):
-        choices = _validate_and_extract_choices([
-            {"direction": "combat", "vignette": "拔劍"},
-            {"direction": "social", "vignette": "對話"},
-            {"direction": "explore", "vignette": "探索"},
-            {"direction": "creative", "vignette": "製作"},
-        ])
+        choices = _validate_and_extract_choices(
+            [
+                {"direction": "combat", "vignette": "拔劍"},
+                {"direction": "social", "vignette": "對話"},
+                {"direction": "explore", "vignette": "探索"},
+                {"direction": "creative", "vignette": "製作"},
+            ]
+        )
         assert len(choices) == 4
         for c in choices:
             assert "direction" in c
             assert "vignette" in c
 
     def test_drops_unknown_direction(self):
-        choices = _validate_and_extract_choices([
-            {"direction": "combat", "vignette": "拔劍"},
-            {"direction": "fly", "vignette": "飛行"},  # not in allowed
-        ])
+        choices = _validate_and_extract_choices(
+            [
+                {"direction": "combat", "vignette": "拔劍"},
+                {"direction": "fly", "vignette": "飛行"},  # not in allowed
+            ]
+        )
         assert len(choices) == 1
         assert choices[0]["direction"] == "combat"
 
     def test_drops_empty_vignette(self):
-        choices = _validate_and_extract_choices([
-            {"direction": "combat", "vignette": ""},
-            {"direction": "social", "vignette": "   "},
-            {"direction": "explore", "vignette": "ok"},
-        ])
+        choices = _validate_and_extract_choices(
+            [
+                {"direction": "combat", "vignette": ""},
+                {"direction": "social", "vignette": "   "},
+                {"direction": "explore", "vignette": "ok"},
+            ]
+        )
         assert len(choices) == 1
         assert choices[0]["direction"] == "explore"
 
@@ -141,10 +155,9 @@ class TestValidateAndExtractChoices:
         assert _validate_and_extract_choices({}) == []
 
     def test_caps_at_four(self):
-        choices = _validate_and_extract_choices([
-            {"direction": "combat", "vignette": f"選項{i}描述"}
-            for i in range(10)
-        ])
+        choices = _validate_and_extract_choices(
+            [{"direction": "combat", "vignette": f"選項{i}描述"} for i in range(10)]
+        )
         assert len(choices) == 4
         # First 4 should be preserved (in order)
         for i, c in enumerate(choices):
@@ -154,11 +167,13 @@ class TestValidateAndExtractChoices:
         """Per Module 5: 'Risks ... 不可提供數字'. Soft-drop entries
         whose character-level digit ratio exceeds 50% (for vignettes
         of length >= 5 chars). Short tags like 'v1' are preserved."""
-        choices = _validate_and_extract_choices([
-            {"direction": "combat", "vignette": "v1"},  # short, kept
-            {"direction": "social", "vignette": "1234567890abcd"},  # 10/14 digits → dropped
-            {"direction": "explore", "vignette": "走向遠方"},
-        ])
+        choices = _validate_and_extract_choices(
+            [
+                {"direction": "combat", "vignette": "v1"},  # short, kept
+                {"direction": "social", "vignette": "1234567890abcd"},  # 10/14 digits → dropped
+                {"direction": "explore", "vignette": "走向遠方"},
+            ]
+        )
         directions = [c["direction"] for c in choices]
         assert "combat" in directions
         assert "explore" in directions
@@ -166,10 +181,12 @@ class TestValidateAndExtractChoices:
         assert "social" not in directions
 
     def test_preserves_order(self):
-        choices = _validate_and_extract_choices([
-            {"direction": "explore", "vignette": "探索"},
-            {"direction": "combat", "vignette": "戰鬥"},
-        ])
+        choices = _validate_and_extract_choices(
+            [
+                {"direction": "explore", "vignette": "探索"},
+                {"direction": "combat", "vignette": "戰鬥"},
+            ]
+        )
         assert choices[0]["direction"] == "explore"
         assert choices[1]["direction"] == "combat"
 
@@ -188,7 +205,9 @@ class TestMockLLMClientChoicesPassthrough:
     async def test_mock_default_canned_response_has_choices(self):
         mock = MockLLMClient()
         result = await mock.generate_with_state_contract(
-            system_prompt="...", user_message="...", current_state=[],
+            system_prompt="...",
+            user_message="...",
+            current_state=[],
         )
         assert "choices" in result
         assert isinstance(result["choices"], list)
@@ -197,17 +216,21 @@ class TestMockLLMClientChoicesPassthrough:
 
     @pytest.mark.asyncio
     async def test_mock_passes_through_custom_choices(self):
-        custom = json.dumps({
-            "narrative": "narr",
-            "state_mutations": None,
-            "choices": [
-                {"direction": "combat", "vignette": "v1"},
-                {"direction": "social", "vignette": "v2"},
-            ],
-        })
+        custom = json.dumps(
+            {
+                "narrative": "narr",
+                "state_mutations": None,
+                "choices": [
+                    {"direction": "combat", "vignette": "v1"},
+                    {"direction": "social", "vignette": "v2"},
+                ],
+            }
+        )
         mock = MockLLMClient(canned_response=custom)
         result = await mock.generate_with_state_contract(
-            system_prompt="", user_message="", current_state=[],
+            system_prompt="",
+            user_message="",
+            current_state=[],
         )
         assert len(result["choices"]) == 2
         assert result["choices"][0]["vignette"] == "v1"
@@ -217,7 +240,9 @@ class TestMockLLMClientChoicesPassthrough:
         no_choices = json.dumps({"narrative": "narr", "state_mutations": None})
         mock = MockLLMClient(canned_response=no_choices)
         result = await mock.generate_with_state_contract(
-            system_prompt="", user_message="", current_state=[],
+            system_prompt="",
+            user_message="",
+            current_state=[],
         )
         # No choices in canned → mock returns empty list (not None,
         # not missing key — keeps the action processor's contract simple)
@@ -226,19 +251,23 @@ class TestMockLLMClientChoicesPassthrough:
 
     @pytest.mark.asyncio
     async def test_mock_filters_non_dict_choices(self):
-        mixed = json.dumps({
-            "narrative": "narr",
-            "state_mutations": None,
-            "choices": [
-                {"direction": "combat", "vignette": "v1"},
-                "not a dict",
-                42,
-                None,
-            ],
-        })
+        mixed = json.dumps(
+            {
+                "narrative": "narr",
+                "state_mutations": None,
+                "choices": [
+                    {"direction": "combat", "vignette": "v1"},
+                    "not a dict",
+                    42,
+                    None,
+                ],
+            }
+        )
         mock = MockLLMClient(canned_response=mixed)
         result = await mock.generate_with_state_contract(
-            system_prompt="", user_message="", current_state=[],
+            system_prompt="",
+            user_message="",
+            current_state=[],
         )
         assert len(result["choices"]) == 1
         assert result["choices"][0]["direction"] == "combat"
@@ -272,7 +301,10 @@ class TestActionProcessorEndToEnd:
         assert len(result["choices"]) == 4
         for c in result["choices"]:
             assert c["direction"] in ALLOWED_VERBS or c["direction"] in (
-                "combat", "social", "explore", "creative"
+                "combat",
+                "social",
+                "explore",
+                "creative",
             )
 
     @pytest.mark.asyncio
@@ -280,15 +312,17 @@ class TestActionProcessorEndToEnd:
         """If the LLM returns a choice with an invalid direction,
         ``_validate_and_extract_choices`` drops it before it reaches
         the response."""
-        bad_canned = json.dumps({
-            "narrative": "narr",
-            "state_mutations": None,
-            "choices": [
-                {"direction": "combat", "vignette": "v1"},
-                {"direction": "fly", "vignette": "v2"},  # invalid
-                {"direction": "social", "vignette": "v3"},
-            ],
-        })
+        bad_canned = json.dumps(
+            {
+                "narrative": "narr",
+                "state_mutations": None,
+                "choices": [
+                    {"direction": "combat", "vignette": "v1"},
+                    {"direction": "fly", "vignette": "v2"},  # invalid
+                    {"direction": "social", "vignette": "v3"},
+                ],
+            }
+        )
         processor = make_processor_with_mock(bad_canned)
         result = await processor.process(character_id="alice", verb="look")
         assert len(result["choices"]) == 2
@@ -297,11 +331,13 @@ class TestActionProcessorEndToEnd:
 
     @pytest.mark.asyncio
     async def test_handle_empty_choices_returns_empty_list(self):
-        no_choices_canned = json.dumps({
-            "narrative": "你靜靜地站著。",
-            "state_mutations": None,
-            "choices": [],
-        })
+        no_choices_canned = json.dumps(
+            {
+                "narrative": "你靜靜地站著。",
+                "state_mutations": None,
+                "choices": [],
+            }
+        )
         processor = make_processor_with_mock(no_choices_canned)
         result = await processor.process(character_id="alice", verb="look")
         assert result["choices"] == []
@@ -316,7 +352,9 @@ class TestActionProcessorEndToEnd:
         captured: dict[str, str] = {}
 
         class CapturingMock(MockLLMClient):
-            async def generate_with_state_contract(self, system_prompt, user_message, current_state, max_retries=2):
+            async def generate_with_state_contract(
+                self, system_prompt, user_message, current_state, max_retries=2
+            ):
                 captured["user_message"] = user_message
                 captured["system_prompt"] = system_prompt
                 # Parse the canned_response and return as a success
@@ -330,7 +368,9 @@ class TestActionProcessorEndToEnd:
         mock = CapturingMock(canned_response=SAMPLE_5MODULE_RESPONSE)
         sm = SemanticStateMachine()
         processor = ActionProcessor(
-            llm_client=mock, state_machine=sm, prompt_builder=None,
+            llm_client=mock,
+            state_machine=sm,
+            prompt_builder=None,
         )
         await processor.process(character_id="alice", verb="attack", target="goblin")
 

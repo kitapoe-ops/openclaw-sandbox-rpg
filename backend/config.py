@@ -69,7 +69,9 @@ class Settings(BaseSettings):
     # Development
     debug: bool = False
     enable_api_docs: bool = True
-    enable_prompt_inspector: bool = False  # 2026-06-08: dev-only prompt viewer (read-only, no audit bypass)
+    enable_prompt_inspector: bool = (
+        False  # 2026-06-08: dev-only prompt viewer (read-only, no audit bypass)
+    )
 
     @property
     def database_url(self) -> str:

@@ -115,23 +115,21 @@ async def preview_prompt(
         "action_context_section": builder._format_action_context({}),
     }
 
-    system_prompt = (
-        PromptBuilder.SYSTEM_PROMPT_TEMPLATE
-        .replace("# 角色當前裝備與物理約束\n\n", "")
-        .format(
-            state_section=sections["state_section"],
-            equipment_section=sections["equipment_section"],
-            trope_section=sections["trope_section"],
-            memory_section="(memory_section — populated async; not rendered in preview)",
-            action_context_section=sections["action_context_section"],
-        )
+    system_prompt = PromptBuilder.SYSTEM_PROMPT_TEMPLATE.replace(
+        "# 角色當前裝備與物理約束\n\n", ""
+    ).format(
+        state_section=sections["state_section"],
+        equipment_section=sections["equipment_section"],
+        trope_section=sections["trope_section"],
+        memory_section="(memory_section — populated async; not rendered in preview)",
+        action_context_section=sections["action_context_section"],
     )
 
     template_constant_keys = [
         name
-        for _, name, _, _ in __import__("string").Formatter().parse(
-            PromptBuilder.SYSTEM_PROMPT_TEMPLATE
-        )
+        for _, name, _, _ in __import__("string")
+        .Formatter()
+        .parse(PromptBuilder.SYSTEM_PROMPT_TEMPLATE)
         if name
     ]
 
@@ -146,12 +144,14 @@ async def preview_prompt(
         "summary": "(preview — no DB read)",
         "location_tag": "preview",
         "npcs": [
-            {"npc_id": "preview-npc-1", "name": "PreviewNPC",
-             "status": "neutral", "location": "preview"}
+            {
+                "npc_id": "preview-npc-1",
+                "name": "PreviewNPC",
+                "status": "neutral",
+                "location": "preview",
+            }
         ],
-        "footprints": [
-            {"marker": "(preview footprint)", "actor": "preview-actor", "turn": 0}
-        ],
+        "footprints": [{"marker": "(preview footprint)", "actor": "preview-actor", "turn": 0}],
     }
     user_prompt_sections = build_user_prompt_sections(
         character_id=character_id,

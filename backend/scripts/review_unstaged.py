@@ -23,7 +23,9 @@ FILES = [
 
 
 def run(cmd):
-    return subprocess.check_output(cmd, cwd=REPO, shell=True, encoding="utf-8", errors="replace").strip()
+    return subprocess.check_output(
+        cmd, cwd=REPO, shell=True, encoding="utf-8", errors="replace"
+    ).strip()
 
 
 def stat(f):

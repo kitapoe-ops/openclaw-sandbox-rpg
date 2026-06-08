@@ -53,9 +53,6 @@ from .demo_mode import is_demo_mode
 
 
 # The Phase C2 router (also frozen).
-from .memory_palace_integration_endpoint import (
-    router as memory_router,
-)
 from .scenes_demo import DEMO_STARTER, get_demo_character
 
 logger = logging.getLogger(__name__)
@@ -138,7 +135,6 @@ async def process_action_endpoint(
 
 
 # _e1_router inclusion is now managed by backend/main.py
-
 
 
 # ============================================
@@ -248,7 +244,6 @@ async def list_characters() -> list[dict[str, Any]]:
 # _d4_list_router inclusion is now managed by backend/main.py
 
 
-
 # ============================================
 # E6a: WebSocket fan-out router for 1-4 player multiplayer
 # ============================================
@@ -345,6 +340,7 @@ async def http_multiplayer_health() -> dict[str, Any]:
 
 
 # _e6a_router and multiplayer_ws inclusion are now managed by backend/main.py
+
 
 async def multiplayer_ws(
     websocket: WebSocket,
@@ -630,7 +626,6 @@ async def http_scene_registry_health() -> dict[str, Any]:
 # _e6b_router inclusion is now managed by backend/main.py
 
 
-
 # ============================================
 # Startup banner — log all wired routes
 # ============================================
@@ -670,4 +665,3 @@ _log_wired_routes(app)
 
 
 __all__ = ["app"]
-

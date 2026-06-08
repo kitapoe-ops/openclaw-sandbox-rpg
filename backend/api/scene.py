@@ -5,7 +5,6 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from sqlalchemy import func
 
 from ..demo_mode import is_demo_mode
 from ..scenes_demo import DEMO_SCENE, get_demo_scene
@@ -38,11 +37,10 @@ async def _current_round_from_db_async(character_id: str) -> int:
     try:
         from ..db import engine
         from sqlalchemy import text as _sql_text
+
         async with engine.begin() as conn:
             r = await conn.execute(
-                _sql_text(
-                    "SELECT COUNT(*) FROM action_history WHERE character_id = :cid"
-                ),
+                _sql_text("SELECT COUNT(*) FROM action_history WHERE character_id = :cid"),
                 {"cid": character_id},
             )
             count = r.scalar() or 0
@@ -97,13 +95,13 @@ async def get_current_scene(character_id: str) -> dict[str, Any]:
 
             # Query the latest COMPLETED action history to restore the latest narrative, choices, and state changes
             from ..models import ActionHistory, ExecutionStatus
-            from sqlalchemy import desc
+            from sqlalchemy import desc, select
 
             stmt_history = (
                 select(ActionHistory)
                 .where(
                     ActionHistory.character_id == character_id,
-                    ActionHistory.execution_status == ExecutionStatus.COMPLETED
+                    ActionHistory.execution_status == ExecutionStatus.COMPLETED,
                 )
                 .order_by(desc(ActionHistory.created_at))
                 .limit(1)

@@ -87,9 +87,9 @@ async def test_root_returns_spa_bootstrap(client):
         "Did you forget to build frontend/dist/?"
     )
     body = resp.text
-    assert "<!doctype html>" in body.lower() or "<html" in body.lower(), (
-        f"GET / body doesn't look like HTML. First 200 chars: {body[:200]}"
-    )
+    assert (
+        "<!doctype html>" in body.lower() or "<html" in body.lower()
+    ), f"GET / body doesn't look like HTML. First 200 chars: {body[:200]}"
     # The SPA includes the Vue entry point
     assert "/assets/" in body, "GET / doesn't reference /assets/ (Vue bundle missing)"
 
@@ -109,9 +109,9 @@ async def test_api_world_list(client):
     # Worlds list is non-empty (demo or seeded DB) — otherwise the
     # SPA home page will be empty and the user sees nothing.
     if resp.status_code == 200:
-        assert len(body["worlds"]) >= 1, (
-            f"Expected at least 1 world (demo YAML or DB seed). Got: {body['worlds']}"
-        )
+        assert (
+            len(body["worlds"]) >= 1
+        ), f"Expected at least 1 world (demo YAML or DB seed). Got: {body['worlds']}"
 
 
 @pytest.mark.asyncio
@@ -122,6 +122,7 @@ async def test_api_character_unknown_returns_404_not_demo(client):
     # a pool of connections that can return stale or unhealthy ones
     # when reused across tests in the same session.
     from backend.db import engine
+
     resp = await client.get("/api/character/char_does_not_exist_xyz")
     assert resp.status_code == 404, (
         f"Expected 404 for unknown character, got {resp.status_code}. "
@@ -131,9 +132,9 @@ async def test_api_character_unknown_returns_404_not_demo(client):
     # Make sure response body doesn't contain demo mode marker
     body = resp.json()
     body_str = str(body).lower()
-    assert "mode" not in body or "demo" not in body_str, (
-        f"404 response must not advertise 'demo' mode. Got: {body}"
-    )
+    assert (
+        "mode" not in body or "demo" not in body_str
+    ), f"404 response must not advertise 'demo' mode. Got: {body}"
 
 
 # ============================================================
@@ -144,12 +145,11 @@ async def test_api_character_unknown_returns_404_not_demo(client):
 def test_frontend_dist_exists():
     """frontend/dist/ must be built (npm run build) before deploy."""
     assert FRONTEND_DIST.exists(), (
-        f"frontend/dist/ not found at {FRONTEND_DIST}. "
-        "Run `cd frontend && npm run build` first."
+        f"frontend/dist/ not found at {FRONTEND_DIST}. " "Run `cd frontend && npm run build` first."
     )
-    assert (FRONTEND_DIST / "index.html").exists(), (
-        "frontend/dist/index.html missing — Vite build incomplete"
-    )
+    assert (
+        FRONTEND_DIST / "index.html"
+    ).exists(), "frontend/dist/index.html missing — Vite build incomplete"
 
 
 def test_frontend_dist_has_no_demo_html():
@@ -159,13 +159,10 @@ def test_frontend_dist_has_no_demo_html():
     # The only acceptable match is a path component containing
     # 'assets' or 'node_modules' subdirs (none should exist in dist).
     # Filter false positives:
-    real_demo_files = [
-        p for p in demo_files
-        if p.is_file() and "demo" in p.name.lower()
-    ]
-    assert len(real_demo_files) == 0, (
-        f"Production frontend must not contain demo files. Found: {real_demo_files}"
-    )
+    real_demo_files = [p for p in demo_files if p.is_file() and "demo" in p.name.lower()]
+    assert (
+        len(real_demo_files) == 0
+    ), f"Production frontend must not contain demo files. Found: {real_demo_files}"
 
 
 # ============================================================

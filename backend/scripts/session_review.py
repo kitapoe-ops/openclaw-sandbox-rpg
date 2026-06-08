@@ -4,7 +4,6 @@
 Usage: python backend/scripts/session_review.py
 """
 import subprocess
-import sys
 
 REPO = r"C:\Users\kitap\.openclaw\workspace\sandbox-rpg-tmp"
 
@@ -23,21 +22,23 @@ def run(cmd):
 
 def stat(commit):
     out = run(f'git show --stat --format="" {commit}')
-    return [l.strip() for l in out.splitlines() if l.strip() and "|" in l]
+    return [line.strip() for line in out.splitlines() if line.strip() and "|" in line]
 
 
 def files_changed(commit):
     out = run(f'git show --name-only --format="" {commit}')
-    return [l.strip() for l in out.splitlines() if l.strip()]
+    return [line.strip() for line in out.splitlines() if line.strip()]
 
 
 def unstaged():
     out = run("git status --short")
-    return [l for l in out.splitlines() if l.strip()]
+    return [line for line in out.splitlines() if line.strip()]
 
 
 def test_count():
-    out = run('.venv\\Scripts\\python.exe -m pytest backend/tests/ -q --no-header -p no:cacheprovider 2>&1 | findstr /R "passed skipped failed"')
+    out = run(
+        '.venv\\Scripts\\python.exe -m pytest backend/tests/ -q --no-header -p no:cacheprovider 2>&1 | findstr /R "passed skipped failed"'
+    )
     return out.strip()
 
 
@@ -61,7 +62,7 @@ print("=" * 80)
 print("UNSTAGED FILES (NOT in this session's commits)")
 print("=" * 80)
 un = unstaged()
-unstaged_files = [l[3:] for l in un if l.startswith(" M") or l.startswith("??")]
+unstaged_files = [line[3:] for line in un if line.startswith(" M") or line.startswith("??")]
 for f in unstaged_files:
     print(f"  {f}")
 print()

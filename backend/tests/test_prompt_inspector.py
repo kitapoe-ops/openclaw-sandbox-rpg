@@ -17,6 +17,7 @@ def _build_isolated_app():
     """
     from fastapi import FastAPI
     from backend.api.prompt_inspector import router
+
     app = FastAPI()
     app.include_router(router)
     return app
@@ -137,9 +138,15 @@ class TestPromptInspectorPreviewContent:
             assert f"### [模塊 {i}：" in up["rendered"]
         # The section breakdown must include the expected keys
         for key in (
-            "character_id", "health_status", "inventory_with_physical_tags",
-            "scene_npc_states", "active_escalation_threads",
-            "other_player_footprints", "verb", "target", "args_str",
+            "character_id",
+            "health_status",
+            "inventory_with_physical_tags",
+            "scene_npc_states",
+            "active_escalation_threads",
+            "other_player_footprints",
+            "verb",
+            "target",
+            "args_str",
             "current_trope_directive",
         ):
             assert key in up["sections"]

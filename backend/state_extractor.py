@@ -54,7 +54,6 @@ Key design choices (Phase L2-I/Phase C-6):
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
@@ -136,8 +135,7 @@ class StateExtractor:
         timeout: float = 30.0,
     ) -> None:
         self.base_url = (
-            base_url
-            or os.getenv("LLM_LOCAL_BASE_URL", "http://127.0.0.1:1234/v1")
+            base_url or os.getenv("LLM_LOCAL_BASE_URL", "http://127.0.0.1:1234/v1")
         ).rstrip("/")
         self.model = model or os.getenv("LLM_LOCAL_MODEL", "gemma-3-12b-it")
         self.timeout = timeout
@@ -184,7 +182,7 @@ class StateExtractor:
             "1. 必須基於敘事中「已經發生且明確」的物理改變。不作任何主觀猜測、不計算潛在意圖。\n"
             "2. 角色「感覺」、「似乎」、「打算」不構成狀態改變。\n"
             "3. 如果沒有發生任何實質改變，必須回傳空的 JSON 物件，即所有的 changes 為空列表且 location_change 為 null：\n"
-            "   {\"npc_status_changes\": [], \"inventory_changes\": [], \"character_state_changes\": [], \"location_change\": null}\n"
+            '   {"npc_status_changes": [], "inventory_changes": [], "character_state_changes": [], "location_change": null}\n'
             "4. 任何改變必須附帶 `evidence`，且必須 100% verbatim (一字不漏) 引用敘事中的原文。\n"
             "5. NPC id 用小寫 snake_case (例如 'npc_halia_thornton')。\n"
             "6. location_change 必須是具體的 scene_id (例如 'loc_phandalin_tresendar')，絕對不能填寫敘事中的中文文字！如果敘事中沒有明確指出場景 ID，請填寫 null。\n"
@@ -194,30 +192,30 @@ class StateExtractor:
             "\n"
             "## JSON Schema 結構要求\n"
             "{\n"
-            "  \"npc_status_changes\": [\n"
+            '  "npc_status_changes": [\n'
             "    {\n"
-            "      \"npc_id\": \"string (NPC 的 canonical ID)\",\n"
+            '      "npc_id": "string (NPC 的 canonical ID)",\n'
             "      \"new_status\": \"string ('alive' | 'dead' | 'fled' | 'unconscious' | 'hostile' | 'neutral' | 'friendly' | 'absent')\",\n"
-            "      \"evidence\": \"string (一字不漏引用的敘事原文)\"\n"
+            '      "evidence": "string (一字不漏引用的敘事原文)"\n'
             "    }\n"
             "  ],\n"
-            "  \"inventory_changes\": [\n"
+            '  "inventory_changes": [\n'
             "    {\n"
             "      \"action\": \"string ('add' | 'remove')\",\n"
-            "      \"item_id\": \"string (Canonical item id)\",\n"
-            "      \"quantity\": \"integer (預設為 1)\",\n"
-            "      \"evidence\": \"string (一字不漏引用的敘事原文)\"\n"
+            '      "item_id": "string (Canonical item id)",\n'
+            '      "quantity": "integer (預設為 1)",\n'
+            '      "evidence": "string (一字不漏引用的敘事原文)"\n'
             "    }\n"
             "  ],\n"
-            "  \"character_state_changes\": [\n"
+            '  "character_state_changes": [\n'
             "    {\n"
             "      \"stamina_level\": \"string | null (例如 'fresh' | 'exhausted')\",\n"
             "      \"health_status\": \"string | null (例如 'healthy' | 'wounded' | 'critical')\",\n"
             "      \"morale_level\": \"string | null (例如 'calm' | 'panicked')\",\n"
-            "      \"evidence\": \"string (一字不漏引用的敘事原文)\"\n"
+            '      "evidence": "string (一字不漏引用的敘事原文)"\n'
             "    }\n"
             "  ],\n"
-            "  \"location_change\": \"string | null (Canonical scene_id)\"\n"
+            '  "location_change": "string | null (Canonical scene_id)"\n'
             "}\n"
             "\n"
             "## Few-shot 範例\n"
@@ -226,16 +224,16 @@ class StateExtractor:
             "Output:\n"
             "```json\n"
             "{\n"
-            "  \"npc_status_changes\": [\n"
+            '  "npc_status_changes": [\n'
             "    {\n"
-            "      \"npc_id\": \"npc_harbin_west\",\n"
-            "      \"new_status\": \"dead\",\n"
-            "      \"evidence\": \"你用鐵劍刺穿了 Harbin 的胸膛，他倒在地上不再動彈\"\n"
+            '      "npc_id": "npc_harbin_west",\n'
+            '      "new_status": "dead",\n'
+            '      "evidence": "你用鐵劍刺穿了 Harbin 的胸膛，他倒在地上不再動彈"\n'
             "    }\n"
             "  ],\n"
-            "  \"inventory_changes\": [],\n"
-            "  \"character_state_changes\": [],\n"
-            "  \"location_change\": null\n"
+            '  "inventory_changes": [],\n'
+            '  "character_state_changes": [],\n'
+            '  "location_change": null\n'
             "}\n"
             "```\n"
             "\n"
@@ -243,23 +241,23 @@ class StateExtractor:
             "Output:\n"
             "```json\n"
             "{\n"
-            "  \"npc_status_changes\": [],\n"
-            "  \"inventory_changes\": [\n"
+            '  "npc_status_changes": [],\n'
+            '  "inventory_changes": [\n'
             "    {\n"
-            "      \"action\": \"add\",\n"
-            "      \"item_id\": \"small_pouch\",\n"
-            "      \"quantity\": 1,\n"
-            "      \"evidence\": \"Sister Garaele 微笑著遞給你一個小袋子\"\n"
+            '      "action": "add",\n'
+            '      "item_id": "small_pouch",\n'
+            '      "quantity": 1,\n'
+            '      "evidence": "Sister Garaele 微笑著遞給你一個小袋子"\n'
             "    },\n"
             "    {\n"
-            "      \"action\": \"add\",\n"
-            "      \"item_id\": \"silver_coin\",\n"
-            "      \"quantity\": 3,\n"
-            "      \"evidence\": \"裡面裝著三枚銀幣\"\n"
+            '      "action": "add",\n'
+            '      "item_id": "silver_coin",\n'
+            '      "quantity": 3,\n'
+            '      "evidence": "裡面裝著三枚銀幣"\n'
             "    }\n"
             "  ],\n"
-            "  \"character_state_changes\": [],\n"
-            "  \"location_change\": null\n"
+            '  "character_state_changes": [],\n'
+            '  "location_change": null\n'
             "}\n"
             "```\n"
             "\n"
@@ -267,10 +265,10 @@ class StateExtractor:
             "Output:\n"
             "```json\n"
             "{\n"
-            "  \"npc_status_changes\": [],\n"
-            "  \"inventory_changes\": [],\n"
-            "  \"character_state_changes\": [],\n"
-            "  \"location_change\": null\n"
+            '  "npc_status_changes": [],\n'
+            '  "inventory_changes": [],\n'
+            '  "character_state_changes": [],\n'
+            '  "location_change": null\n'
             "}\n"
             "```\n"
             "\n"
@@ -278,10 +276,10 @@ class StateExtractor:
             "Output:\n"
             "```json\n"
             "{\n"
-            "  \"npc_status_changes\": [],\n"
-            "  \"inventory_changes\": [],\n"
-            "  \"character_state_changes\": [],\n"
-            "  \"location_change\": null\n"
+            '  "npc_status_changes": [],\n'
+            '  "inventory_changes": [],\n'
+            '  "character_state_changes": [],\n'
+            '  "location_change": null\n'
             "}\n"
             "```\n"
             "\n"
@@ -289,24 +287,18 @@ class StateExtractor:
             "Output:\n"
             "```json\n"
             "{\n"
-            "  \"npc_status_changes\": [],\n"
-            "  \"inventory_changes\": [],\n"
-            "  \"character_state_changes\": [],\n"
-            "  \"location_change\": \"loc_phandalin_tresendar\"\n"
+            '  "npc_status_changes": [],\n'
+            '  "inventory_changes": [],\n'
+            '  "character_state_changes": [],\n'
+            '  "location_change": "loc_phandalin_tresendar"\n'
             "}\n"
             "```\n"
         )
 
         # User message: per-round context
-        current_npc_summary = json.dumps(
-            current_npc_states, ensure_ascii=False, default=str
-        )
-        choice_summary = json.dumps(
-            player_choice, ensure_ascii=False, default=str
-        )
-        char_summary = json.dumps(
-            current_character_state, ensure_ascii=False, default=str
-        )
+        current_npc_summary = json.dumps(current_npc_states, ensure_ascii=False, default=str)
+        choice_summary = json.dumps(player_choice, ensure_ascii=False, default=str)
+        char_summary = json.dumps(current_character_state, ensure_ascii=False, default=str)
         user_message = (
             f"### [Current State]\n"
             f"當前角色狀態: {char_summary}\n"
@@ -331,7 +323,9 @@ class StateExtractor:
                     "top_p": 1,
                     "top_k": 1,  # Gemma supports top_k=1 for hard greedy
                     "max_tokens": 1200,  # 增加到 1200 因中文字符 count 高
-                    "stop": ["<end_of_turn>"],  # Remove "```" from stop tokens to allow markdown code fence output
+                    "stop": [
+                        "<end_of_turn>"
+                    ],  # Remove "```" from stop tokens to allow markdown code fence output
                     "seed": 42,
                 },
             )
@@ -353,13 +347,14 @@ class StateExtractor:
 
         # Defensively parse the JSON.
         import re
+
         parsed: dict[str, Any] | None = None
-        
+
         # Split CoT (Reasoning) process to avoid interference from JSON snippets inside <think>
         main_content = text
         if "</think>" in text:
             main_content = text.split("</think>")[-1].strip()
-        
+
         # 1. Search for ```json ... ``` code fence block (allowing unclosed fences)
         json_match = re.search(r"```json\s*(.*?)\s*(?:```|$)", main_content, re.DOTALL)
         if json_match:
@@ -367,7 +362,7 @@ class StateExtractor:
                 parsed = json.loads(json_match.group(1).strip())
             except json.JSONDecodeError:
                 pass
-        
+
         # 2. Fallback: Search for the first { and the last } in the cleaned main_content
         if parsed is None:
             fallback_match = re.search(r"(\{.*\})", main_content, re.DOTALL)
@@ -409,18 +404,14 @@ class StateExtractor:
                             break
 
         if parsed is None:
-            logger.warning(
-                f"[StateExtractor] Could not parse JSON from LLM: {text[:200]}"
-            )
+            logger.warning(f"[StateExtractor] Could not parse JSON from LLM: {text[:200]}")
             return StateMutation()
 
         # Validate via Pydantic
         try:
             return StateMutation.model_validate(parsed)
         except ValidationError as e:
-            logger.warning(
-                f"[StateExtractor] Pydantic validation failed: {e}"
-            )
+            logger.warning(f"[StateExtractor] Pydantic validation failed: {e}")
             # Best-effort: try to salvage NPC status changes only
             try:
                 salvaged = {"npc_status_changes": parsed.get("npc_status_changes", [])}

@@ -25,9 +25,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.dialects.postgresql import JSONB
 
+
 @compiles(JSONB, "sqlite")
 def compile_jsonb_sqlite(element, compiler, **kw):
     return "TEXT"
+
 
 from backend.db import Base
 from backend.models import CharacterState, World, Scene
@@ -37,20 +39,20 @@ from backend.models import CharacterState, World, Scene
 async def db_session():
     """Yield an AsyncSession bound to an in-memory SQLite database with initialized schema."""
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
-    
+
     # Create tables defined in models.py
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        
+
     sessionmaker = async_sessionmaker(
         bind=engine,
         class_=AsyncSession,
         expire_on_commit=False,
     )
-    
+
     async with sessionmaker() as session:
         yield session
-        
+
     await engine.dispose()
 
 
@@ -58,11 +60,7 @@ async def db_session():
 async def setup_world_and_scene(db_session: AsyncSession):
     """Seed a dummy world and scene required as foreign keys for character_states."""
     world = World(
-        id="test_world",
-        name="Test Forgotten Realms",
-        version="1.0",
-        config={},
-        is_active=True
+        id="test_world", name="Test Forgotten Realms", version="1.0", config={}, is_active=True
     )
     scene = Scene(
         id="test_scene",
@@ -72,7 +70,7 @@ async def setup_world_and_scene(db_session: AsyncSession):
         location_tag="tavern",
         environment_tags=[],
         active_npcs=[],
-        atmosphere="peaceful"
+        atmosphere="peaceful",
     )
     db_session.add(world)
     db_session.add(scene)
@@ -82,10 +80,12 @@ async def setup_world_and_scene(db_session: AsyncSession):
 
 @pytest.mark.asyncio
 class TestActiveThreadsColumn:
-    async def test_active_threads_default_value(self, db_session: AsyncSession, setup_world_and_scene):
+    async def test_active_threads_default_value(
+        self, db_session: AsyncSession, setup_world_and_scene
+    ):
         """Verifies that active_threads defaults to an empty dictionary ({}) when not specified."""
         world_id, scene_id = setup_world_and_scene
-        
+
         char = CharacterState(
             character_id="char_player_default_threads",
             name="Default Hero",
@@ -93,34 +93,34 @@ class TestActiveThreadsColumn:
             current_scene_id=scene_id,
             semantic_profile={"health": "healthy", "stamina": "full", "morale": "high"},
             is_npc_mode=False,
-            is_alive=True
+            is_alive=True,
         )
         db_session.add(char)
         await db_session.commit()
-        
+
         # Reload character from database
-        stmt = select(CharacterState).where(CharacterState.character_id == "char_player_default_threads")
+        stmt = select(CharacterState).where(
+            CharacterState.character_id == "char_player_default_threads"
+        )
         result = await db_session.execute(stmt)
         loaded_char = result.scalar_one()
-        
+
         assert loaded_char.active_threads == {}
         assert isinstance(loaded_char.active_threads, dict)
 
     async def test_active_threads_read_write(self, db_session: AsyncSession, setup_world_and_scene):
         """Verifies that active_threads can store, persist and reload structured trope seed data."""
         world_id, scene_id = setup_world_and_scene
-        
+
         trope_data = {
             "trope_scapegoat_01": {
                 "status": "Evaded",
                 "escalation_level": 3,
                 "seeded_round": 1,
-                "meta": {
-                    "evade_consequence": "通緝令已發酵，賞金獵人正在追蹤"
-                }
+                "meta": {"evade_consequence": "通緝令已發酵，賞金獵人正在追蹤"},
             }
         }
-        
+
         char = CharacterState(
             character_id="char_player_with_threads",
             name="Karma Hero",
@@ -129,20 +129,22 @@ class TestActiveThreadsColumn:
             semantic_profile={"health": "healthy"},
             is_npc_mode=False,
             is_alive=True,
-            active_threads=trope_data
+            active_threads=trope_data,
         )
         db_session.add(char)
         await db_session.commit()
-        
+
         # Reload character from database
-        stmt = select(CharacterState).where(CharacterState.character_id == "char_player_with_threads")
+        stmt = select(CharacterState).where(
+            CharacterState.character_id == "char_player_with_threads"
+        )
         result = await db_session.execute(stmt)
         loaded_char = result.scalar_one()
-        
+
         assert loaded_char.active_threads == trope_data
         assert loaded_char.active_threads["trope_scapegoat_01"]["status"] == "Evaded"
         assert loaded_char.active_threads["trope_scapegoat_01"]["escalation_level"] == 3
-        
+
         # Test updating the existing active_threads dict
         # In SQLAlchemy, changing a dict in-place might require flag_modified
         # or overwriting the dict field to trigger updates. Overwriting is safest.
@@ -150,7 +152,7 @@ class TestActiveThreadsColumn:
         updated_trope["trope_scapegoat_01"]["escalation_level"] = 4
         loaded_char.active_threads = updated_trope
         await db_session.commit()
-        
+
         # Reload again to verify update persisted
         result = await db_session.execute(stmt)
         reloaded_char = result.scalar_one()
