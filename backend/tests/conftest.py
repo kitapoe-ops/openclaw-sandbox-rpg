@@ -33,7 +33,7 @@ if not dist_dir.exists():
         "    <div id='app'></div>\n"
         "  </body>\n"
         "</html>",
-        encoding="utf-8"
+        encoding="utf-8",
     )
     _MOCKED_DIST_DIR = True
     print(f"\n[conftest] Top-level: Created mock frontend/dist directory at: {dist_dir}")
@@ -47,24 +47,24 @@ def pytest_sessionstart(session):
     """
     # 2. Pre-initialize and seed DB using a temporary engine
     import asyncio
-    
+
     async def init_and_seed_db():
         from sqlalchemy import text
         from sqlalchemy.ext.asyncio import create_async_engine
         from backend.db import _build_database_url, Base
         from backend.scenes_demo import DEMO_SCENE, DEMO_STARTER
-        
+
         # Import models so Base metadata has all table definitions registered
         import backend.models  # noqa: F401
-        
+
         db_url = _build_database_url()
         temp_engine = create_async_engine(db_url)
-        
+
         try:
             async with temp_engine.begin() as conn:
                 # Create all tables
                 await conn.run_sync(Base.metadata.create_all)
-                
+
                 # Seed World
                 await conn.execute(
                     text(
@@ -78,9 +78,9 @@ def pytest_sessionstart(session):
                         "version": "D&D_5e_SRD_v5.1.0",
                         "config": json.dumps({"yaml_path": "worlds/dnd_5e_forgotten_realms.yaml"}),
                         "is_active": True,
-                    }
+                    },
                 )
-                
+
                 # Seed Scene
                 await conn.execute(
                     text(
@@ -94,21 +94,25 @@ def pytest_sessionstart(session):
                         "name": "凡達林鎮 (Phandalin Town)",
                         "description": DEMO_SCENE["scene_narrative"],
                         "location_tag": "settlement",
-                        "environment_tags": json.dumps(["outdoor", "settlement", "town", "frontier"]),
-                        "active_npcs": json.dumps([
-                            "npc_gundren",
-                            "npc_halia",
-                            "npc_sister_garaele",
-                            "npc_redbrand_ringleader",
-                            "npc_injured_traveler_01",
-                        ]),
+                        "environment_tags": json.dumps(
+                            ["outdoor", "settlement", "town", "frontier"]
+                        ),
+                        "active_npcs": json.dumps(
+                            [
+                                "npc_gundren",
+                                "npc_halia",
+                                "npc_sister_garaele",
+                                "npc_redbrand_ringleader",
+                                "npc_injured_traveler_01",
+                            ]
+                        ),
                         "atmosphere": "tense",
                         "is_dynamic": False,
-                    }
+                    },
                 )
         finally:
             await temp_engine.dispose()
-            
+
     print("[conftest] pytest_sessionstart: Initializing and seeding database...")
     try:
         # Use asyncio.run safely since no event loop is running yet during sessionstart
@@ -118,19 +122,21 @@ def pytest_sessionstart(session):
         print(f"[conftest] pytest_sessionstart: Database seeding failed: {e}")
         raise e
 
+
 def pytest_sessionfinish(session, exitstatus):
     """
     Hook called after all tests have completed. Clean up the mock frontend.
     """
     global _MOCKED_DIST_DIR
     dist_dir = _REPO_ROOT / "frontend" / "dist"
-    
+
     if _MOCKED_DIST_DIR and dist_dir.exists():
         try:
             shutil.rmtree(dist_dir)
             print("\n[conftest] pytest_sessionfinish: Cleaned up mock frontend/dist directory.")
         except Exception as e:
             print(f"\n[conftest] pytest_sessionfinish: Failed to clean up mock frontend/dist: {e}")
+
 
 @pytest_asyncio.fixture(autouse=True)
 async def autouse_db_cleanup():
@@ -140,8 +146,9 @@ async def autouse_db_cleanup():
     into subsequent tests running on different event loops.
     """
     yield
-    
+
     from backend.db import engine
+
     try:
         await engine.dispose()
     except Exception as e:
