@@ -207,6 +207,8 @@ def test_production_guard_rejects_demo_mode():
         [sys.executable, "-c", code],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=15,
         cwd=str(REPO_ROOT),
     )

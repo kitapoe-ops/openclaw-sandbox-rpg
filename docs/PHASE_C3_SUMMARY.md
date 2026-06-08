@@ -3,6 +3,7 @@
 > **完成時間：** 2026-06-05 12:01 GMT+8
 > **狀態：** ✅ Memory router wired into FastAPI app, demo cron job live, **161/161 tests pass** (154 prior + 7 new C3 tests), zero regression, zero `main.py` mutation
 > **範疇：** Phase C "Connect the dots" — combine the Phase B2 scheduler, Phase C2 memory router, and Wave 2 main app into a single running demo
+> **Current state (2026-06-08):** Test suite = **329 passed, 1 skipped, 0 fail (~10s)**. This phase's headline number above is preserved as shipped; full regression baseline is `pytest backend/tests/ -q`.
 
 ---
 

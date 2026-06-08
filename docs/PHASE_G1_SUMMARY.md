@@ -3,6 +3,7 @@
 > **Status:** ✅ Shipped. **322/322 tests passing** (no net change in test count, but G1 added 5 retry tests + main agent fixed 2 E1 tests that broke from API signature change). 0 regression.
 > **Date:** 2026-06-05
 > **Subagent:** Phase G1 implementation (5m54s, but **failed: completed** status — disk work 100% preserved by M2 hand-off; main agent fixed 2 integration bugs and wrote summary)
+> **Current state (2026-06-08):** Test suite = **329 passed, 1 skipped, 0 fail (~10s)**. This phase's headline number above is preserved as shipped; full regression baseline is `pytest backend/tests/ -q`.
 
 ---
 

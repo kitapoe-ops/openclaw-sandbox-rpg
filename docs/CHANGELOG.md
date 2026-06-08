@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Hidden (2026-06-08)
+- **Items / equipment system hidden.** `_format_equipment_section` in `backend/prompt_builder.py` now always returns `""`; the corresponding template header (`# 角色當前裝備與物理約束`) is stripped at format time. `<Equipment>` and `<Inventory>` mounts in `frontend/src/views/GameView.vue` are commented out. `TestEquipmentConstraints` (3 tests) updated to assert the section is empty. To re-enable: restore the disabled code blocks — original body preserved as comments.
+- **Attitude / 態度選擇 system hidden.** Attitude section in `frontend/src/components/CharacterStatus.vue` (passive display) and the attitude accordion in `frontend/src/components/ChoiceCard.vue` (interactive selection) are commented out. Backend prompt never injected attitude state (verified — no `_format_attitude_section` exists), so no backend change needed. To re-enable: restore the disabled `<div v-if="state.attitude">` and `<details class="attitude-section">` blocks.
+
+### Fixed
+- `test_production_guard_rejects_demo_mode` was failing on Python 3.14 + Windows cp950 console due to `subprocess.run(..., text=True)` using locale encoding; added `encoding="utf-8"` + `errors="replace"`. Full suite now 329 passed, 1 skipped, 0 fail (~10s).
+
 ## [0.4.0] - 2026-06-08
 
 ### Added
@@ -21,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **大世界配置重構與文學擴充**：
   - [dnd_5e_forgotten_realms.json](file:///c:/Users/kitap/.openclaw/workspace/sandbox-rpg-tmp/worlds/dnd_5e_forgotten_realms.json) 重構，支援 20+ 地點、75+ NPC、25+ 語意狀態物品及 5 個主線任務，完成 10 萬字大世界文學潤色。
 - **後端架構相容性硬化與測試**：
-  - 還原並解耦合 `app_with_memory.py` 以打破 Circular Import 循環依賴，使所有 313 個單元與整合測試全數 PASS。
+  - 還原並解耦合 `app_with_memory.py` 以打破 Circular Import 循環依賴，使所有單元與整合測試全數 PASS（該 entry 寫 313，當前 suite 為 329 passed / 1 skipped）。**此 commit 重新引入 L2-B 喺 commit `dcafe4a` 刪除嘅 `app_with_memory.py`**（而家 568L，由 `main.py` line 203 import 5 個對外 endpoints）。
   - 修復前端性格 card 性格鍵 `v-for` 的 `TS2345` 類型錯誤，順利通過 Vite 編譯。
 - **生產環境部署硬化 (Phase L2)**：
   - FastAPI 後端靜態資源一體化掛載、SPA 路由自動 fallback。

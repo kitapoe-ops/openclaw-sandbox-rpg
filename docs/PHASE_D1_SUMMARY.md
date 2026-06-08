@@ -5,6 +5,7 @@
 > **完成時間：** 2026-06-05 17:35 GMT+8
 > **狀態：** ✅ Merge 完成 (單 module + 雙 class + backward-compat shim)
 > **範疇：** Memory Palace module consolidation — `memory_palace.py` (Phase A) + `memory_palace_integration.py` (Phase C2) 合併成 ONE module with TWO classes
+> **Current state (2026-06-08):** Test suite = **329 passed, 1 skipped, 0 fail (~10s)**. This phase's headline number above is preserved as shipped; full regression baseline is `pytest backend/tests/ -q`.
 
 ---
 

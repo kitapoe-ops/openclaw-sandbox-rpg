@@ -344,7 +344,7 @@ OpenClaw subagents spawned with `mode="run"` have a **15-minute hard cap**. If a
 | Implement code per hard constraints | yes | — |
 | Write unit tests for new code | yes | — |
 | Run **isolated** new test file | yes | — |
-| Run **full** regression suite (185 tests) | no | yes |
+| Run **full** regression suite (185 tests at L2-ship; 329 tests as of 2026-06-08) | no | yes |
 | Write `PHASE_XXX_SUMMARY.md` | no | yes |
 | Git commit + push | no | yes |
 
@@ -361,9 +361,11 @@ OpenClaw subagents spawned with `mode="run"` have a **15-minute hard cap**. If a
 > - Run ONLY the new test file in isolation to confirm green
 > - Report 4 fields: (1) files, (2) test count, (3) deviations, (4) summary
 >
-> Why: OpenClaw subagents have a 15-minute hard cap on `mode="run"`. The full regression suite (185 tests) takes 25-30 seconds; the summary doc is ~150 lines of writing. Both can push a subagent over the cap. Hand off finalization to main agent for 100% completion rate.
+> Why: OpenClaw subagents have a 15-minute hard cap on `mode="run"`. The full regression suite (185 tests at L2-ship time; 329 tests as of 2026-06-08) takes 10-30 seconds; the summary doc is ~150 lines of writing. Both can push a subagent over the cap. Hand off finalization to main agent for 100% completion rate.
 
-**Postmortem (Phase D2 + D4, 2026-06-05):** Two subagents timed out at 15 min cap. Both had 100% disk work preserved. Main agent did finalization: (a) ran full regression (185/185 PASS), (b) wrote 1 missing summary doc, (c) fixed 1 test assertion bug subagent had introduced. Net result: zero quality loss, subagent wall time within cap, M2 standard adopted for future work.
+**Postmortem (Phase D2 + D4, 2026-06-05):** Two subagents timed out at 15 min cap. Both had 100% disk work preserved. Main agent did finalization: (a) ran full regression (185/185 PASS at the time), (b) wrote 1 missing summary doc, (c) fixed 1 test assertion bug subagent had introduced. Net result: zero quality loss, subagent wall time within cap, M2 standard adopted for future work.
+
+**Update (2026-06-08):** Test suite has grown to 329 passing + 1 skipped (0 fail). Suite runs in ~10s. Subagent cap still 15 min; M2 hand-off pattern continues to apply.
 
 ---
 

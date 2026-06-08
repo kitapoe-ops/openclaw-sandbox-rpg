@@ -1,7 +1,7 @@
 # Phase Roadmap
 
-> Last updated: 2026-06-05
-> Current state: **161/161 tests passing, Phase B + C shipped, Phase D candidates ready**
+> Last updated: 2026-06-08
+> Current state: **329/330 tests passing (1 skipped), Phase L2 shipped, Phase F1-F4 shipped**
 
 ---
 
@@ -62,7 +62,7 @@
   - `backend/app_with_memory.py` (115L) — `main.py` import + `include_router` (zero main.py modification)
   - `backend/demo_integration.py` (333L) — `memory_health_minute` cron + `GET /demo/info`
   - End-to-end chain verified: scheduler → ASGI → integration → Postgres + Vector
-- **Test count:** 154 → 161 (+7 tests)
+- **Test count:** 154 → 161 (+7 tests at time of ship; current suite: 329 passed)
 - **Description:** 4 new routes wired into the live app. 23 total endpoints (18 gameplay + 4 `/memory/*` + 1 `/demo/info`). `main.py` mtime preserved across the entire Phase C work.
 
 ---
@@ -212,6 +212,6 @@ Beyond Phase D, the next major axis is **multiplayer polish** — the infrastruc
 - **F2** (semantic soul transfer) ✅
 - **F3** (LLM state_mutations contract + wiring) ✅
 - **F4** (prompt builder with top-of-prompt current state) ✅
-- **Net test delta:** 296 → 322 (+26 淨)
+- **Net test delta:** 296 → 322 (+26 淨 at F-ship time; current suite: 329 passed)
 - **M2 subagent cumulative:** 17/17 within 15-min cap, 0 disk work lost
 - **Frozen files mutated beyond scope:** ZERO (only F1/F2/F3 unfroze their respective files)

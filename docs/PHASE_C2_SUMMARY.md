@@ -3,6 +3,7 @@
 > **完成時間：** 2026-06-05 11:35 GMT+8
 > **狀態：** ✅ Integration module + FastAPI endpoint shipped, **154/154 tests pass**, zero regression
 > **範疇：** Memory Palace Phase A — 將 `PostgresPersistence` (Phase B3) 同 `VectorStore` (Phase B1) 組成 unified per-character API
+> **Current state (2026-06-08):** Test suite = **329 passed, 1 skipped, 0 fail (~10s)**. This phase's headline number above is preserved as shipped; full regression baseline is `pytest backend/tests/ -q`.
 
 ---
 

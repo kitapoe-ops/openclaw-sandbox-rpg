@@ -3,6 +3,7 @@
 > **完成時間：** 2026-06-05
 > **狀態：** ✅ Public cache-invalidation API shipped, R1-14B audit PASS, 231/231 tests
 > **範疇：** 解決 Phase D2 R1 audit 嘅 HIGH finding（Cache Invalidation Risk）
+> **Current state (2026-06-08):** Test suite = **329 passed, 1 skipped, 0 fail (~10s)**. This phase's headline number above is preserved as shipped; full regression baseline is `pytest backend/tests/ -q`.
 
 ---
 

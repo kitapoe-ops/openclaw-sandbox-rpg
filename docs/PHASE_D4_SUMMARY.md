@@ -6,6 +6,7 @@
 > **狀態：** ✅ Frontend `demo.html` rewired to live backend, 176/176 tests pass (167 prior + 9 new D4 tests), **zero regression**, **zero protected-file mutation**
 > **M3-as-R1 仲裁結果：** **CONDITIONAL** (見 `docs/AUDIT_D4_M3.json`)
 > **範疇：** Phase D4 — Frontend E2E wire-up + 4 endpoint-class coverage tests + M3-as-R1 audit
+> **Current state (2026-06-08):** Test suite = **329 passed, 1 skipped, 0 fail (~10s)**. This phase's headline number above is preserved as shipped; full regression baseline is `pytest backend/tests/ -q`.
 
 ---
 

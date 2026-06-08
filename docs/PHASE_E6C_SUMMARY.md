@@ -5,6 +5,7 @@
 > **Isolated test runtime:** 0.60s (9/9 PASS, hermetic — ASGITransport + static ripgrep, no live WS)
 > **Main agent finalization:** full regression 295/295 in 31.97s confirmed. One test (`test_polling_fallback_removed`) was adapted: the original D4 v2 intent was to drop single-player `loadScene` polling log noise, but E6c legitimately re-introduced `setInterval` for `mpRefreshRoster` (cross-tab sync, not log noise). Test scope tightened to forbid `setInterval(loadScene` / `setInterval(getCurrentScene` specifically. Roster refresh interval remains permitted with clear docstring.
 > **Hard constraints:** ✅ Zero protected files mutated. demo.html is the only file in the "you MAY modify" list that was touched; the rest is additive.
+> **Current state (2026-06-08):** Test suite = **329 passed, 1 skipped, 0 fail (~10s)**. This phase's headline number above is preserved as shipped; full regression baseline is `pytest backend/tests/ -q`.
 
 ## 1. UI layout decision — 4-slot player sidebar
 

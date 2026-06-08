@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useGameStore } from '@/stores/gameStore'
 import { gameApi } from '@/services/api'
 import ScenePanel from '@/components/ScenePanel.vue'
@@ -12,6 +12,7 @@ import HistoryLog from '@/components/HistoryLog.vue'
 import OtherPlayersPanel from '@/components/OtherPlayersPanel.vue'
 
 const route = useRoute()
+const router = useRouter()
 const gameStore = useGameStore()
 const characterId = route.params.characterId as string
 const setLoadError = gameStore.setLoadError
@@ -19,6 +20,17 @@ const setCharacterState = gameStore.setCharacterState
 const setCurrentScene = gameStore.setCurrentScene
 
 onMounted(async () => {
+  if (characterId.startsWith('player_char_')) {
+    const pwd = localStorage.getItem(`openclaw_pwd_${characterId}`)
+    if (!pwd) {
+      setLoadError('無角色存取權限。請返回首頁並輸入密碼以進行冒險。')
+      setTimeout(() => {
+        router.push('/')
+      }, 2500)
+      return
+    }
+  }
+
   let state: any = null
   let scene: any = null
   const timeout = setTimeout(() => {
@@ -106,6 +118,15 @@ async function handleChoice(payload: { optionId: string; attitudeSelections: any
         <button class="error-back-btn" @click="$router.push('/')">返主頁</button>
       </div>
 
+      <!-- Surface task processing errors to the user -->
+      <div v-if="gameStore.lastTaskError" class="load-error-banner processing-error">
+        <span class="error-icon">⚠️</span>
+        <div class="error-msg">
+          <p>行動處理失敗：{{ gameStore.lastTaskError }}</p>
+        </div>
+        <button class="error-back-btn" @click="gameStore.clearTaskError()">清除錯誤</button>
+      </div>
+
       <div class="left-panel">
         <!-- Story Scene Panel -->
         <ScenePanel :scene="gameStore.currentScene" />
@@ -133,6 +154,8 @@ async function handleChoice(payload: { optionId: string; attitudeSelections: any
           :state="gameStore.characterState"
         />
 
+        <!-- HIDDEN 2026-06-08: items / equipment system disabled. To re-enable, restore the two mounts below. -->
+        <!--
         <Equipment
           v-if="gameStore.characterState?.inventory.equipment"
           :equipment="gameStore.characterState.inventory.equipment"
@@ -142,6 +165,7 @@ async function handleChoice(payload: { optionId: string; attitudeSelections: any
           v-if="gameStore.characterState?.inventory.items"
           :items="gameStore.characterState.inventory.items"
         />
+        -->
 
         <HistoryLog :history="gameStore.history" />
 

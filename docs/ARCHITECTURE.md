@@ -51,9 +51,10 @@ OpenClaw Sandbox RPG is a backend-first framework for AI-driven narrative games.
 +----------------------------v------------------------------------+
 |  Layer 2: FastAPI App                                           |
 |    main.py  +  app_with_memory.py  (zero main.py modification)  |
-|    Routes:                                                      |
-|      character (8)  scene (3)  action (4)  world (3)           |
-|      /memory/* (4)   /demo/info (1)                            |
+|    Routes (33 API endpoints + 8 infra):                        |
+|      character (6)  character-list (1)  scene (2)             |
+|      action (3)  world (4)  memory (4)  demo (1)               |
+|      multiplayer (3)  scene-multiplayer (9)                    |
 +----------------------------+------------------------------------+
                              |
 +----------------------------v------------------------------------+
@@ -108,13 +109,12 @@ OpenClaw Sandbox RPG is a backend-first framework for AI-driven narrative games.
 
 ### 3.5 Memory Palace
 - **Files:**
-  - `backend/memory_palace.py` (841L, Phase A, SQLite-only)
-  - `backend/memory_palace_integration.py` (552L, Phase C2, Postgres + Vector)
+  - `backend/memory_palace.py` (1198L, contains both `MemoryPalace` Phase A SQLite-only and `MemoryPalaceIntegration` Phase C2 Postgres + Vector — merged in Phase D1)
+  - `backend/memory_palace_integration.py` (31L, re-export shim preserving the public import path for `memory_palace_integration_endpoint.py` and the C2 test files; source of truth is `memory_palace.py`)
 - **Mode:** Async, persistent
 - **Embedding model:** sentence-transformers/all-MiniLM-L6-v2 (384-dim)
 - **Storage:** LanceDB for vectors, Postgres (or SQLite) for structured payload
-- **Test count:** 30 (Phase A) + 12 unit + 6 endpoint (Phase C2) = 48
-- **Two-module coexistence:** The integration module was forced to use a different name (`MemoryPalaceIntegration`) to avoid clobbering the pre-existing 841L module. Phase D1 will decide whether to merge or keep both.
+- **Test count:** 30 (Phase A) + 12 unit + 6 endpoint (Phase C2) = 48 (test names preserved at the same paths; current suite: 329 passed / 1 skipped)
 
 #### 3.5.1 Embedding Pipeline
 ```
@@ -222,7 +222,7 @@ async def lifespan(app: FastAPI):
         scheduler.shutdown()
 ```
 
-`main.py` is the actual entry point for the production stack. It configures the main `FastAPI` instance, serves the Vue 3 SPA frontend, and handles the lifespan. `app_with_memory.py` acts as a compatibility testing shim, registering testing routers (`_e1_router`, `_d4_list_router`, `_e6a_router`, and `_e6b_router`) directly onto the `main.app` instance, and importing `app` at the end of the file to break circular imports.
+`main.py` is the actual entry point for the production stack. It configures the main `FastAPI` instance, serves the Vue 3 SPA frontend, and handles the lifespan. `app_with_memory.py` (568L) registers 4 testing routers (`_e1_router`, `_d4_list_router`, `_e6a_router`, `_e6b_router`) plus the `multiplayer_ws` WebSocket directly onto the `main.app` instance, and imports `app` at the end of the file to break circular imports. It was deleted in L2-B commit `dcafe4a` (claimed zero references) and re-introduced in v0.4.0 commit `724c877` as the circular-import fix; it is currently required by `main.py` line 203 and is not a removable shim.
 
 
 ---

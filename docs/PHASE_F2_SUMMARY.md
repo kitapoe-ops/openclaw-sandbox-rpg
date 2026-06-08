@@ -5,6 +5,7 @@
 > **Subagent:** Phase F2 implementation (15-min cap hit at completion boundary — M2 hand-off = 100% disk work preserved; main agent finalized)
 > **Inputs:** `docs/PHASE_F1_AUDIT.md` (15 invariants), `docs/PHASE_F1_SUMMARY.md` (SemanticState contract), `backend/llm_client.py` (D6 LLMClient), `backend/memory_isolation.py` (E6b MemoryIsolationGuard)
 > **Outputs:** New `backend/soul_transfer.py` (rewritten in place, 332 lines), new `backend/tests/test_soul_transfer_semantic.py` (14 tests, 290 lines), updated `backend/tests/test_soul_transfer_concurrent.py` (7 tests, 220 lines), deleted `backend/tests/test_soul_transfer.py` (22 tests), this summary.
+> **Current state (2026-06-08):** Test suite = **329 passed, 1 skipped, 0 fail (~10s)**. This phase's headline number above is preserved as shipped; full regression baseline is `pytest backend/tests/ -q`.
 
 ---
 

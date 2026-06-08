@@ -5,6 +5,7 @@
 > **Isolated test runtime:** 0.62s (21/21 PASS, hermetic)
 > **Pre-flight R1-14B audit:** **PASS** (2 findings, both pre-existing in frozen files — out of scope: duplicate EMBEDDING_DIM in vector_store.py + memory_palace_integration.py, D3 repo design)
 > **Main agent finalization:** full regression 286/286 in 31.94s confirmed; `app_with_memory.py` line delta = +333 (E6b 10 HTTP routes); all frozen files (main.py / api/action.py / state_machine.py / ws/multiplayer_router.py / etc.) mtimes preserved.
+> **Current state (2026-06-08):** Test suite = **329 passed, 1 skipped, 0 fail (~10s)**. This phase's headline number above is preserved as shipped; full regression baseline is `pytest backend/tests/ -q`.
 
 ## 1. What ships in E6b
 

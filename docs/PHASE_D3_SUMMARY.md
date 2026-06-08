@@ -6,6 +6,7 @@
 > **Depends on:** Phase D1 (MemoryPalace + MemoryPalaceIntegration
 > coexist in `backend/memory_palace.py`), Phase B3 (`persistence_pg`),
 > Phase B1 (`vector_store`).
+> **Current state (2026-06-08):** Test suite = **329 passed, 1 skipped, 0 fail (~10s)**. This phase's headline number above is preserved as shipped; full regression baseline is `pytest backend/tests/ -q`.
 
 ---
 

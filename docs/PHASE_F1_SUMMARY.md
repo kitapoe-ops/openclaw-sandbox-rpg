@@ -5,6 +5,7 @@
 > **Subagent:** Phase F1-wide implementation (1m4s — within 15-min cap; M2 hand-off = 100% completion)
 > **Inputs:** `docs/PHASE_F1_AUDIT.md` (15 invariants + 3 defenses)
 > **Outputs:** New `backend/state_machine.py`, new `backend/tests/test_state_machine_semantic.py`, updated `backend/physics_lock.py`, updated `backend/tests/test_physics_lock.py`, deleted `backend/tests/test_state_machine_tier1.py`.
+> **Current state (2026-06-08):** Test suite = **329 passed, 1 skipped, 0 fail (~10s)**. This phase's headline number above is preserved as shipped; full regression baseline is `pytest backend/tests/ -q`.
 
 ---
 

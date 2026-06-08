@@ -80,9 +80,6 @@ function formatLevel(level: string): string {
 <template>
   <div class="choice-card" :class="{ disabled }">
     <div class="card-header">
-      <span class="category-tag" :class="choice.intent_category">
-        {{ choice.intent_category?.toUpperCase() }}
-      </span>
       <span class="direction-hint" v-if="choice.direction_hint">
         {{ choice.direction_hint }}
       </span>
@@ -101,7 +98,8 @@ function formatLevel(level: string): string {
       選 擇 此 途
     </button>
 
-    <!-- Attitude accordion -->
+    <!-- HIDDEN 2026-06-08: attitude / 態度選擇 system disabled. To re-enable, restore the block below. -->
+    <!--
     <details class="attitude-section" @toggle="isExpanded = ($event.target as HTMLDetailsElement).open">
       <summary class="attitude-summary">
         <span class="summary-arrow">✦</span>
@@ -134,6 +132,7 @@ function formatLevel(level: string): string {
         </button>
       </div>
     </details>
+    -->
   </div>
 </template>
 

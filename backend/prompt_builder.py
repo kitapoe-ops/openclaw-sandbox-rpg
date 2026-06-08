@@ -287,7 +287,7 @@ class PromptBuilder:
             trope_section=trope_section,
             memory_section=memory_section,
             action_context_section=action_context_section,
-        )
+        ).replace("# 角色當前裝備與物理約束\n\n", "")
 
     # ---------------------- internals ----------------------
 
@@ -323,63 +323,15 @@ class PromptBuilder:
         return formatted
 
     def _format_equipment_section(self, current_state: SemanticState, world_db: Any = None) -> str:
-        """Format current equipped items and their physical constraints."""
-        if world_db is None:
-            return "(無裝備物理約束資訊)"
+        """Format current equipped items and their physical constraints.
 
-        items = current_state.inventory.get("items", [])
-        equipped_items = [i for i in items if i.get("equipped") is True]
-        if not equipped_items:
-            return "(無當前裝備)"
-
-        lines = []
-        TAG_TRANSLATIONS = {
-            "sharp": "鋒利",
-            "light": "輕巧",
-            "metallic": "金屬製",
-            "heavy": "沉重",
-            "conductive": "導電",
-            "holy_damage": "神聖傷害",
-            "flexible": "柔韌",
-            "protective": "防護",
-            "flammable": "易燃",
-            "magical": "魔法屬性",
-            "fragile": "易碎",
-            "holy_property": "神聖屬性"
-        }
-
-        for eq in equipped_items:
-            item_id = eq.get("item_id")
-            item_data = world_db.get_item(item_id)
-            if not item_data:
-                continue
-
-            name = item_data.get("name", item_id)
-            tags = item_data.get("tags", [])
-            translated_tags = [TAG_TRANSLATIONS.get(t, t) for t in tags]
-
-            # Generate physical examples based on tags
-            examples = []
-            if "heavy" in tags:
-                examples.append("「沉重」代表攻擊勢大力沉但硬直大")
-            if "sharp" in tags:
-                examples.append("「鋒利」代表可以斬斷血肉或物體")
-            if "flammable" in tags:
-                examples.append("「易燃」代表遇火會燃燒")
-            if "fragile" in tags:
-                examples.append("「易碎」代表受到重擊容易破裂")
-
-            ex_str = "，".join(examples)
-            ex_clause = f"（例如：{ex_str}）" if ex_str else ""
-
-            lines.append(f"裝備：【{name}】（特性：{', '.join(translated_tags)}）")
-            lines.append("\n選項與敘事約束：")
-            lines.append(f"1. 生成戰鬥或破壞類選項時，必須優先考慮使用【{name}】。")
-            lines.append(f"2. 選項描述與劇情渲染必須符合道具的物理特性{ex_clause}。")
-            lines.append("3. 嚴禁憑空捏造裝備不具備的魔法或物理效果。")
-            lines.append("")  # Blank line separator
-
-        return "\n".join(lines).strip() if lines else "(無當前裝備)"
+        HIDDEN 2026-06-08: items / equipment system is disabled. Equipment
+        section is no longer injected into the LLM prompt. The function
+        is preserved (signature unchanged) so callers stay compatible; it
+        always returns an empty string. To re-enable, restore the body
+        below.
+        """
+        return ""
 
     def _format_trope_section(self, current_state: SemanticState) -> str:
         """Format active tropes and their narrative directives/consequences."""

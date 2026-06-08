@@ -119,7 +119,8 @@ function formatLevel(level: string | number): string {
       </div>
     </div>
 
-    <!-- Attitude profiles -->
+    <!-- HIDDEN 2026-06-08: attitude / 態度選擇 system disabled. To re-enable, restore the block below. -->
+    <!--
     <div v-if="state.attitude" class="status-section">
       <h4>性格態度傾向 (Attitude)</h4>
       <div class="attitude-grid">
@@ -129,6 +130,7 @@ function formatLevel(level: string | number): string {
         </div>
       </div>
     </div>
+    -->
   </div>
 </template>
 

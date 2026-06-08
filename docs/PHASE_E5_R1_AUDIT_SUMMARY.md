@@ -4,6 +4,8 @@
 **Auditor:** R1-14B (deepseek-r1-distill-qwen-14b via LM Studio :1234)
 **Scope:** Verify the original D2 HIGH finding ("Cache Invalidation Risk in demo_mode.py") is resolved by the Phase E5 public API.
 
+> **Current state (2026-06-08):** Test suite = **329 passed, 1 skipped, 0 fail (~10s)**. This audit's PASS verdict is preserved as shipped; full regression baseline is `pytest backend/tests/ -q`.
+
 ---
 
 ## Pre-flight

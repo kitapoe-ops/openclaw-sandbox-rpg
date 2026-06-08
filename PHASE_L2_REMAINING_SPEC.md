@@ -8,9 +8,11 @@ on Windows service elevation (admin needed to start PostgreSQL).
 ## ✅ L2-B Backend Hardening — DONE
 - `backend/main.py` lifespan guard: `ENV=production` + `is_demo_mode()=True`
   → `RuntimeError("PRODUCTION SAFETY: ...")` fail-loud.
-- Deleted `backend/app_with_memory.py` (zero references).
-- Deleted `backend/models_legacy_pkg/` (zero references).
+- Deleted `backend/app_with_memory.py` (zero references at the time of L2-B commit `dcafe4a`).
+- Deleted `backend/models_legacy_pkg/` (zero references; not re-introduced as of 2026-06-08).
 - Renamed `demo.html` → `demo.html.deprecated` (git tracked).
+
+> **Status update (2026-06-08):** `app_with_memory.py` was **re-introduced** in v0.4.0 commit `724c877` ("Circular Import fix") and now exists at 568L. `main.py` line 203 imports `_e1_router`, `_d4_list_router`, `_e6a_router`, `_e6b_router`, and `multiplayer_ws` from it. The L2-B "zero references" claim was true at the time of commit `dcafe4a` but is no longer true; do not act on it.
 
 ## ✅ L2-C Frontend Build Verify — DONE
 - `npm run lint` → 0 errors (3 cosmetic warnings, non-blocking).

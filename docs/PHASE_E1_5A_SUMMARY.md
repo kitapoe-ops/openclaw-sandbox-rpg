@@ -1,7 +1,10 @@
 # PHASE E1.5A — Real-DB Integration Test (FINALIZED 2026-06-05 by main agent)
 
 **Status:** ✅ **CONFIRMED WORKING** — the E2E path (FastAPI-shaped validate → physics-lock → LLM → `palace.remember` → PG + VectorStore) is **fully functional end-to-end against a real database**, with the frozen Phase E1 / C2 / B3 / B1 code as shipped. The E1.5 "Real-DB Integration Gap" flagged in `PHASE_E1_SUMMARY.md` is now closed for the single-thread happy path.
+
 **Owner:** subagent `agent:main:subagent:86dd6383-8d87-4d6e-8b60-c0b04fe72e24` (5m50s)
+
+> **Current state (2026-06-08):** Test suite = **329 passed, 1 skipped, 0 fail (~10s)**. This phase's headline number above is preserved as shipped; full regression baseline is `pytest backend/tests/ -q`.
 
 ---
 

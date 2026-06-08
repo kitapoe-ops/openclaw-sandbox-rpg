@@ -2,6 +2,7 @@
 
 > **完成時間：** 2026-06-05
 > **狀態：** ✅ All 3 sub-modules shipped, 135/135 tests pass, zero regression
+> **Current state (2026-06-08):** Test suite = **329 passed, 1 skipped, 0 fail (~10s)**. This phase's headline number above is preserved as shipped; full regression baseline is `pytest backend/tests/ -q`.
 
 ---
 

@@ -6,6 +6,7 @@
 > **Pre-flight R1-14B audit:** CONDITIONAL (4 findings — all addressed in design: per-scene lock, snapshot-under-lock broadcast, duplicate player_id rejection, broadcast count return value)
 > **Main agent finalization:** full regression 265/265 in 31.86s confirmed; `app_with_memory.py` line delta = +100 (E6a 3 HTTP + 1 WS); all frozen files (main.py / api/action.py / state_machine.py / etc.) mtimes preserved.
 > **R1-14B pre-flight audit:** `CONDITIONAL` (proxy of `audit_phase_d3_repository`); all 4 findings addressed in the design. Raw response at `docs/AUDIT_E6A_R1_RAW.json`.
+> **Current state (2026-06-08):** Test suite = **329 passed, 1 skipped, 0 fail (~10s)**. This phase's headline number above is preserved as shipped; full regression baseline is `pytest backend/tests/ -q`.
 
 ## 1. Architecture
 

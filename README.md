@@ -3,7 +3,7 @@
 > An LLM-driven, persistent-state narrative RPG framework. The AI is the Dungeon Master; the world survives across sessions.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests: 313 passing](https://img.shields.io/badge/Tests-313%20passing-brightgreen)]()
+[![Tests: 329 passing](https://img.shields.io/badge/Tests-329%20passing-brightgreen)]()
 [![Status: Phase L2 Shipped](https://img.shields.io/badge/Status-Phase%20L2%20Shipped-blue)]()
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB)]()
 
@@ -81,8 +81,8 @@ LLM 收到指令，並嚴格遵守「禁用情緒詞」、「倒數計時器」�
 - **Physics lock** — concurrency-safe action validation prevents impossible world states (two objects in one cell, etc.)
 - **APScheduler backbone** — daily sentinel runs, 4-hour dashboard refresh, 10-minute heartbeat, all configurable
 - **Pluggable persistence** — `PERSISTENCE_MODE=memory|postgres` env switch, with aiosqlite fallback for tests
-- **23 FastAPI endpoints** — 18 gameplay + 4 `/memory/*` + 1 `/demo/info`
-- **313 tests, 8.1s full suite** — tier 1 (logic), tier 3 (HTTP), concurrency, integration, multiplayer, state machine
+- **33 FastAPI endpoints** — character (6) + character-list (1) + scene (2) + action (3) + world (4) + memory (4) + demo (1) + multiplayer (3) + scene-multiplayer (9); plus 8 infra (`/openapi.json`, `/docs`, `/redoc`, etc.)
+- **329 tests, 10s full suite** — tier 1 (logic), tier 3 (HTTP), concurrency, integration, multiplayer, state machine
 
 
 ---
@@ -242,7 +242,7 @@ Wire-up code in `backend/scheduler.py`. Demo wiring in `backend/demo_integration
 
 ## Test Coverage
 
-backend/tests/  (313 tests, 8.1s full suite)
+backend/tests/  (329 tests, 10s full suite)
 +- test_state_machine_tier1.py                   19 tests  pure logic
 +- test_state_machine_semantic.py                34 tests  semantic state machines
 +- test_api_tier3.py                              14 tests  HTTP smoke, world registry
@@ -264,7 +264,7 @@ backend/tests/  (313 tests, 8.1s full suite)
 +- test_production_smoke.py                       8 tests   production sanity check
 +```
 
-**Total: 313 tests passing (excluding smoke tests when Postgres is off), 0 regression**
+**Total: 329 tests passing (1 skipped, excluding smoke tests when Postgres is off), 0 regression**
 
 
 ---
@@ -307,7 +307,7 @@ python -m venv .venv
 # 3. Verify
 # To run unit tests excluding Postgres smoke tests in development:
 .venv/Scripts/python.exe -m pytest backend/tests/ -k "not test_production_smoke"
-# Expected: 313 passed in ~8s
+# Expected: 329 passed in ~10s
 
 # 4. Run the backend (demo mode)
 DEMO_MODE=true .venv/Scripts/python.exe -m uvicorn backend.main:app --reload

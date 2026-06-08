@@ -3,6 +3,7 @@
 > **完成時間：** 2026-06-05
 > **狀態：** ✅ 2 warnings cleared, 9 new tests added, R1-14B audit completed (CONDITIONAL)
 > **範疇：** 清理 2 個 pre-existing pytest warning + 真 R1-14B audit（用家 explicit 要求）
+> **Current state (2026-06-08):** Test suite = **329 passed, 1 skipped, 0 fail (~10s)**. This phase's headline number above is preserved as shipped; full regression baseline is `pytest backend/tests/ -q`.
 
 ---
 

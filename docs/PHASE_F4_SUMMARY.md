@@ -5,6 +5,7 @@
 > **Subagent:** Phase F4 implementation (8m8s — within 15-min cap; M2 hand-off = 100% completion)
 > **Inputs:** F1-wide `backend/state_machine.py` (semantic state), F2 `backend/soul_transfer.py` (parallel), Phase E1 `backend/api/action_processor.py` (FROZEN — not modified).
 > **Outputs:** New `backend/prompt_builder.py`, new `backend/tests/test_prompt_builder.py` (10 tests), this DRAFT `docs/PHASE_F4_SUMMARY.md`.
+> **Current state (2026-06-08):** Test suite = **329 passed, 1 skipped, 0 fail (~10s)**. This phase's headline number above is preserved as shipped; full regression baseline is `pytest backend/tests/ -q`.
 
 ---
 

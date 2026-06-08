@@ -3,6 +3,7 @@
 > **Status:** ✅ Shipped. **322/322 tests passing** (313 baseline + 9 F3 new). 0 regression. Phase F 100% complete (F1 + F2 + F3 + F4).
 > **Date:** 2026-06-05
 > **Subagent:** Phase F3 implementation (15-min cap hit — 567.5k tokens consumed; M2 hand-off = 100% disk work preserved; main agent finalized)
+> **Current state (2026-06-08):** Test suite = **329 passed, 1 skipped, 0 fail (~10s)**. This phase's headline number above is preserved as shipped; full regression baseline is `pytest backend/tests/ -q`.
 
 ---
 

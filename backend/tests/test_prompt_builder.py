@@ -416,13 +416,14 @@ class TestEquipmentConstraints:
                 world_db=None
             )
         )
-        assert "(無裝備物理約束資訊)" in prompt
+        assert "(無裝備物理約束資訊)" not in prompt  # HIDDEN 2026-06-08
 
     def test_equipment_constraints_no_equipped(self, no_palace_builder, basic_state, basic_action_context):
-        """When world_db is provided but character has no equipped items."""
+        """HIDDEN 2026-06-08: items / equipment system is disabled.
+        Even when world_db is provided and character has no equipped items,
+        the equipment section is empty."""
         import asyncio
         db = self.MockWorldDB()
-        # basic_state has no inventory or items.
         prompt = asyncio.run(
             no_palace_builder.build(
                 character_id="alice",
@@ -431,10 +432,13 @@ class TestEquipmentConstraints:
                 world_db=db
             )
         )
-        assert "(無當前裝備)" in prompt
+        # Equipment section header must NOT appear
+        assert "裝備" not in prompt
+        assert "鋪利" not in prompt
 
     def test_equipment_constraints_injection(self, no_palace_builder, basic_action_context):
-        """When character has an equipped item, physical tags and constraints are injected."""
+        """HIDDEN 2026-06-08: items / equipment system is disabled.
+        Even with a fully-equipped character, the equipment section is empty."""
         import asyncio
         from backend.state_machine import SemanticState
         
@@ -454,13 +458,13 @@ class TestEquipmentConstraints:
         )
         
         # Verify section header is present
-        assert "# 角色當前裝備與物理約束" in prompt
+        assert "# 角色當前裝備與物理約束" not in prompt  # HIDDEN 2026-06-08
         # Verify item name and tags are present
-        assert "裝備：【勇者之劍】（特性：鋒利, 神聖傷害, 沉重, 導電）" in prompt
+        assert "裝備：【勇者之劍】（特性：鋒利, 神聖傷害, 沉重, 導電）" not in prompt  # HIDDEN 2026-06-08
         # Verify physical logic example is present (heavy/sharp translated)
-        assert "「沉重」代表攻擊勢大力沉但硬直大" in prompt
-        assert "「鋒利」代表可以斬斷血肉或物體" in prompt
+        assert "「沉重」代表攻擊勢大力沉但硬直大" not in prompt  # HIDDEN 2026-06-08
+        assert "「鋒利」代表可以斬斷血肉或物體" not in prompt  # HIDDEN 2026-06-08
         # Verify physical constraints directive is present
-        assert "1. 生成戰鬥或破壞類選項時，必須優先考慮使用【勇者之劍】。" in prompt
-        assert "3. 嚴禁憑空捏造裝備不具備的魔法或物理效果。" in prompt
+        assert "1. 生成戰鬥或破壞類選項時，必須優先考慮使用【勇者之劍】。" not in prompt  # HIDDEN 2026-06-08
+        assert "3. 嚴禁憑空捏造裝備不具備的魔法或物理效果。" not in prompt  # HIDDEN 2026-06-08
 

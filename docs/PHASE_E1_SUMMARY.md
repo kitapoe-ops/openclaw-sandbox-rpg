@@ -4,6 +4,7 @@
 > **Subagent runtime:** 7m48s (well under 15-min cap; M2 template hand-off = 100% completion)
 > **Isolated test runtime:** 0.81s (11/11 PASS, hermetic — no Postgres, no real LLM, no network)
 > **Main agent finalization:** full regression 255/255 in 31.88s confirmed; `app_with_memory.py` line delta = +60 (E1 _e1_router); all frozen files (character.py / scene.py / action.py / world.py / etc.) mtimes preserved.
+> **Current state (2026-06-08):** Test suite = **329 passed, 1 skipped, 0 fail (~10s)**. This phase's headline number above is preserved as shipped; full regression baseline is `pytest backend/tests/ -q`.
 
 ## 1. Scope
 

@@ -6,6 +6,7 @@
 > **Pre-flight R1-14B audit:** 4 findings (2 CRITICAL, 2 HIGH) — all 4 addressed in design (BackpressurePolicy enum BLOCK/FAIL_FAST/DROP_OLDEST, optional result_sink callback, default worker_count=1, get_audit_queue() factory singleton)
 > **Main agent finalization:** full regression 255/255 in 31.88s confirmed; `r1_audit_client.py` (frozen) wrapped not modified; all frozen files mtimes preserved.
 > **Verdict:** Implementation complete. 13/13 new tests PASS. Pre-flight R1-14B audit returned 4 findings (2 CRITICAL, 2 HIGH); all 4 are addressed in the design.
+> **Current state (2026-06-08):** Test suite = **329 passed, 1 skipped, 0 fail (~10s)**. This phase's headline number above is preserved as shipped; full regression baseline is `pytest backend/tests/ -q`.
 
 ---
 
