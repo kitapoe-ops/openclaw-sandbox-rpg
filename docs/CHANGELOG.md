@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (2026-06-08)
+- **User prompt restructured to 5 modules** (decision: 1B, 2A, 3A, 4A, 5A, 6A). New module: :mod:`backend.prompt_user` provides `build_user_prompt()` + section breakdown helper. Five modules: 1) Hard Facts (character + health + inventory placeholder + scene NPCs); 2) Karma & Traces (active threads + other-player footprints); 3) Trigger Action (verb + target + args); 4) Director's Constraints (trope directive + writing rules); 5) Output Requirements (JSON with narrative + state_mutations + 4 choices).
+  - **Inventory:** placeholder text rendered; physical-constraint rule preserved; equipment section still hidden per 2026-06-08 commit 1727c30.
+  - **F3 contract:** preserved — output JSON still requires `state_mutations` (Pydantic strict); `choices` array is additive (max 4 entries; each with `direction ∈ {combat, social, explore, creative}` + `vignette`).
+  - **Footprints:** scene-level environmental metadata (blood, drag-marks, broken items). The memory_isolation audit invariant is **not broken** — footprints are public scene metadata, not cross-character private memory reads.
+  - **Trope directive:** composed from `trope_router.get_trope_by_id(tid).narrative_directive` → `plot_beat + tonal_focus` narrative phrase.
+  - **Health:** derived from `SemanticState.tags` (death-critical tags 死亡/瀕死 take priority); never returns numeric HP per F1 invariant.
+  - `NARRATIVE_PROMPT_TEMPLATE` is preserved for backward compatibility; the active builder is `build_user_prompt_5module()` imported by :mod:`backend.api.action_processor`. The active user prompt is no longer constructed from `NARRATIVE_PROMPT_TEMPLATE.format(...)` in the F3 code path.
+  - 25 new unit tests in `backend/tests/test_prompt_user.py` (all 5 modules, each section formatter, end-to-end `build_user_prompt`, `ALLOWED_CHOICE_DIRECTIONS` enum, section breakdown). All pass.
+  - LLM output validator extended: `_validate_and_extract_choices()` enforces the 4-direction enum, non-empty vignette, soft numeric-content check (drops entries with >50% numeric tokens to enforce Module 5 "Risks ... 不可提供數字").
+  - `action_processor._call_llm()` now returns a 5-tuple `(narrative, mutation, mutation_error, elapsed_ms, llm_meta)`; `llm_meta` holds `choices` + `ghost_state_warning` + `retries_used`. The handle() return value adds a top-level `choices` field.
+  - Prompt Inspector `/preview` endpoint now also returns `user_prompt` (rendered + sections + template constants + allowed directions). Frontend panel not yet updated to display it; structural data is available for a future commit.
+
 ### Added (2026-06-08)
 - **Prompt Inspector (dev-only, read-only).** New endpoint `GET /api/prompt-inspector/preview?character_id=X` returns the LLM system prompt that `PromptBuilder` would construct (placeholder state, no DB read, no LLM call, no audit bypass). New endpoint `GET /api/prompt-inspector/health` returns the flag state. New Vue component `frontend/src/components/PromptInspectorPanel.vue` is mounted in `GameView.vue` and auto-hides if the flag is off.
   - **Gating:** `ENABLE_PROMPT_INSPECTOR=true` env var (default false). The endpoint reads the env directly to avoid the pre-existing `backend/config.py` `.env` parse bug (CORS_ORIGINS JSON list). Production deploys must keep this disabled.

@@ -113,6 +113,12 @@ from typing import Any
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
+# 5-module user prompt (2026-06-08). NARRATIVE_PROMPT_TEMPLATE below
+# is preserved for backward compatibility; the active builder is
+# :func:`backend.prompt_user.build_user_prompt`.
+from ..prompt_user import build_user_prompt as build_user_prompt_5module
+from ..prompt_user import ALLOWED_CHOICE_DIRECTIONS
+
 logger = logging.getLogger(__name__)
 
 
@@ -164,6 +170,11 @@ ALLOWED_VERBS: frozenset[str] = frozenset(
 # Narrative prompt template — kept simple and provider-agnostic.
 # The full D6 prompt (with few-shots + JSON response_format) is the
 # job of the LLMClient itself; this is the *user-message* side.
+#
+# NOTE (2026-06-08): NARRATIVE_PROMPT_TEMPLATE is preserved for
+# backward compatibility (other modules / tests import it). The
+# active builder is :func:`backend.prompt_user.build_user_prompt`,
+# which produces the 5-module user prompt structure.
 NARRATIVE_PROMPT_TEMPLATE = (
     "Player action: {verb} {target}{args_str}\n"
     "Character: {character_id}\n"
@@ -171,6 +182,62 @@ NARRATIVE_PROMPT_TEMPLATE = (
     "Narrate the outcome in 1-3 sentences, in second-person, "
     "in a D&D-style tone. End with one or two possible follow-ups."
 )
+
+
+def _validate_and_extract_choices(raw_choices: Any) -> list[dict[str, str]]:
+    """Validate and extract the LLM's ``choices`` array (2026-06-08).
+
+    The 5-module user prompt asks for exactly 4 follow-up options
+    with shape ``{direction: combat|social|explore|creative, vignette: str}``.
+
+    This helper enforces:
+    * Must be a list.
+    * Each entry must be a dict with ``direction`` (one of the
+      allowed directions) and ``vignette`` (non-empty string).
+    * Unknown directions are dropped (and the entry is excluded
+      from the returned list).
+    * No numeric risk/reward values are allowed in the vignette
+      (per module 5: "Risks: 每一個選項中只能文字描述，不可提供數字").
+      We do a soft-check that strips entries with obvious numeric
+      content; this is a best-effort guard, not a full parser.
+
+    Returns
+    -------
+    list[dict[str, str]]
+        Up to 4 validated choice dicts, in the order returned by
+        the LLM. If the LLM returned fewer than 4, the list may
+        be shorter; the caller is responsible for any
+        "fill-in-default" UI behavior.
+    """
+    if not isinstance(raw_choices, list):
+        return []
+    validated: list[dict[str, str]] = []
+    for entry in raw_choices[:4]:  # cap at 4
+        if not isinstance(entry, dict):
+            continue
+        direction = entry.get("direction")
+        vignette = entry.get("vignette")
+        if not isinstance(direction, str) or direction not in ALLOWED_CHOICE_DIRECTIONS:
+            continue
+        if not isinstance(vignette, str) or not vignette.strip():
+            continue
+        # Soft check: vignette must not be predominantly numeric
+        # (the LLM is told "Risks ... 不可提供數字"). We drop
+        # entries where > 50% of tokens are digits/punctuation.
+        tokens = [t for t in vignette.split() if t]
+        if not tokens:
+            continue
+        numeric_like = sum(1 for t in tokens if any(ch.isdigit() for ch in t))
+        if numeric_like / max(len(tokens), 1) > 0.5:
+            logger.warning(
+                "Dropping choice vignette with high numeric content "
+                "(direction=%s, vignette=%r)",
+                direction,
+                vignette[:80],
+            )
+            continue
+        validated.append({"direction": direction, "vignette": vignette.strip()})
+    return validated
 
 
 # ============================================
@@ -421,10 +488,13 @@ class ActionProcessor:
                         exc,
                     )
 
-            # 5) Build the user-message prompt (legacy E1 template).
-            # The system prompt is now built by PromptBuilder (F3
-            # step 6), but we still render the user-message in the
-            # E1 shape so the LLM has a clean "Player action" line.
+            # 5) Build the user-message prompt (5-module structure, 2026-06-08).
+            # The system prompt is built by PromptBuilder (F3 step 6);
+            # the user message now uses the 5-module structure defined in
+            # :mod:`backend.prompt_user` (Hard Facts, Karma & Traces,
+            # Trigger Action, Director's Constraints, Output Requirements).
+            # See :func:`backend.prompt_user.build_user_prompt` for the
+            # section formatters.
             args_str = ""
             if args:
                 # Keep it human-readable; never include raw user
@@ -433,12 +503,17 @@ class ActionProcessor:
                     args_str = " with " + ", ".join(f"{k}={v}" for k, v in args.items())
                 except Exception:
                     args_str = ""
-            user_message = NARRATIVE_PROMPT_TEMPLATE.format(
-                verb=verb,
-                target=(target or "(nothing)"),
-                args_str=args_str,
+            # Resolve current_state (needed for the 5-module formatters).
+            # The state-machine object (if wired) gives us the live state;
+            # otherwise we use the placeholder.
+            current_state_for_prompt = self._get_current_state(character_id)
+            user_message = build_user_prompt_5module(
                 character_id=character_id,
-                scene_context=scene_ctx.get("summary", "(no context)"),
+                current_state=current_state_for_prompt,
+                verb=verb,
+                target=target,
+                args_str=args_str,
+                scene_context=scene_ctx or None,
             )
 
             # 6) Phase F3: read current state from the state machine.
@@ -608,6 +683,7 @@ class ActionProcessor:
                     "elapsed_ms": llm_elapsed_ms,
                     "verb": verb,
                     "state_contract": self._llm_supports_state_contract,
+                    "choices": llm_meta.get("choices", []),
                 }
             )
             # Phase G1: log ghost-state warnings so the ops side can
@@ -758,6 +834,12 @@ class ActionProcessor:
                 },
                 "mutation": mutation_dict,
                 "mutation_error": mutation_error,
+                # 2026-06-08: 5-module user prompt asks for 4 follow-up
+                # choices. Frontend uses these to render the
+                # ChoiceCard. The choices are NOT state-changing; the
+                # player's actual next action still goes through the
+                # state machine + physics lock.
+                "choices": llm_meta.get("choices", []),
             }
         finally:
             # 13) Always release the turn slot.
@@ -902,7 +984,7 @@ class ActionProcessor:
                 raise LLMUnavailableError(f"LLM unavailable: {type(exc).__name__}: {exc}") from exc
             narrative = (raw or "").strip() or ("你環顧四周，但沒有發生什麼特別的事。")
             elapsed_ms = int((time.monotonic() - t0) * 1000)
-            return narrative, None, "state_contract_not_supported", elapsed_ms
+            return narrative, None, "state_contract_not_supported", elapsed_ms, {"choices": []}
 
         # F3 path: call the state-contract method on the LLM.
         tags = list(getattr(current_state, "tags", []) or [])
@@ -923,11 +1005,23 @@ class ActionProcessor:
             "你環顧四周，但沒有發生什麼特別的事。"
         )
         elapsed_ms = int((time.monotonic() - t0) * 1000)
+        # 2026-06-08: extract choices array from LLM result. The 5-module
+        # user prompt asks for 4 follow-up options with direction +
+        # vignette. Choices are NOT validated by R1 audit (they are
+        # advisory UI suggestions; the player's actual next action is
+        # still validated by the state machine + physics lock).
+        choices = _validate_and_extract_choices(result.get("choices"))
+        llm_meta = {
+            "choices": choices,
+            "ghost_state_warning": bool(result.get("ghost_state_warning", False)),
+            "retries_used": int(result.get("retries_used", 0)),
+        }
         return (
             narrative,
             result.get("mutation"),
             result.get("error"),
             elapsed_ms,
+            llm_meta,
         )
 
     async def _persist_memory(

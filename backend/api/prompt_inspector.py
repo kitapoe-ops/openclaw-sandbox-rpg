@@ -39,6 +39,12 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 
 from ..prompt_builder import PromptBuilder
+from ..prompt_user import (
+    build_user_prompt,
+    build_user_prompt_sections,
+    USER_PROMPT_TEMPLATE,
+    ALLOWED_CHOICE_DIRECTIONS,
+)
 from ..state_machine import SemanticState
 
 logger = logging.getLogger(__name__)
@@ -129,6 +135,46 @@ async def preview_prompt(
         if name
     ]
 
+    # 2026-06-08: also render the 5-module user prompt preview.
+    # We use placeholder action + scene context so the developer can
+    # see the structural shape and section ordering.
+    placeholder_verb = "look"
+    placeholder_target = "(nothing)"
+    placeholder_args_str = ""
+    placeholder_scene_context: dict[str, Any] = {
+        "scene_id": "preview-scene",
+        "summary": "(preview — no DB read)",
+        "location_tag": "preview",
+        "npcs": [
+            {"npc_id": "preview-npc-1", "name": "PreviewNPC",
+             "status": "neutral", "location": "preview"}
+        ],
+        "footprints": [
+            {"marker": "(preview footprint)", "actor": "preview-actor", "turn": 0}
+        ],
+    }
+    user_prompt_sections = build_user_prompt_sections(
+        character_id=character_id,
+        current_state=placeholder_state,
+        verb=placeholder_verb,
+        target=placeholder_target,
+        args_str=placeholder_args_str,
+        scene_context=placeholder_scene_context,
+    )
+    user_prompt = build_user_prompt(
+        character_id=character_id,
+        current_state=placeholder_state,
+        verb=placeholder_verb,
+        target=placeholder_target,
+        args_str=placeholder_args_str,
+        scene_context=placeholder_scene_context,
+    )
+    user_prompt_template_keys = [
+        name
+        for _, name, _, _ in __import__("string").Formatter().parse(USER_PROMPT_TEMPLATE)
+        if name
+    ]
+
     return {
         "character_id": character_id,
         "system_prompt": system_prompt,
@@ -139,15 +185,31 @@ async def preview_prompt(
             "tags": placeholder_state.tags,
             "inventory_items_count": len(placeholder_state.inventory.get("items", [])),
         },
+        "user_prompt": {
+            "rendered": user_prompt,
+            "sections": user_prompt_sections,
+            "template_constant_keys": user_prompt_template_keys,
+            "placeholder_action": {
+                "verb": placeholder_verb,
+                "target": placeholder_target,
+                "args_str": placeholder_args_str,
+            },
+            "allowed_choice_directions": list(ALLOWED_CHOICE_DIRECTIONS),
+            "module_count": 5,
+        },
         "flags": {
             "items_section_hidden": True,  # 2026-06-08: equipment always empty
             "attitude_section_in_prompt": False,  # never injected
             "r1_audit_bypassed": False,
+            "f3_state_contract_preserved": True,  # narrative + state_mutations + choices
+            "user_prompt_5_module": True,  # 2026-06-08
         },
         "note": (
             "Structural preview only. Character state is a placeholder (no DB read). "
             "Memory section is not rendered (async). To see the actual prompt "
-            "the LLM received for a past action, use a future audit-log endpoint."
+            "the LLM received for a past action, use a future audit-log endpoint. "
+            "User prompt preview uses a placeholder verb='look' and placeholder "
+            "scene context (1 preview NPC, 1 preview footprint)."
         ),
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
