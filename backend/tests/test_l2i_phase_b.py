@@ -157,8 +157,12 @@ def test_format_npc_state_section_includes_detail():
 def test_other_player_action_message_type_exists():
     """Phase L2-I/Phase B: the WS protocol includes other_player_action."""
     # Read the TS file directly to check (avoids needing the TS bundle)
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent.parent
+    ts_path = root / "frontend" / "src" / "services" / "websocket.ts"
     ws_ts = open(
-        r"C:\Users\kitap\.openclaw\workspace\sandbox-rpg-tmp\frontend\src\services\websocket.ts",
+        ts_path,
         encoding="utf-8",
     ).read()
     assert "other_player_action" in ws_ts, (

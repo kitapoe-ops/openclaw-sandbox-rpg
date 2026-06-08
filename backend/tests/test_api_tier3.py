@@ -66,8 +66,13 @@ class TestCharacterApi:
         # Document current state: 404 (bug) or 200 (fixed)
         assert r.status_code in [200, 404]
 
-    def test_create_character_placeholder(self):
+    def test_create_character_placeholder(self, monkeypatch):
         """POST / is a placeholder in v3.7 ??should still respond."""
+        monkeypatch.setenv("DEMO_MODE", "true")
+        import importlib
+        from backend import demo_mode
+
+        importlib.reload(demo_mode)
         client = TestClient(app)
         r = client.post("/api/character/", json={"name": "Test"})
         # Placeholder returns 200 with "TODO" message
@@ -75,7 +80,12 @@ class TestCharacterApi:
         body = r.json()
         assert "message" in body
 
-    def test_update_character_placeholder(self):
+    def test_update_character_placeholder(self, monkeypatch):
+        monkeypatch.setenv("DEMO_MODE", "true")
+        import importlib
+        from backend import demo_mode
+
+        importlib.reload(demo_mode)
         client = TestClient(app)
         r = client.put("/api/character/char_demo_player", json={"name": "Updated"})
         assert r.status_code == 200
