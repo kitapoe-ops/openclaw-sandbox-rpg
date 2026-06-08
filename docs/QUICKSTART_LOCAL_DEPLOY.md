@@ -64,7 +64,7 @@ python -m venv .venv
 
 # 3. (Optional but recommended) verify the install (exclude smoke test if Postgres is offline)
 .venv\Scripts\python.exe -m pytest backend/tests/ -k "not test_production_smoke"
-# Expected: 313 passed in ~ 8 s
+# Expected: 381 passed in ~10s
 # If 0 tests run or modules missing, re-run step 2.
 
 # 4. Start the backend (port 8000)

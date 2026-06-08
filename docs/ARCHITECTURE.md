@@ -114,7 +114,7 @@ OpenClaw Sandbox RPG is a backend-first framework for AI-driven narrative games.
 - **Mode:** Async, persistent
 - **Embedding model:** sentence-transformers/all-MiniLM-L6-v2 (384-dim)
 - **Storage:** LanceDB for vectors, Postgres (or SQLite) for structured payload
-- **Test count:** 30 (Phase A) + 12 unit + 6 endpoint (Phase C2) = 48 (test names preserved at the same paths; current suite: 329 passed / 1 skipped)
+- **Test count:** 30 (Phase A) + 12 unit + 6 endpoint (Phase C2) = 48 (test names preserved at the same paths; current suite: 381 passed / 1 skipped)
 
 #### 3.5.1 Embedding Pipeline
 ```
