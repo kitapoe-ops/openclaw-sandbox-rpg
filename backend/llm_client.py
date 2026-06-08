@@ -983,8 +983,21 @@ class MockLLMClient(LLMClient):
     """
 
     def __init__(self, canned_response: str | None = None) -> None:
+        # 2026-06-08: default canned response is compliant with the
+        # 5-module user prompt output format: narrative + state_mutations
+        # + 4-element choices array. The empty ``scene_narrative`` key
+        # is preserved as a backwards-compat marker; the validator
+        # uses ``narrative`` going forward.
         self.canned_response = canned_response or (
-            '{"scene_narrative": "Mock scene.", "choices": []}'
+            '{"narrative": "你環顧四周，燈火在風中晃動。", '
+            '"scene_narrative": "Mock scene.", '
+            '"state_mutations": null, '
+            '"choices": ['
+            '{"direction": "combat", "vignette": "拔出武器，攻擊敵人"},'
+            '{"direction": "social", "vignette": "嘗試與對方對話"},'
+            '{"direction": "explore", "vignette": "繼續觀察四周"},'
+            '{"direction": "creative", "vignette": "用環境物品製作陷阱"}'
+            ']}'
         )
         self.calls: int = 0
 
@@ -1071,8 +1084,17 @@ class MockLLMClient(LLMClient):
             if mutation is not None or error is None:
                 # Success path (valid mutation OR explicit null).
                 narrative = ""
+                choices: list[dict[str, Any]] = []
                 if parsed is not None and isinstance(parsed.get("narrative"), str):
                     narrative = parsed["narrative"]
+                if parsed is not None and isinstance(parsed.get("choices"), list):
+                    # The 5-module user prompt (2026-06-08) asks for
+                    # 4 follow-up choices; the mock passes them
+                    # through verbatim. Validation of direction +
+                    # numeric-content happens in
+                    # ``_validate_and_extract_choices`` (in the
+                    # action processor layer, not here).
+                    choices = [c for c in parsed["choices"] if isinstance(c, dict)]
                 return {
                     "narrative": narrative,
                     "mutation": mutation,
@@ -1082,6 +1104,7 @@ class MockLLMClient(LLMClient):
                     "retries_used": retries_used,
                     "ghost_state_warning": False,
                     "retries_exhausted": False,
+                    "choices": choices,
                 }
             # Validation failed; continue if we have retries left.
             # (No logging — this is a mock.)
@@ -1090,6 +1113,10 @@ class MockLLMClient(LLMClient):
         narrative = ""
         if last_parsed is not None and isinstance(last_parsed.get("narrative"), str):
             narrative = last_parsed["narrative"]
+        # 2026-06-08: also surface choices from last parsed (best effort).
+        last_choices: list[dict[str, Any]] = []
+        if last_parsed is not None and isinstance(last_parsed.get("choices"), list):
+            last_choices = [c for c in last_parsed["choices"] if isinstance(c, dict)]
         return {
             "narrative": narrative,
             "mutation": last_mutation,
@@ -1099,6 +1126,7 @@ class MockLLMClient(LLMClient):
             "retries_used": retries_used,
             "ghost_state_warning": True,
             "retries_exhausted": True,
+            "choices": last_choices,
         }
 
 

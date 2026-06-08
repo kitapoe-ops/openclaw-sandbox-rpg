@@ -116,6 +116,33 @@ class TestPromptInspectorPreviewContent:
         assert flags["attitude_section_in_prompt"] is False
         # Critical: the inspector never bypasses R1 audit
         assert flags["r1_audit_bypassed"] is False
+        # 2026-06-08: F3 state contract + 5-module user prompt
+        assert flags.get("f3_state_contract_preserved") is True
+        assert flags.get("user_prompt_5_module") is True
+
+    def test_preview_user_prompt_section(self):
+        """2026-06-08: /preview also returns the 5-module user prompt."""
+        client = TestClient(_build_isolated_app())
+        resp = client.get("/api/prompt-inspector/preview?character_id=alice")
+        data = resp.json()
+        assert "user_prompt" in data
+        up = data["user_prompt"]
+        assert "rendered" in up
+        assert "sections" in up
+        assert "template_constant_keys" in up
+        assert "allowed_choice_directions" in up
+        assert up["module_count"] == 5
+        # The rendered user prompt must contain the 5 module headers
+        for i in range(1, 6):
+            assert f"### [模塊 {i}：" in up["rendered"]
+        # The section breakdown must include the expected keys
+        for key in (
+            "character_id", "health_status", "inventory_with_physical_tags",
+            "scene_npc_states", "active_escalation_threads",
+            "other_player_footprints", "verb", "target", "args_str",
+            "current_trope_directive",
+        ):
+            assert key in up["sections"]
 
     def test_preview_template_constants_listed(self):
         client = TestClient(_build_isolated_app())

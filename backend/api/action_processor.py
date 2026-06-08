@@ -221,22 +221,26 @@ def _validate_and_extract_choices(raw_choices: Any) -> list[dict[str, str]]:
             continue
         if not isinstance(vignette, str) or not vignette.strip():
             continue
-        # Soft check: vignette must not be predominantly numeric
-        # (the LLM is told "Risks ... 不可提供數字"). We drop
-        # entries where > 50% of tokens are digits/punctuation.
-        tokens = [t for t in vignette.split() if t]
-        if not tokens:
+        # Soft check: vignette must not be predominantly numeric.
+        # The user-prompt Module 5 says "Risks ... 不可提供數字" — i.e.
+        # the LLM is told to keep risk descriptions text-only. We drop
+        # entries whose character-level digit ratio exceeds 50% AND
+        # the total length is >= 5 chars (a short tag like "v1" or
+        # "hp" is preserved; a long numeric-heavy string is not).
+        stripped = vignette.strip()
+        if not stripped:
             continue
-        numeric_like = sum(1 for t in tokens if any(ch.isdigit() for ch in t))
-        if numeric_like / max(len(tokens), 1) > 0.5:
-            logger.warning(
-                "Dropping choice vignette with high numeric content "
-                "(direction=%s, vignette=%r)",
-                direction,
-                vignette[:80],
-            )
-            continue
-        validated.append({"direction": direction, "vignette": vignette.strip()})
+        if len(stripped) >= 5:
+            digit_count = sum(1 for ch in stripped if ch.isdigit())
+            if digit_count / len(stripped) > 0.5:
+                logger.warning(
+                    "Dropping choice vignette with high numeric content "
+                    "(direction=%s, vignette=%r)",
+                    direction,
+                    stripped[:80],
+                )
+                continue
+        validated.append({"direction": direction, "vignette": stripped})
     return validated
 
 

@@ -24,7 +24,7 @@ const loading = ref<boolean>(false)
 const error = ref<string | null>(null)
 const data = ref<any | null>(null)
 const isExpanded = ref<boolean>(false)
-const activeTab = ref<'full' | 'sections' | 'flags'>('full')
+const activeTab = ref<'full' | 'user' | 'sections' | 'flags'>('full')
 
 async function checkHealth() {
   try {
@@ -101,7 +101,8 @@ watch(
             {{ loading ? '⏳ Loading…' : '↻ Refresh' }}
           </button>
           <div class="tab-bar">
-            <button :class="{ active: activeTab === 'full' }" @click="activeTab = 'full'">Full prompt</button>
+            <button :class="{ active: activeTab === 'full' }" @click="activeTab = 'full'">System prompt</button>
+            <button :class="{ active: activeTab === 'user' }" @click="activeTab = 'user'">User prompt (5 modules)</button>
             <button :class="{ active: activeTab === 'sections' }" @click="activeTab = 'sections'">Sections</button>
             <button :class="{ active: activeTab === 'flags' }" @click="activeTab = 'flags'">Flags</button>
           </div>
@@ -119,6 +120,35 @@ watch(
               &nbsp;|&nbsp;
               <strong>Length:</strong> {{ data.system_prompt.length }} chars
             </p>
+          </div>
+
+          <div v-if="activeTab === 'user'" class="user-prompt-view">
+            <p v-if="!data.user_prompt" class="meta">(No user_prompt in this response — backend predates 5-module structure.)</p>
+            <template v-else>
+              <p class="meta">
+                <strong>Module count:</strong> {{ data.user_prompt.module_count }}
+                &nbsp;|&nbsp;
+                <strong>Allowed choice directions:</strong> {{ data.user_prompt.allowed_choice_direions?.join(', ') || data.user_prompt.allowed_choice_directions?.join(', ') || 'n/a' }}
+                &nbsp;|&nbsp;
+                <strong>Placeholder action:</strong>
+                <code>{{ data.user_prompt.placeholder_action.verb }} {{ data.user_prompt.placeholder_action.target }}{{ data.user_prompt.placeholder_action.args_str }}</code>
+              </p>
+              <details open>
+                <summary>Rendered user prompt</summary>
+                <pre class="prompt-text">{{ data.user_prompt.rendered }}</pre>
+              </details>
+              <details>
+                <summary>Section breakdown</summary>
+                <div v-for="(value, key) in data.user_prompt.sections" :key="key" class="section-block">
+                  <h5>{{ key }}</h5>
+                  <pre class="prompt-text">{{ value || '(empty)' }}</pre>
+                </div>
+              </details>
+              <details>
+                <summary>Template placeholders</summary>
+                <p class="meta"><code>{{ data.user_prompt.template_constant_keys.join(', ') }}</code></p>
+              </details>
+            </template>
           </div>
 
           <div v-if="activeTab === 'sections'" class="sections-view">
@@ -270,5 +300,23 @@ watch(
 }
 .flags-view code {
   color: #ffcc66;
+}
+.user-prompt-view details {
+  margin: 0.5rem 0;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 0.25rem 0.5rem;
+}
+.user-prompt-view details summary {
+  cursor: pointer;
+  color: #ccc;
+  font-weight: bold;
+}
+.user-prompt-view code {
+  background: #222;
+  color: #ffcc66;
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+  font-size: 0.85rem;
 }
 </style>
