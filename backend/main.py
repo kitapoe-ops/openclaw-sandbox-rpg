@@ -207,6 +207,16 @@ app.include_router(_d4_list_router)
 app.include_router(_e6a_router)
 app.include_router(_e6b_router)
 
+# Prompt Inspector (dev-only, gated by ENABLE_PROMPT_INSPECTOR env).
+# Health endpoint is always mounted so the frontend can show/hide the
+# panel; the preview endpoint returns 404 when disabled.
+from .api.prompt_inspector import router as prompt_inspector_router
+app.include_router(prompt_inspector_router)
+logger.info(
+    "Prompt Inspector mounted. Health: GET /api/prompt-inspector/health. "
+    "Preview gated by ENABLE_PROMPT_INSPECTOR env (default off, dev-only).",
+)
+
 
 # WebSocket
 @app.websocket("/ws/game/{character_id}")

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (2026-06-08)
+- **Prompt Inspector (dev-only, read-only).** New endpoint `GET /api/prompt-inspector/preview?character_id=X` returns the LLM system prompt that `PromptBuilder` would construct (placeholder state, no DB read, no LLM call, no audit bypass). New endpoint `GET /api/prompt-inspector/health` returns the flag state. New Vue component `frontend/src/components/PromptInspectorPanel.vue` is mounted in `GameView.vue` and auto-hides if the flag is off.
+  - **Gating:** `ENABLE_PROMPT_INSPECTOR=true` env var (default false). The endpoint reads the env directly to avoid the pre-existing `backend/config.py` `.env` parse bug (CORS_ORIGINS JSON list). Production deploys must keep this disabled.
+  - **Read-only by design:** there is no edit field, no submit button, no R1-14B bypass. The endpoint is purely a "what-would-the-LLM-see" preview.
+  - 9 new unit tests in `backend/tests/test_prompt_inspector.py` (health flag, 404 gate, response shape, sections, hidden header, flags state, template constants, placeholder state). All pass; full suite 338 passed / 1 skipped / 0 fail.
+  - The frontend panel offers three tabs: Full prompt (rendered template), Sections (per-section breakdown), Flags (hidden systems + R1 audit state).
+
 ### Hidden (2026-06-08)
 - **Items / equipment system hidden.** `_format_equipment_section` in `backend/prompt_builder.py` now always returns `""`; the corresponding template header (`# 角色當前裝備與物理約束`) is stripped at format time. `<Equipment>` and `<Inventory>` mounts in `frontend/src/views/GameView.vue` are commented out. `TestEquipmentConstraints` (3 tests) updated to assert the section is empty. To re-enable: restore the disabled code blocks — original body preserved as comments.
 - **Attitude / 態度選擇 system hidden.** Attitude section in `frontend/src/components/CharacterStatus.vue` (passive display) and the attitude accordion in `frontend/src/components/ChoiceCard.vue` (interactive selection) are commented out. Backend prompt never injected attitude state (verified — no `_format_attitude_section` exists), so no backend change needed. To re-enable: restore the disabled `<div v-if="state.attitude">` and `<details class="attitude-section">` blocks.
